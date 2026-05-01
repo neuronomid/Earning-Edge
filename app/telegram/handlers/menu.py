@@ -16,7 +16,6 @@ from app.telegram.deps import session_scope, user_service_scope
 from app.telegram.handlers._common import send_text
 from app.telegram.keyboards.main_menu import (
     BTN_LAST_RECOMMENDATION,
-    BTN_LOGS,
     BTN_RUN_SCAN,
     main_menu_keyboard,
 )
@@ -103,18 +102,6 @@ async def last_recommendation(message: Message) -> None:
         ),
         reply_markup=recommendation_keyboard(str(recommendation.id)),
     )
-
-
-@router.message(F.text == BTN_LOGS)
-async def show_logs(message: Message) -> None:
-    if not await _require_onboarded(message):
-        return
-    await send_text(
-        message,
-        "📘 The logs view ships once the first scan has run.",
-        reply_markup=main_menu_keyboard(),
-    )
-
 
 # BTN_MANAGE_SCHEDULE is handled by app/telegram/handlers/schedule.py.
 # BTN_API_KEYS and BTN_SETTINGS are handled by app/telegram/handlers/settings.py.

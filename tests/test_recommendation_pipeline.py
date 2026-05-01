@@ -21,11 +21,13 @@ from app.scoring.types import (
     ContractScoreResult,
     DataConfidenceResult,
     DirectionResult,
+    HardVeto,
     OptionContractInput,
     StrategySelection,
     UserContext,
 )
 from app.services.candidate_models import CandidateBatch, CandidateRecord
+from app.services.logging_service import LoggingService
 from app.services.market_data.types import MarketSnapshot, ReturnMetrics
 from app.services.news.types import NewsBrief, NewsBundle
 from app.services.sizing import BROKER_MARGIN_DEPENDENT_TEXT
@@ -146,7 +148,29 @@ class FakeScoringStep:
                 expiry_days_after_earnings=7,
                 reasons=(f"{candidate.ticker} contract screened best.",),
             )
-            considered = (chosen,)
+            rejected = tuple(
+                ContractScoreResult(
+                    strategy=contract.strategy,
+                    contract=contract,
+                    base_score=max(plan.contract_score - 10, 0),
+                    score=0,
+                    factors=(),
+                    penalties=(),
+                    vetoes=(
+                        HardVeto(
+                            "fixture_rejection",
+                            "Fixture rejected this contract for spread quality.",
+                        ),
+                    ),
+                    breakeven=Decimal("109.00"),
+                    breakeven_move_percent=Decimal("0.07"),
+                    liquidity_score=42,
+                    expiry_days_after_earnings=7,
+                    reasons=(f"{candidate.ticker} backup contract was rejected.",),
+                )
+                for contract in candidate.option_chain[1:]
+            )
+            considered = (chosen, *rejected)
 
         return CandidateEvaluation(
             ticker=candidate.ticker,
@@ -351,6 +375,7 @@ def _long_call(ticker: str, *, strike: str) -> OptionContractInput:
 @pytest.mark.asyncio
 async def test_pipeline_persists_recommendation_and_sends_card(
     db_session: AsyncSession,
+    tmp_path,
 ) -> None:
     batch = _batch()
     notifier = FakeNotifier()
@@ -362,7 +387,10 @@ async def test_pipeline_persists_recommendation_and_sends_card(
         news_step=FakeNewsStep({record.ticker: _bundle(record) for record in batch.candidates}),
         options_step=FakeOptionsStep(
             {
-                "AMD": (_long_call("AMD", strike="104"),),
+                "AMD": (
+                    _long_call("AMD", strike="104"),
+                    _long_call("AMD", strike="108"),
+                ),
                 "AAPL": (_long_call("AAPL", strike="195"),),
             }
         ),
@@ -405,6 +433,7 @@ async def test_pipeline_persists_recommendation_and_sends_card(
         ),
         sizing_step=FakeSizingStep(),
         notifier=notifier,
+        logging_service=LoggingService(archive_root=tmp_path / "runs"),
     )
     user = await _make_user(db_session)
     run = await _make_run(db_session, user)
@@ -422,6 +451,18 @@ async def test_pipeline_persists_recommendation_and_sends_card(
     assert recommendations[0].ticker == "AMD"
     assert recommendations[0].telegram_message_id == "3"
     assert len(candidates) == 5
+    assert run.run_summary_json is not None
+    assert run.recommendation_card_json is not None
+    assert run.telegram_message_text == notifier.calls[2].text
+    assert run.recommendation_card_json["selected_ticker"] == "AMD"
+    assert run.recommendation_card_json["telegram_message"] == notifier.calls[2].text
+    assert run.run_summary_json["contracts_considered_count"] == 3
+    assert run.run_summary_json["rejected_contract_count"] == 1
+    assert run.option_contracts_json is not None
+    assert any(
+        contract["rejection_reason"] == "Fixture rejected this contract for spread quality."
+        for contract in run.option_contracts_json
+    )
     assert notifier.calls[0].text == "🧠 Starting a fresh earnings-options scan now."
     assert notifier.calls[1].text == "✅ Scan complete. Here is the strongest setup I found."
     assert "<b>Weekly Earnings Options Signal</b>" in notifier.calls[2].text

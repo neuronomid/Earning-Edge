@@ -40,6 +40,7 @@ from app.scoring.types import (
     spread_percent,
 )
 from app.services.candidate_models import CandidateRecord
+from app.services.logging_service import LoggingService, get_logging_service
 from app.services.market_data.types import ConfidenceNote, MarketSnapshot, ReturnMetrics
 from app.services.news.types import NewsBrief, NewsBundle
 from app.services.sizing import BROKER_MARGIN_DEPENDENT_TEXT, SizingError, SizingPermissionError
@@ -108,6 +109,7 @@ class PipelineOrchestrator:
         sizing_step: SizingStep | None = None,
         decision_step: DecisionStep | None = None,
         notifier: TelegramNotifier | None = None,
+        logging_service: LoggingService | None = None,
         logger: Any | None = None,
     ) -> None:
         self.candidate_step = candidate_step or CandidateSelectionStep()
@@ -119,6 +121,7 @@ class PipelineOrchestrator:
         self.decision_step = decision_step or HeuristicDecisionStep()
         self.notifier = notifier or AiogramNotifier()
         self.logger = logger or get_logger(__name__)
+        self.logging_service = logging_service or get_logging_service()
 
     async def run(self, session: AsyncSession, run: WorkflowRun) -> PipelineOutcome:
         user = await UserRepository(session).get(run.user_id)
@@ -153,7 +156,14 @@ class PipelineOrchestrator:
         )
 
         recommendation = await self._persist(session, run, user, outcome)
-        await self._notify_user(user, run.trigger_type, outcome, recommendation)
+        telegram_message = await self._notify_user(user, run.trigger_type, outcome, recommendation)
+        self.logging_service.capture_run(
+            run=run,
+            user=user,
+            outcome=outcome,
+            recommendation=recommendation,
+            telegram_message=telegram_message,
+        )
         return outcome
 
     async def _analyze_candidate(
@@ -349,7 +359,7 @@ class PipelineOrchestrator:
         trigger_type: str,
         outcome: PipelineOutcome,
         recommendation: Recommendation | None,
-    ) -> None:
+    ) -> str:
         if recommendation is None:
             await self.notifier.send_text(
                 user.telegram_chat_id,
@@ -358,33 +368,36 @@ class PipelineOrchestrator:
                     action="no_trade",
                 ),
             )
+            final_message = render_no_trade(
+                reason=outcome.decision.reasoning,
+                watchlist_tickers=outcome.decision.watchlist_tickers,
+                warning_text=outcome.batch.warning_text,
+            )
             await self.notifier.send_text(
                 user.telegram_chat_id,
-                render_no_trade(
-                    reason=outcome.decision.reasoning,
-                    watchlist_tickers=outcome.decision.watchlist_tickers,
-                    warning_text=outcome.batch.warning_text,
-                ),
+                final_message,
             )
-            return
+            return final_message
 
         action = outcome.decision.action
         if outcome.selected is not None:
             recommendation.earnings_date = outcome.selected.context.earnings_date
+        final_message = render_main_recommendation(
+            recommendation,
+            warning_text=outcome.batch.warning_text,
+            watchlist_only=action == "watchlist",
+        )
         await self.notifier.send_text(
             user.telegram_chat_id,
             render_weekly_scan_ready(trigger_type=trigger_type, action=action),
         )
         message_id = await self.notifier.send_text(
             user.telegram_chat_id,
-            render_main_recommendation(
-                recommendation,
-                warning_text=outcome.batch.warning_text,
-                watchlist_only=action == "watchlist",
-            ),
+            final_message,
             reply_markup=recommendation_keyboard(str(recommendation.id)),
         )
         recommendation.telegram_message_id = message_id
+        return final_message
 
 
 @lru_cache(maxsize=1)
