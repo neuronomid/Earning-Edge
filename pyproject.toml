@@ -24,7 +24,9 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "playwright>=1.55",
     "beautifulsoup4>=4.12",
+    "duckduckgo-search>=7.1",
     "lxml>=5.3",
+    "trafilatura>=1.12",
     "yfinance>=0.2.54",
 ]
 
