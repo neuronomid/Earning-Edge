@@ -19,11 +19,11 @@ _logger = logging.getLogger(__name__)
 
 
 async def send_text(message: Message, text: str, **kwargs: Any) -> Message:
-    _enforce_tone(text)
+    enforce_tone(text)
     return await message.answer(text, **kwargs)
 
 
-def _enforce_tone(text: str) -> None:
+def enforce_tone(text: str) -> None:
     if get_settings().app_env == "test":
         # Tests should fail loudly when forbidden phrases sneak in.
         assert_clean(text)
@@ -33,4 +33,4 @@ def _enforce_tone(text: str) -> None:
         _logger.warning("tone-issue detected: %s | text=%r", list(issues), text)
 
 
-__all__ = ["send_text", "ToneError"]
+__all__ = ["send_text", "ToneError", "enforce_tone"]

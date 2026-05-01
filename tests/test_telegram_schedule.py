@@ -231,5 +231,5 @@ async def test_run_scan_now_starts_manual_workflow(
 
     await menu_handlers.run_scan_now(make_message(BTN_RUN_SCAN, chat_id=12345))
 
-    assert "🚀 Scan started." in send_recorder.calls[-1].text
+    assert send_recorder.calls == []
     assert runner.calls[0][1] == "manual"

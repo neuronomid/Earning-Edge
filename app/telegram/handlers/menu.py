@@ -9,8 +9,10 @@ from __future__ import annotations
 from aiogram import F, Router
 from aiogram.types import Message
 
+from app.db.repositories.recommendation_repo import RecommendationRepository
 from app.scheduler.jobs import RUN_ALREADY_ACTIVE_TEXT, get_workflow_runner
-from app.telegram.deps import user_service_scope
+from app.services.user_service import UserService
+from app.telegram.deps import session_scope, user_service_scope
 from app.telegram.handlers._common import send_text
 from app.telegram.keyboards.main_menu import (
     BTN_LAST_RECOMMENDATION,
@@ -18,6 +20,8 @@ from app.telegram.keyboards.main_menu import (
     BTN_RUN_SCAN,
     main_menu_keyboard,
 )
+from app.telegram.keyboards.settings import recommendation_keyboard
+from app.telegram.templates.main_recommendation import render_main_recommendation
 
 router = Router(name="menu")
 
@@ -65,24 +69,39 @@ async def run_scan_now(message: Message) -> None:
         )
         return
 
-    await send_text(
-        message,
-        (
-            "🚀 Scan started.\n"
-            "I'll post the result here when the full pipeline lands in the next phase."
-        ),
-        reply_markup=main_menu_keyboard(),
-    )
-
 
 @router.message(F.text == BTN_LAST_RECOMMENDATION)
 async def last_recommendation(message: Message) -> None:
-    if not await _require_onboarded(message):
+    chat_id = str(message.chat.id)
+    async with session_scope() as session:
+        service = UserService(session)
+        user = await service.get_by_chat_id(chat_id)
+        if user is None:
+            await send_text(
+                message,
+                "Looks like you haven't finished setup. Send /start to begin.",
+                reply_markup=main_menu_keyboard(),
+            )
+            return
+        recommendations = await RecommendationRepository(session).list_recent_for_user(
+            user.id,
+            limit=1,
+        )
+    if not recommendations:
+        await send_text(
+            message,
+            "📊 No recommendations yet. Your first scan will arrive on the next cron tick.",
+            reply_markup=main_menu_keyboard(),
+        )
         return
+    recommendation = recommendations[0]
     await send_text(
         message,
-        "📊 No recommendations yet. Your first scan will arrive on the next cron tick.",
-        reply_markup=main_menu_keyboard(),
+        render_main_recommendation(
+            recommendation,
+            watchlist_only=recommendation.suggested_quantity == 0,
+        ),
+        reply_markup=recommendation_keyboard(str(recommendation.id)),
     )
 
 

@@ -1,8 +1,7 @@
-"""Workflow runner stub for Phase 3."""
+"""Workflow runner + phase-11 pipeline entrypoint."""
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -15,13 +14,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.db.models.workflow_run import WorkflowRun
 from app.db.repositories.run_repo import WorkflowRunRepository
 from app.db.session import get_sessionmaker
+from app.pipeline.orchestrator import get_pipeline_orchestrator
 from app.services.run_lock import RunLockService, get_run_lock_service
 
 RUN_ALREADY_ACTIVE_TEXT = (
     "⏳ A scan is already running. " "I\u2019ll show the result here when it finishes."
 )
 
-PipelineFunc = Callable[[AsyncSession, WorkflowRun], Awaitable[None]]
+PipelineFunc = Callable[[AsyncSession, WorkflowRun], Awaitable[object | None]]
 
 
 @dataclass(slots=True)
@@ -61,8 +61,10 @@ class WorkflowRunner:
             async with self.sessionmaker() as session:
                 run = await _get_run(session, run_id)
                 await self.pipeline(session, run)
-                run.status = "success"
-                run.finished_at = datetime.now(UTC)
+                if run.status == "running":
+                    run.status = "success"
+                if run.finished_at is None:
+                    run.finished_at = datetime.now(UTC)
                 await session.commit()
 
             return WorkflowRunResult(outcome="success", run_id=run_id)
@@ -84,8 +86,7 @@ class WorkflowRunner:
 
 
 async def _default_pipeline(_: AsyncSession, __: WorkflowRun) -> None:
-    # Placeholder so the orchestration and locking surface exists before Phase 11.
-    await asyncio.sleep(0)
+    await get_pipeline_orchestrator().run(_, __)
 
 
 async def _get_run(session: AsyncSession, run_id: UUID) -> WorkflowRun:
