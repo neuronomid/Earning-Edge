@@ -14,13 +14,13 @@ from app.scoring.types import (
     breakeven_move_percent,
     breakeven_price,
     clamp_int,
-    estimate_max_contracts,
     option_premium,
     risk_percent,
     round_decimal,
     spread_percent,
 )
 from app.scoring.vetoes import evaluate_hard_vetoes
+from app.services.sizing import SizingError, SizingPermissionError, size
 
 ZERO = Decimal("0")
 
@@ -242,8 +242,12 @@ def _score_iv_setup(contract: OptionContractInput) -> int:
 
 
 def _score_premium_fit(user: UserContext, contract: OptionContractInput) -> int:
-    estimated_contracts = estimate_max_contracts(user, contract)
-    if estimated_contracts >= 1:
+    try:
+        sizing = size(user, contract)
+    except (SizingError, SizingPermissionError):
+        return 0
+
+    if sizing.quantity >= 1:
         return 10
 
     if contract.position_side == "short":
@@ -251,6 +255,8 @@ def _score_premium_fit(user: UserContext, contract: OptionContractInput) -> int:
 
     premium = option_premium(contract)
     if premium is None or premium <= ZERO:
+        return 0
+    if user.max_option_premium is not None and premium > user.max_option_premium:
         return 0
     trade_budget = user.account_size * risk_percent(user)
     ratio = (premium * Decimal("100")) / trade_budget
