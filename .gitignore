@@ -1,1 +1,30 @@
 .DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+
+# Virtual envs
+.venv/
+venv/
+
+# Environment
+.env
+.env.local
+
+# Editor
+.idea/
+.vscode/
+
+# Runtime
+var/
+logs/
+*.log
