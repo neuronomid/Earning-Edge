@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     app_encryption_key: str = Field(default="")
 
     telegram_bot_token: str = Field(default="")
+    telegram_use_webhook: bool = False
+    telegram_webhook_url: str = Field(default="")
+    telegram_webhook_secret: str = Field(default="")
 
     market_analysis_model: str = "claude-opus-4.7-thinking"
     lightweight_model: str = "gemini-3.1-flash"
