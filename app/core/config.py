@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     postgres_port: int = 5432
     postgres_db: str = "earning_edge"
     postgres_user: str = "earning_edge"
-    postgres_password: str = "earning_edge_dev"  # noqa: S105
+    postgres_password: str = "earning_edge_dev"
 
     redis_host: str = "redis"
     redis_port: int = 6379

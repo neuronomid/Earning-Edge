@@ -30,5 +30,10 @@ repos:
           - pydantic>=2.9
           - pydantic-settings>=2.6
           - structlog>=24.4
+          - fastapi>=0.115
+          - sqlalchemy[asyncio]>=2.0
+          - asyncpg>=0.29
+          - alembic>=1.13
+          - cryptography>=43
         args: [--config-file=pyproject.toml]
         files: ^app/
