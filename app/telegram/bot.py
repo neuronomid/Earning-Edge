@@ -23,9 +23,20 @@ from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
 from app.telegram.handlers import (
     help as help_handlers,
+)
+from app.telegram.handlers import (
     menu as menu_handlers,
+)
+from app.telegram.handlers import (
     onboarding as onboarding_handlers,
+)
+from app.telegram.handlers import (
+    schedule as schedule_handlers,
+)
+from app.telegram.handlers import (
     settings as settings_handlers,
+)
+from app.telegram.handlers import (
     start as start_handlers,
 )
 
@@ -40,7 +51,7 @@ def build_storage(settings: Settings) -> BaseStorage:
         return MemoryStorage()
     try:
         return RedisStorage.from_url(settings.redis_url)
-    except Exception:  # noqa: BLE001 — fall back rather than crash on bad URL
+    except Exception:
         return MemoryStorage()
 
 
@@ -68,6 +79,7 @@ def build_dispatcher(storage: BaseStorage | None = None) -> Dispatcher:
     dp.include_router(start_handlers.router)
     dp.include_router(onboarding_handlers.router)
     dp.include_router(settings_handlers.router)
+    dp.include_router(schedule_handlers.router)
     dp.include_router(menu_handlers.router)
     dp.include_router(help_handlers.router)
     return dp

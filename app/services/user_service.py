@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import time
 from decimal import Decimal
 from typing import Literal
+from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -159,6 +160,10 @@ class UserService:
     async def update_timezone(self, user: User, label: TimezoneLabel) -> None:
         user.timezone_label = label
         user.timezone_iana = TIMEZONE_MAP[label]
+        crons = await self.crons.list_for_user(user.id)
+        for cron in crons:
+            cron.timezone_label = label
+            cron.timezone_iana = TIMEZONE_MAP[label]
         await self.session.flush()
 
     async def update_broker(self, user: User, broker: str) -> None:
@@ -191,6 +196,55 @@ class UserService:
     async def replace_alpha_vantage_key(self, user: User, api_key: str | None) -> None:
         user.alpha_vantage_api_key_encrypted = _encrypt_optional(api_key)
         await self.session.flush()
+
+    # ---------- cron management (Phase 3) ----------
+
+    async def list_crons_for_user(self, user: User) -> list[CronJob]:
+        return await self.crons.list_for_user(user.id)
+
+    async def get_cron_for_user(self, user: User, cron_id: UUID) -> CronJob | None:
+        return await self.crons.get_for_user(user.id, cron_id)
+
+    async def add_cron_for_user(self, user: User, *, day_of_week: str, local_time: str) -> CronJob:
+        cron = CronJob(
+            user_id=user.id,
+            day_of_week=day_of_week,
+            local_time=local_time,
+            timezone_label=user.timezone_label,
+            timezone_iana=user.timezone_iana,
+            is_active=True,
+        )
+        await self.crons.add(cron)
+        return cron
+
+    async def update_cron(self, cron: CronJob, *, day_of_week: str, local_time: str) -> CronJob:
+        cron.day_of_week = day_of_week
+        cron.local_time = local_time
+        await self.session.flush()
+        return cron
+
+    async def delete_cron(self, cron: CronJob) -> None:
+        await self.crons.delete(cron)
+
+    async def pause_all_crons(self, user: User) -> int:
+        crons = await self.crons.list_for_user(user.id)
+        changed = 0
+        for cron in crons:
+            if cron.is_active:
+                cron.is_active = False
+                changed += 1
+        await self.session.flush()
+        return changed
+
+    async def resume_all_crons(self, user: User) -> int:
+        crons = await self.crons.list_for_user(user.id)
+        changed = 0
+        for cron in crons:
+            if not cron.is_active:
+                cron.is_active = True
+                changed += 1
+        await self.session.flush()
+        return changed
 
 
 def _encrypt_optional(value: str | None) -> str | None:

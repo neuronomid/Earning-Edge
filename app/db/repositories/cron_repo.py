@@ -20,3 +20,9 @@ class CronJobRepository(BaseRepository[CronJob]):
     async def list_active(self) -> list[CronJob]:
         result = await self.session.execute(select(CronJob).where(CronJob.is_active.is_(True)))
         return list(result.scalars().all())
+
+    async def get_for_user(self, user_id: UUID, cron_id: UUID) -> CronJob | None:
+        result = await self.session.execute(
+            select(CronJob).where(CronJob.user_id == user_id, CronJob.id == cron_id)
+        )
+        return result.scalar_one_or_none()

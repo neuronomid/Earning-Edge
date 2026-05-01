@@ -31,3 +31,8 @@ class SettingsEdit(StatesGroup):
     alpaca_key = State()
     alpaca_secret = State()
     alpha_vantage_key = State()
+
+
+class ScheduleEdit(StatesGroup):
+    day_of_week = State()
+    local_time = State()

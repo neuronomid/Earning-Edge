@@ -20,6 +20,12 @@ dependencies = [
     "aiogram>=3.13",
     "redis>=5.0",
     "python-dateutil>=2.9",
+    "apscheduler>=3.10,<4",
+    "psycopg[binary]>=3.2",
+    "playwright>=1.55",
+    "beautifulsoup4>=4.12",
+    "lxml>=5.3",
+    "yfinance>=0.2.54",
 ]
 
 [dependency-groups]

@@ -9,8 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import crypto
 from app.services.user_service import (
-    OnboardingPayload,
     TIMEZONE_MAP,
+    OnboardingPayload,
     UserService,
 )
 
@@ -112,6 +112,11 @@ async def test_settings_field_updates_roundtrip(db_session: AsyncSession) -> Non
     assert fetched.broker == "IBKR"
     assert fetched.strategy_permission == "long"
     assert fetched.max_contracts == 5
+
+    crons = await service.list_crons_for_user(fetched)
+    assert len(crons) == 1
+    assert crons[0].timezone_label == "PT"
+    assert crons[0].timezone_iana == TIMEZONE_MAP["PT"]
 
 
 async def test_replace_alpaca_creds_clears_when_none(db_session: AsyncSession) -> None:
