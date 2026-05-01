@@ -1,0 +1,3564 @@
+- generic [ref=e1]:
+  - button "Skip to main content" [ref=e4]:
+    - generic [ref=e5]:
+      - generic: Skip to main content
+  - generic [ref=e6]:
+    - generic [ref=e8]:
+      - generic [ref=e9]:
+        - button "Open menu" [ref=e10] [cursor=pointer]:
+          - img [ref=e11]
+        - link "TradingView main page" [ref=e14] [cursor=pointer]:
+          - /url: /
+          - img [ref=e16]
+      - button "Search" [ref=e23]:
+        - img [ref=e24]
+        - generic [ref=e26]: Search
+      - generic [ref=e27]:
+        - button "Open language menu" [ref=e28] [cursor=pointer]:
+          - img [ref=e29]
+          - text: EN
+        - button "Open user menu" [ref=e31] [cursor=pointer]:
+          - img [ref=e32]
+        - link "Get started" [ref=e36] [cursor=pointer]:
+          - /url: /pricing/?source=header_go_pro_button&feature=start_free_trial
+          - generic [ref=e38]: Get started
+    - main "Main content" [ref=e39]:
+      - generic [ref=e40]:
+        - button "Stock Screener" [ref=e42]:
+          - heading "Stock Screener" [level=1] [ref=e45]
+          - img [ref=e46]:
+            - img [ref=e47]
+        - generic [ref=e50]:
+          - generic [ref=e51]:
+            - generic [ref=e52]:
+              - button "All stocks" [ref=e54]:
+                - heading "All stocks" [level=2] [ref=e55]
+                - img [ref=e56]:
+                  - img [ref=e57]
+              - generic [ref=e60]:
+                - button "Screener settings" [ref=e61]:
+                  - img [ref=e63]:
+                    - img [ref=e64]
+                - button "Hide filters" [ref=e68]:
+                  - img [ref=e70]:
+                    - img [ref=e71]
+            - generic [ref=e73]:
+              - generic [ref=e78]:
+                - button "US" [ref=e81]:
+                  - generic [ref=e84]:
+                    - generic [ref=e88]: US
+                    - img [ref=e90]:
+                      - img [ref=e91]
+                    - img [ref=e94]:
+                      - img [ref=e95]
+                - generic [ref=e97]:
+                  - button "Watchlist" [ref=e100]:
+                    - generic [ref=e103]:
+                      - generic [ref=e106]: Watchlist
+                      - img [ref=e108]:
+                        - img [ref=e109]
+                  - separator [ref=e112]
+                - button "Index" [ref=e116]:
+                  - generic [ref=e119]:
+                    - generic [ref=e121]: Index
+                    - img [ref=e123]:
+                      - img [ref=e124]
+                - button "Price" [ref=e129]:
+                  - generic [ref=e132]:
+                    - generic [ref=e135]: Price
+                    - img [ref=e137]:
+                      - img [ref=e138]
+                - button "Change %" [ref=e143]:
+                  - generic [ref=e146]:
+                    - generic [ref=e149]: Change %
+                    - img [ref=e151]:
+                      - img [ref=e152]
+                - button "Market cap" [ref=e157]:
+                  - generic [ref=e160]:
+                    - generic [ref=e163]: Market cap
+                    - img [ref=e165]:
+                      - img [ref=e166]
+                - button "P/E" [ref=e171]:
+                  - generic [ref=e174]:
+                    - generic [ref=e177]: P/E
+                    - img [ref=e179]:
+                      - img [ref=e180]
+                - button "EPS dil growth" [ref=e185]:
+                  - generic [ref=e188]:
+                    - generic [ref=e191]: EPS dil growth
+                    - img [ref=e193]:
+                      - img [ref=e194]
+                - button "Div yield %" [ref=e199]:
+                  - generic [ref=e202]:
+                    - generic [ref=e205]: Div yield %
+                    - img [ref=e207]:
+                      - img [ref=e208]
+                - button "Sector" [ref=e213]:
+                  - generic [ref=e216]:
+                    - generic [ref=e218]: Sector
+                    - img [ref=e220]:
+                      - img [ref=e221]
+                - button "Analyst Rating" [ref=e226]:
+                  - generic [ref=e229]:
+                    - generic [ref=e231]: Analyst Rating
+                    - img [ref=e233]:
+                      - img [ref=e234]
+                - button "Perf %" [ref=e239]:
+                  - generic [ref=e242]:
+                    - generic [ref=e245]: Perf %
+                    - img [ref=e247]:
+                      - img [ref=e248]
+                - button "Revenue growth" [ref=e253]:
+                  - generic [ref=e256]:
+                    - generic [ref=e259]: Revenue growth
+                    - img [ref=e261]:
+                      - img [ref=e262]
+                - button "PEG" [ref=e267]:
+                  - generic [ref=e270]:
+                    - generic [ref=e273]: PEG
+                    - img [ref=e275]:
+                      - img [ref=e276]
+                - button "ROE" [ref=e281]:
+                  - generic [ref=e284]:
+                    - generic [ref=e287]: ROE
+                    - img [ref=e289]:
+                      - img [ref=e290]
+                - button "Beta" [ref=e295]:
+                  - generic [ref=e298]:
+                    - generic [ref=e301]: Beta
+                    - img [ref=e303]:
+                      - img [ref=e304]
+                - button "Recent earnings date" [ref=e309]:
+                  - generic [ref=e312]:
+                    - generic [ref=e314]: Recent earnings date
+                    - img [ref=e316]:
+                      - img [ref=e317]
+                - button "Upcoming earnings date" [ref=e322]:
+                  - generic [ref=e325]:
+                    - generic [ref=e327]: Upcoming earnings date
+                    - img [ref=e329]:
+                      - img [ref=e330]
+                - generic [ref=e332]:
+                  - button "Add new filter" [ref=e333]:
+                    - img [ref=e335]:
+                      - img [ref=e336]
+                  - button "Reset options" [ref=e338]:
+                    - img [ref=e340]:
+                      - img [ref=e341]
+              - generic [ref=e343]:
+                - tablist [ref=e346]:
+                  - tab [selected] [ref=e347]:
+                    - img [ref=e350]:
+                      - img [ref=e351]
+                  - tab [ref=e353]:
+                    - img [ref=e356]:
+                      - img [ref=e357]
+                - separator [ref=e360]
+                - generic [ref=e361]:
+                  - tablist [ref=e363]:
+                    - tab "Overview" [selected] [ref=e364]:
+                      - generic [ref=e366]: Overview
+                    - tab "Performance" [ref=e367]:
+                      - generic [ref=e369]: Performance
+                    - tab "Extended hours" [ref=e370]:
+                      - generic [ref=e372]: Extended hours
+                    - tab "Valuation" [ref=e373]:
+                      - generic [ref=e375]: Valuation
+                    - tab "Dividends" [ref=e376]:
+                      - generic [ref=e378]: Dividends
+                    - tab "Profitability" [ref=e379]:
+                      - generic [ref=e381]: Profitability
+                    - tab "Income statement" [ref=e382]:
+                      - generic [ref=e384]: Income statement
+                    - tab "Balance sheet":
+                      - generic:
+                        - generic: Balance sheet
+                    - tab "Cash flow":
+                      - generic:
+                        - generic: Cash flow
+                    - tab "Per share":
+                      - generic:
+                        - generic: Per share
+                    - tab "Technicals":
+                      - generic:
+                        - generic: Technicals
+                    - button [ref=e385]:
+                      - generic [ref=e387]:
+                        - text: More
+                        - img [ref=e388]:
+                          - img [ref=e389]
+                  - button "Refresh" [ref=e393]:
+                    - img [ref=e395]:
+                      - img [ref=e396]
+          - table [ref=e403]:
+            - rowgroup [ref=e404]:
+              - row "Symbol 7842 Price Change % Volume Rel Volume Market cap Change sort P/E EPS dil TTM EPS dil growth TTM YoY Div yield % TTM Sector Analyst Rating" [ref=e405]:
+                - columnheader "Symbol 7842" [ref=e406]:
+                  - generic "Symbol" [ref=e407]:
+                    - generic [ref=e409]:
+                      - button "Search" [ref=e410]:
+                        - img [ref=e412]:
+                          - img [ref=e413]
+                      - generic [ref=e415]:
+                        - generic [ref=e417]: Symbol
+                        - generic [ref=e418]: "7842"
+                - columnheader "Price" [ref=e419]:
+                  - generic "Price" [ref=e420]:
+                    - generic [ref=e422]: Price
+                - columnheader "Change %" [ref=e423]:
+                  - generic "Price Change % 1 day" [ref=e424]:
+                    - generic [ref=e426]: Change %
+                - columnheader "Volume" [ref=e427]:
+                  - generic "Volume 1 day" [ref=e428]:
+                    - generic [ref=e430]: Volume
+                - columnheader "Rel Volume" [ref=e431]:
+                  - generic "Relative Volume 1 day" [ref=e432]:
+                    - generic [ref=e434]: Rel Volume
+                - columnheader "Market cap Change sort" [ref=e435]:
+                  - generic "Market capitalization" [ref=e436]:
+                    - generic [ref=e438]: Market cap
+                    - button "Change sort" [ref=e439]:
+                      - img [ref=e440]:
+                        - img [ref=e441]
+                - columnheader "P/E" [ref=e443]:
+                  - generic "Price to earnings ratio" [ref=e444]:
+                    - generic [ref=e446]: P/E
+                - columnheader "EPS dil TTM" [ref=e447]:
+                  - generic "Earnings per share diluted, Trailing 12 months" [ref=e448]:
+                    - generic [ref=e449]:
+                      - generic [ref=e450]: EPS dil
+                      - generic [ref=e452]: TTM
+                - columnheader "EPS dil growth TTM YoY" [ref=e453]:
+                  - generic [ref=e455]:
+                    - generic [ref=e456]: EPS dil growth
+                    - generic [ref=e458]: TTM YoY
+                - columnheader "Div yield % TTM" [ref=e459]:
+                  - generic "Dividend yield %, Trailing 12 months" [ref=e460]:
+                    - generic [ref=e461]:
+                      - generic [ref=e462]: Div yield %
+                      - generic [ref=e464]: TTM
+                - columnheader "Sector" [ref=e465]:
+                  - generic "Sector" [ref=e466]:
+                    - generic [ref=e468]: Sector
+                - columnheader "Analyst Rating" [ref=e469]:
+                  - generic "Analyst Rating" [ref=e470]:
+                    - generic [ref=e472]: Analyst Rating
+                - columnheader [ref=e473]:
+                  - button "Column setup" [ref=e474]:
+                    - img [ref=e476]:
+                      - img [ref=e477]
+            - rowgroup [ref=e479]:
+              - row "NVDA NVIDIA Corporation D 199.99 USD +0.21% 82.65 M 0.54 4.86 T USD 40.80 4.90 USD +66.75% 0.02% Electronic technology Strong buy" [ref=e480]:
+                - cell "NVDA NVIDIA Corporation D" [ref=e481]:
+                  - generic [ref=e482]:
+                    - link "NVDA" [ref=e483] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-NVDA/
+                    - link "NVIDIA Corporation" [ref=e484] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-NVDA/
+                    - generic "Quotes are delayed by 15 min" [ref=e486]: D
+                - cell "199.99 USD" [ref=e487]:
+                  - text: "199.99"
+                  - generic [ref=e488]: USD
+                - cell "+0.21%" [ref=e489]
+                - cell "82.65 M" [ref=e490]
+                - cell "0.54" [ref=e491]
+                - cell "4.86 T USD" [ref=e492]:
+                  - text: 4.86 T
+                  - generic [ref=e493]: USD
+                - cell "40.80" [ref=e494]
+                - cell "4.90 USD" [ref=e495]:
+                  - text: "4.90"
+                  - generic [ref=e496]: USD
+                - cell "+66.75%" [ref=e497]
+                - cell "0.02%" [ref=e498]
+                - cell "Electronic technology" [ref=e499]:
+                  - link "Electronic technology" [ref=e500] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/electronic-technology/
+                - cell "Strong buy" [ref=e501]:
+                  - generic [ref=e502]:
+                    - img [ref=e503]:
+                      - img [ref=e504]
+                    - text: Strong buy
+                - cell [ref=e506]
+              - row "GOOG Alphabet Inc. D 381.84 USD −0.03% 18.54 M 0.95 4.65 T USD 29.14 13.11 USD +46.15% 0.22% Technology services Strong buy" [ref=e507]:
+                - cell "GOOG Alphabet Inc. D" [ref=e508]:
+                  - generic [ref=e509]:
+                    - link "GOOG" [ref=e510] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-GOOG/
+                    - link "Alphabet Inc." [ref=e511] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-GOOG/
+                    - generic "Quotes are delayed by 15 min" [ref=e513]: D
+                - cell "381.84 USD" [ref=e514]:
+                  - text: "381.84"
+                  - generic [ref=e515]: USD
+                - cell "−0.03%" [ref=e516]
+                - cell "18.54 M" [ref=e517]
+                - cell "0.95" [ref=e518]
+                - cell "4.65 T USD" [ref=e519]:
+                  - text: 4.65 T
+                  - generic [ref=e520]: USD
+                - cell "29.14" [ref=e521]
+                - cell "13.11 USD" [ref=e522]:
+                  - text: "13.11"
+                  - generic [ref=e523]: USD
+                - cell "+46.15%" [ref=e524]
+                - cell "0.22%" [ref=e525]
+                - cell "Technology services" [ref=e526]:
+                  - link "Technology services" [ref=e527] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/technology-services/
+                - cell "Strong buy" [ref=e528]:
+                  - generic [ref=e529]:
+                    - img [ref=e530]:
+                      - img [ref=e531]
+                    - text: Strong buy
+                - cell [ref=e533]
+              - row "AAPL Apple Inc. D 281.85 USD +3.87% 56.03 M 1.20 4.14 T USD 34.09 8.27 USD +29.03% 0.38% Electronic technology Buy" [ref=e534]:
+                - cell "AAPL Apple Inc. D" [ref=e535]:
+                  - generic [ref=e536]:
+                    - link "AAPL" [ref=e537] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-AAPL/
+                    - link "Apple Inc." [ref=e538] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-AAPL/
+                    - generic "Quotes are delayed by 15 min" [ref=e540]: D
+                - cell "281.85 USD" [ref=e541]:
+                  - text: "281.85"
+                  - generic [ref=e542]: USD
+                - cell "+3.87%" [ref=e543]
+                - cell "56.03 M" [ref=e544]
+                - cell "1.20" [ref=e545]
+                - cell "4.14 T USD" [ref=e546]:
+                  - text: 4.14 T
+                  - generic [ref=e547]: USD
+                - cell "34.09" [ref=e548]
+                - cell "8.27 USD" [ref=e549]:
+                  - text: "8.27"
+                  - generic [ref=e550]: USD
+                - cell "+29.03%" [ref=e551]
+                - cell "0.38%" [ref=e552]
+                - cell "Electronic technology" [ref=e553]:
+                  - link "Electronic technology" [ref=e554] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/electronic-technology/
+                - cell "Buy" [ref=e555]:
+                  - generic [ref=e556]:
+                    - img [ref=e557]:
+                      - img [ref=e558]
+                    - text: Buy
+                - cell [ref=e560]
+              - row "MSFT Microsoft Corporation D 414.88 USD +1.74% 19.98 M 0.53 3.08 T USD 24.71 16.79 USD +29.75% 0.85% Technology services Strong buy" [ref=e561]:
+                - cell "MSFT Microsoft Corporation D" [ref=e562]:
+                  - generic [ref=e563]:
+                    - link "MSFT" [ref=e564] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-MSFT/
+                    - link "Microsoft Corporation" [ref=e565] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-MSFT/
+                    - generic "Quotes are delayed by 15 min" [ref=e567]: D
+                - cell "414.88 USD" [ref=e568]:
+                  - text: "414.88"
+                  - generic [ref=e569]: USD
+                - cell "+1.74%" [ref=e570]
+                - cell "19.98 M" [ref=e571]
+                - cell "0.53" [ref=e572]
+                - cell "3.08 T USD" [ref=e573]:
+                  - text: 3.08 T
+                  - generic [ref=e574]: USD
+                - cell "24.71" [ref=e575]
+                - cell "16.79 USD" [ref=e576]:
+                  - text: "16.79"
+                  - generic [ref=e577]: USD
+                - cell "+29.75%" [ref=e578]
+                - cell "0.85%" [ref=e579]
+                - cell "Technology services" [ref=e580]:
+                  - link "Technology services" [ref=e581] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/technology-services/
+                - cell "Strong buy" [ref=e582]:
+                  - generic [ref=e583]:
+                    - img [ref=e584]:
+                      - img [ref=e585]
+                    - text: Strong buy
+                - cell [ref=e587]
+              - row "AMZN Amazon.com, Inc. D 269.34 USD +1.61% 32.66 M 0.62 2.9 T USD 32.19 8.37 USD +36.48% 0.00% Retail trade Strong buy" [ref=e588]:
+                - cell "AMZN Amazon.com, Inc. D" [ref=e589]:
+                  - generic [ref=e590]:
+                    - link "AMZN" [ref=e591] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-AMZN/
+                    - link "Amazon.com, Inc." [ref=e592] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-AMZN/
+                    - generic "Quotes are delayed by 15 min" [ref=e594]: D
+                - cell "269.34 USD" [ref=e595]:
+                  - text: "269.34"
+                  - generic [ref=e596]: USD
+                - cell "+1.61%" [ref=e597]
+                - cell "32.66 M" [ref=e598]
+                - cell "0.62" [ref=e599]
+                - cell "2.9 T USD" [ref=e600]:
+                  - text: 2.9 T
+                  - generic [ref=e601]: USD
+                - cell "32.19" [ref=e602]
+                - cell "8.37 USD" [ref=e603]:
+                  - text: "8.37"
+                  - generic [ref=e604]: USD
+                - cell "+36.48%" [ref=e605]
+                - cell "0.00%" [ref=e606]
+                - cell "Retail trade" [ref=e607]:
+                  - link "Retail trade" [ref=e608] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/retail-trade/
+                - cell "Strong buy" [ref=e609]:
+                  - generic [ref=e610]:
+                    - img [ref=e611]:
+                      - img [ref=e612]
+                    - text: Strong buy
+                - cell [ref=e614]
+              - row "AVGO Broadcom Inc. D 422.19 USD +1.14% 6.17 M 0.31 2 T USD 82.36 5.13 USD +147.26% 0.59% Electronic technology Strong buy" [ref=e615]:
+                - cell "AVGO Broadcom Inc. D" [ref=e616]:
+                  - generic [ref=e617]:
+                    - link "AVGO" [ref=e618] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-AVGO/
+                    - link "Broadcom Inc." [ref=e619] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-AVGO/
+                    - generic "Quotes are delayed by 15 min" [ref=e621]: D
+                - cell "422.19 USD" [ref=e622]:
+                  - text: "422.19"
+                  - generic [ref=e623]: USD
+                - cell "+1.14%" [ref=e624]
+                - cell "6.17 M" [ref=e625]
+                - cell "0.31" [ref=e626]
+                - cell "2 T USD" [ref=e627]:
+                  - text: 2 T
+                  - generic [ref=e628]: USD
+                - cell "82.36" [ref=e629]
+                - cell "5.13 USD" [ref=e630]:
+                  - text: "5.13"
+                  - generic [ref=e631]: USD
+                - cell "+147.26%" [ref=e632]
+                - cell "0.59%" [ref=e633]
+                - cell "Electronic technology" [ref=e634]:
+                  - link "Electronic technology" [ref=e635] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/electronic-technology/
+                - cell "Strong buy" [ref=e636]:
+                  - generic [ref=e637]:
+                    - img [ref=e638]:
+                      - img [ref=e639]
+                    - text: Strong buy
+                - cell [ref=e641]
+              - row "META Meta Platforms, Inc. D 612.21 USD +0.05% 13.95 M 0.84 1.55 T USD 22.26 27.51 USD +7.29% 0.34% Technology services Strong buy" [ref=e642]:
+                - cell "META Meta Platforms, Inc. D" [ref=e643]:
+                  - generic [ref=e644]:
+                    - link "META" [ref=e645] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-META/
+                    - link "Meta Platforms, Inc." [ref=e646] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-META/
+                    - generic "Quotes are delayed by 15 min" [ref=e648]: D
+                - cell "612.21 USD" [ref=e649]:
+                  - text: "612.21"
+                  - generic [ref=e650]: USD
+                - cell "+0.05%" [ref=e651]
+                - cell "13.95 M" [ref=e652]
+                - cell "0.84" [ref=e653]
+                - cell "1.55 T USD" [ref=e654]:
+                  - text: 1.55 T
+                  - generic [ref=e655]: USD
+                - cell "22.26" [ref=e656]
+                - cell "27.51 USD" [ref=e657]:
+                  - text: "27.51"
+                  - generic [ref=e658]: USD
+                - cell "+7.29%" [ref=e659]
+                - cell "0.34%" [ref=e660]
+                - cell "Technology services" [ref=e661]:
+                  - link "Technology services" [ref=e662] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/technology-services/
+                - cell "Strong buy" [ref=e663]:
+                  - generic [ref=e664]:
+                    - img [ref=e665]:
+                      - img [ref=e666]
+                    - text: Strong buy
+                - cell [ref=e668]
+              - row "TSLA Tesla, Inc. D 396.87 USD +3.99% 46.24 M 0.72 1.49 T USD 362.57 1.09 USD −39.80% 0.00% Consumer durables Neutral" [ref=e669]:
+                - cell "TSLA Tesla, Inc. D" [ref=e670]:
+                  - generic [ref=e671]:
+                    - link "TSLA" [ref=e672] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-TSLA/
+                    - link "Tesla, Inc." [ref=e673] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-TSLA/
+                    - generic "Quotes are delayed by 15 min" [ref=e675]: D
+                - cell "396.87 USD" [ref=e676]:
+                  - text: "396.87"
+                  - generic [ref=e677]: USD
+                - cell "+3.99%" [ref=e678]
+                - cell "46.24 M" [ref=e679]
+                - cell "0.72" [ref=e680]
+                - cell "1.49 T USD" [ref=e681]:
+                  - text: 1.49 T
+                  - generic [ref=e682]: USD
+                - cell "362.57" [ref=e683]
+                - cell "1.09 USD" [ref=e684]:
+                  - text: "1.09"
+                  - generic [ref=e685]: USD
+                - cell "−39.80%" [ref=e686]
+                - cell "0.00%" [ref=e687]
+                - cell "Consumer durables" [ref=e688]:
+                  - link "Consumer durables" [ref=e689] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/consumer-durables/
+                - cell "Neutral" [ref=e690]:
+                  - generic [ref=e691]:
+                    - img [ref=e692]:
+                      - img [ref=e693]
+                    - text: Neutral
+                - cell [ref=e695]
+              - row "WMT Walmart Inc. D 131.71 USD −0.17% 5.61 M 0.31 1.05 T USD 48.25 2.73 USD +13.38% 0.72% Retail trade Strong buy" [ref=e696]:
+                - cell "WMT Walmart Inc. D" [ref=e697]:
+                  - generic [ref=e698]:
+                    - link "WMT" [ref=e699] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-WMT/
+                    - link "Walmart Inc." [ref=e700] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-WMT/
+                    - generic "Quotes are delayed by 15 min" [ref=e702]: D
+                - cell "131.71 USD" [ref=e703]:
+                  - text: "131.71"
+                  - generic [ref=e704]: USD
+                - cell "−0.17%" [ref=e705]
+                - cell "5.61 M" [ref=e706]
+                - cell "0.31" [ref=e707]
+                - cell "1.05 T USD" [ref=e708]:
+                  - text: 1.05 T
+                  - generic [ref=e709]: USD
+                - cell "48.25" [ref=e710]
+                - cell "2.73 USD" [ref=e711]:
+                  - text: "2.73"
+                  - generic [ref=e712]: USD
+                - cell "+13.38%" [ref=e713]
+                - cell "0.72%" [ref=e714]
+                - cell "Retail trade" [ref=e715]:
+                  - link "Retail trade" [ref=e716] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/retail-trade/
+                - cell "Strong buy" [ref=e717]:
+                  - generic [ref=e718]:
+                    - img [ref=e719]:
+                      - img [ref=e720]
+                    - text: Strong buy
+                - cell [ref=e722]
+              - row "BRK.A Berkshire Hathaway Inc. D 714,570.68 USD +0.38% 101 0.54 1.03 T USD 15.35 46,563.02 USD −24.79% 0.00% Finance Buy" [ref=e723]:
+                - cell "BRK.A Berkshire Hathaway Inc. D" [ref=e724]:
+                  - generic [ref=e725]:
+                    - link "BRK.A" [ref=e726] [cursor=pointer]:
+                      - /url: /symbols/NYSE-BRK.A/
+                    - link "Berkshire Hathaway Inc." [ref=e727] [cursor=pointer]:
+                      - /url: /symbols/NYSE-BRK.A/
+                    - generic "Quotes are delayed by 15 min" [ref=e729]: D
+                - cell "714,570.68 USD" [ref=e730]:
+                  - text: 714,570.68
+                  - generic [ref=e731]: USD
+                - cell "+0.38%" [ref=e732]
+                - cell "101" [ref=e733]
+                - cell "0.54" [ref=e734]
+                - cell "1.03 T USD" [ref=e735]:
+                  - text: 1.03 T
+                  - generic [ref=e736]: USD
+                - cell "15.35" [ref=e737]
+                - cell "46,563.02 USD" [ref=e738]:
+                  - text: 46,563.02
+                  - generic [ref=e739]: USD
+                - cell "−24.79%" [ref=e740]
+                - cell "0.00%" [ref=e741]
+                - cell "Finance" [ref=e742]:
+                  - link "Finance" [ref=e743] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/finance/
+                - cell "Buy" [ref=e744]:
+                  - generic [ref=e745]:
+                    - img [ref=e746]:
+                      - img [ref=e747]
+                    - text: Buy
+                - cell [ref=e749]
+              - row "LLY Eli Lilly and Company D 962.58 USD +2.99% 2.69 M 0.75 909.46 B USD 34.65 27.78 USD +130.14% 0.67% Health technology Strong buy" [ref=e750]:
+                - cell "LLY Eli Lilly and Company D" [ref=e751]:
+                  - generic [ref=e752]:
+                    - link "LLY" [ref=e753] [cursor=pointer]:
+                      - /url: /symbols/NYSE-LLY/
+                    - link "Eli Lilly and Company" [ref=e754] [cursor=pointer]:
+                      - /url: /symbols/NYSE-LLY/
+                    - generic "Quotes are delayed by 15 min" [ref=e756]: D
+                - cell "962.58 USD" [ref=e757]:
+                  - text: "962.58"
+                  - generic [ref=e758]: USD
+                - cell "+2.99%" [ref=e759]
+                - cell "2.69 M" [ref=e760]
+                - cell "0.75" [ref=e761]
+                - cell "909.46 B USD" [ref=e762]:
+                  - text: 909.46 B
+                  - generic [ref=e763]: USD
+                - cell "34.65" [ref=e764]
+                - cell "27.78 USD" [ref=e765]:
+                  - text: "27.78"
+                  - generic [ref=e766]: USD
+                - cell "+130.14%" [ref=e767]
+                - cell "0.67%" [ref=e768]
+                - cell "Health technology" [ref=e769]:
+                  - link "Health technology" [ref=e770] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/health-technology/
+                - cell "Strong buy" [ref=e771]:
+                  - generic [ref=e772]:
+                    - img [ref=e773]:
+                      - img [ref=e774]
+                    - text: Strong buy
+                - cell [ref=e776]
+              - row "JPM JP Morgan Chase & Co. D 314.51 USD +0.41% 2.52 M 0.32 848.24 B USD 15.06 20.88 USD +2.48% 1.88% Finance Buy" [ref=e777]:
+                - cell "JPM JP Morgan Chase & Co. D" [ref=e778]:
+                  - generic [ref=e779]:
+                    - link "JPM" [ref=e780] [cursor=pointer]:
+                      - /url: /symbols/NYSE-JPM/
+                    - link "JP Morgan Chase & Co." [ref=e781] [cursor=pointer]:
+                      - /url: /symbols/NYSE-JPM/
+                    - generic "Quotes are delayed by 15 min" [ref=e783]: D
+                - cell "314.51 USD" [ref=e784]:
+                  - text: "314.51"
+                  - generic [ref=e785]: USD
+                - cell "+0.41%" [ref=e786]
+                - cell "2.52 M" [ref=e787]
+                - cell "0.32" [ref=e788]
+                - cell "848.24 B USD" [ref=e789]:
+                  - text: 848.24 B
+                  - generic [ref=e790]: USD
+                - cell "15.06" [ref=e791]
+                - cell "20.88 USD" [ref=e792]:
+                  - text: "20.88"
+                  - generic [ref=e793]: USD
+                - cell "+2.48%" [ref=e794]
+                - cell "1.88%" [ref=e795]
+                - cell "Finance" [ref=e796]:
+                  - link "Finance" [ref=e797] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/finance/
+                - cell "Buy" [ref=e798]:
+                  - generic [ref=e799]:
+                    - img [ref=e800]:
+                      - img [ref=e801]
+                    - text: Buy
+                - cell [ref=e803]
+              - row "XOM Exxon Mobil Corporation D 152.26 USD −1.34% 9.44 M 0.56 632.88 B USD 22.74 6.69 USD −14.72% 2.62% Energy minerals Buy" [ref=e804]:
+                - cell "XOM Exxon Mobil Corporation D" [ref=e805]:
+                  - generic [ref=e806]:
+                    - link "XOM" [ref=e807] [cursor=pointer]:
+                      - /url: /symbols/NYSE-XOM/
+                    - link "Exxon Mobil Corporation" [ref=e808] [cursor=pointer]:
+                      - /url: /symbols/NYSE-XOM/
+                    - generic "Quotes are delayed by 15 min" [ref=e810]: D
+                - cell "152.26 USD" [ref=e811]:
+                  - text: "152.26"
+                  - generic [ref=e812]: USD
+                - cell "−1.34%" [ref=e813]
+                - cell "9.44 M" [ref=e814]
+                - cell "0.56" [ref=e815]
+                - cell "632.88 B USD" [ref=e816]:
+                  - text: 632.88 B
+                  - generic [ref=e817]: USD
+                - cell "22.74" [ref=e818]
+                - cell "6.69 USD" [ref=e819]:
+                  - text: "6.69"
+                  - generic [ref=e820]: USD
+                - cell "−14.72%" [ref=e821]
+                - cell "2.62%" [ref=e822]
+                - cell "Energy minerals" [ref=e823]:
+                  - link "Energy minerals" [ref=e824] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/energy-minerals/
+                - cell "Buy" [ref=e825]:
+                  - generic [ref=e826]:
+                    - img [ref=e827]:
+                      - img [ref=e828]
+                    - text: Buy
+                - cell [ref=e830]
+              - row "V Visa Inc. D 332.84 USD +0.91% 3.67 M 0.45 627.31 B USD 29.26 11.37 USD +15.70% 0.76% Finance Strong buy" [ref=e831]:
+                - cell "V Visa Inc. D" [ref=e832]:
+                  - generic [ref=e833]:
+                    - link "V" [ref=e834] [cursor=pointer]:
+                      - /url: /symbols/NYSE-V/
+                    - link "Visa Inc." [ref=e835] [cursor=pointer]:
+                      - /url: /symbols/NYSE-V/
+                    - generic "Quotes are delayed by 15 min" [ref=e837]: D
+                - cell "332.84 USD" [ref=e838]:
+                  - text: "332.84"
+                  - generic [ref=e839]: USD
+                - cell "+0.91%" [ref=e840]
+                - cell "3.67 M" [ref=e841]
+                - cell "0.45" [ref=e842]
+                - cell "627.31 B USD" [ref=e843]:
+                  - text: 627.31 B
+                  - generic [ref=e844]: USD
+                - cell "29.26" [ref=e845]
+                - cell "11.37 USD" [ref=e846]:
+                  - text: "11.37"
+                  - generic [ref=e847]: USD
+                - cell "+15.70%" [ref=e848]
+                - cell "0.76%" [ref=e849]
+                - cell "Finance" [ref=e850]:
+                  - link "Finance" [ref=e851] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/finance/
+                - cell "Strong buy" [ref=e852]:
+                  - generic [ref=e853]:
+                    - img [ref=e854]:
+                      - img [ref=e855]
+                    - text: Strong buy
+                - cell [ref=e857]
+              - row "MU Micron Technology, Inc. D 536.08 USD +3.66% 29.05 M 0.78 604.55 B USD 25.31 21.18 USD +409.12% 0.10% Electronic technology Strong buy" [ref=e858]:
+                - cell "MU Micron Technology, Inc. D" [ref=e859]:
+                  - generic [ref=e860]:
+                    - link "MU" [ref=e861] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-MU/
+                    - link "Micron Technology, Inc." [ref=e862] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-MU/
+                    - generic "Quotes are delayed by 15 min" [ref=e864]: D
+                - cell "536.08 USD" [ref=e865]:
+                  - text: "536.08"
+                  - generic [ref=e866]: USD
+                - cell "+3.66%" [ref=e867]
+                - cell "29.05 M" [ref=e868]
+                - cell "0.78" [ref=e869]
+                - cell "604.55 B USD" [ref=e870]:
+                  - text: 604.55 B
+                  - generic [ref=e871]: USD
+                - cell "25.31" [ref=e872]
+                - cell "21.18 USD" [ref=e873]:
+                  - text: "21.18"
+                  - generic [ref=e874]: USD
+                - cell "+409.12%" [ref=e875]
+                - cell "0.10%" [ref=e876]
+                - cell "Electronic technology" [ref=e877]:
+                  - link "Electronic technology" [ref=e878] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/electronic-technology/
+                - cell "Strong buy" [ref=e879]:
+                  - generic [ref=e880]:
+                    - img [ref=e881]:
+                      - img [ref=e882]
+                    - text: Strong buy
+                - cell [ref=e884]
+              - row "AMD Advanced Micro Devices, Inc. D 362.18 USD +2.17% 22.25 M 0.48 590.48 B USD 136.94 2.64 USD +163.64% 0.00% Electronic technology Buy" [ref=e885]:
+                - cell "AMD Advanced Micro Devices, Inc. D" [ref=e886]:
+                  - generic [ref=e887]:
+                    - link "AMD" [ref=e888] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-AMD/
+                    - link "Advanced Micro Devices, Inc." [ref=e889] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-AMD/
+                    - generic "Quotes are delayed by 15 min" [ref=e891]: D
+                - cell "362.18 USD" [ref=e892]:
+                  - text: "362.18"
+                  - generic [ref=e893]: USD
+                - cell "+2.17%" [ref=e894]
+                - cell "22.25 M" [ref=e895]
+                - cell "0.48" [ref=e896]
+                - cell "590.48 B USD" [ref=e897]:
+                  - text: 590.48 B
+                  - generic [ref=e898]: USD
+                - cell "136.94" [ref=e899]
+                - cell "2.64 USD" [ref=e900]:
+                  - text: "2.64"
+                  - generic [ref=e901]: USD
+                - cell "+163.64%" [ref=e902]
+                - cell "0.00%" [ref=e903]
+                - cell "Electronic technology" [ref=e904]:
+                  - link "Electronic technology" [ref=e905] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/electronic-technology/
+                - cell "Buy" [ref=e906]:
+                  - generic [ref=e907]:
+                    - img [ref=e908]:
+                      - img [ref=e909]
+                    - text: Buy
+                - cell [ref=e911]
+              - row "JNJ Johnson & Johnson D 228.15 USD −0.74% 3.3 M 0.41 549.19 B USD 26.38 8.65 USD −3.86% 2.26% Health technology Buy" [ref=e912]:
+                - cell "JNJ Johnson & Johnson D" [ref=e913]:
+                  - generic [ref=e914]:
+                    - link "JNJ" [ref=e915] [cursor=pointer]:
+                      - /url: /symbols/NYSE-JNJ/
+                    - link "Johnson & Johnson" [ref=e916] [cursor=pointer]:
+                      - /url: /symbols/NYSE-JNJ/
+                    - generic "Quotes are delayed by 15 min" [ref=e918]: D
+                - cell "228.15 USD" [ref=e919]:
+                  - text: "228.15"
+                  - generic [ref=e920]: USD
+                - cell "−0.74%" [ref=e921]
+                - cell "3.3 M" [ref=e922]
+                - cell "0.41" [ref=e923]
+                - cell "549.19 B USD" [ref=e924]:
+                  - text: 549.19 B
+                  - generic [ref=e925]: USD
+                - cell "26.38" [ref=e926]
+                - cell "8.65 USD" [ref=e927]:
+                  - text: "8.65"
+                  - generic [ref=e928]: USD
+                - cell "−3.86%" [ref=e929]
+                - cell "2.26%" [ref=e930]
+                - cell "Health technology" [ref=e931]:
+                  - link "Health technology" [ref=e932] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/health-technology/
+                - cell "Buy" [ref=e933]:
+                  - generic [ref=e934]:
+                    - img [ref=e935]:
+                      - img [ref=e936]
+                    - text: Buy
+                - cell [ref=e938]
+              - row "ORCL Oracle Corporation D 173.57 USD +7.55% 18.85 M 0.61 499.2 B USD 31.16 5.57 USD +30.86% 1.24% Technology services Buy" [ref=e939]:
+                - cell "ORCL Oracle Corporation D" [ref=e940]:
+                  - generic [ref=e941]:
+                    - img [ref=e3185]
+                    - link "ORCL" [ref=e942] [cursor=pointer]:
+                      - /url: /symbols/NYSE-ORCL/
+                    - link "Oracle Corporation" [ref=e943] [cursor=pointer]:
+                      - /url: /symbols/NYSE-ORCL/
+                    - generic "Quotes are delayed by 15 min" [ref=e945]: D
+                - cell "173.57 USD" [ref=e946]:
+                  - text: "173.57"
+                  - generic [ref=e947]: USD
+                - cell "+7.55%" [ref=e948]
+                - cell "18.85 M" [ref=e949]
+                - cell "0.61" [ref=e950]
+                - cell "499.2 B USD" [ref=e951]:
+                  - text: 499.2 B
+                  - generic [ref=e952]: USD
+                - cell "31.16" [ref=e953]
+                - cell "5.57 USD" [ref=e954]:
+                  - text: "5.57"
+                  - generic [ref=e955]: USD
+                - cell "+30.86%" [ref=e956]
+                - cell "1.24%" [ref=e957]
+                - cell "Technology services" [ref=e958]:
+                  - link "Technology services" [ref=e959] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/technology-services/
+                - cell "Buy" [ref=e960]:
+                  - generic [ref=e961]:
+                    - img [ref=e962]:
+                      - img [ref=e963]
+                    - text: Buy
+                - cell [ref=e965]
+              - row "INTC Intel Corporation D 98.81 USD +4.58% 118.29 M 0.76 496.62 B USD — −0.63 USD +86.00% 0.00% Electronic technology Neutral" [ref=e966]:
+                - cell "INTC Intel Corporation D" [ref=e967]:
+                  - generic [ref=e968]:
+                    - link "INTC" [ref=e969] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-INTC/
+                    - link "Intel Corporation" [ref=e970] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-INTC/
+                    - generic "Quotes are delayed by 15 min" [ref=e972]: D
+                - cell "98.81 USD" [ref=e973]:
+                  - text: "98.81"
+                  - generic [ref=e974]: USD
+                - cell "+4.58%" [ref=e975]
+                - cell "118.29 M" [ref=e976]
+                - cell "0.76" [ref=e977]
+                - cell "496.62 B USD" [ref=e978]:
+                  - text: 496.62 B
+                  - generic [ref=e979]: USD
+                - cell "—" [ref=e980]
+                - cell "−0.63 USD" [ref=e981]:
+                  - text: −0.63
+                  - generic [ref=e982]: USD
+                - cell "+86.00%" [ref=e983]
+                - cell "0.00%" [ref=e984]
+                - cell "Electronic technology" [ref=e985]:
+                  - link "Electronic technology" [ref=e986] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/electronic-technology/
+                - cell "Neutral" [ref=e987]:
+                  - generic [ref=e988]:
+                    - img [ref=e989]:
+                      - img [ref=e990]
+                    - text: Neutral
+                - cell [ref=e992]
+              - row "COST Costco Wholesale Corporation D 1,014.71 USD +0.02% 673.88 K 0.41 450.18 B USD 52.77 19.23 USD +12.25% 0.51% Retail trade Buy" [ref=e993]:
+                - cell "COST Costco Wholesale Corporation D" [ref=e994]:
+                  - generic [ref=e995]:
+                    - link "COST" [ref=e996] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-COST/
+                    - link "Costco Wholesale Corporation" [ref=e997] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-COST/
+                    - generic "Quotes are delayed by 15 min" [ref=e999]: D
+                - cell "1,014.71 USD" [ref=e1000]:
+                  - text: 1,014.71
+                  - generic [ref=e1001]: USD
+                - cell "+0.02%" [ref=e1002]
+                - cell "673.88 K" [ref=e1003]
+                - cell "0.41" [ref=e1004]
+                - cell "450.18 B USD" [ref=e1005]:
+                  - text: 450.18 B
+                  - generic [ref=e1006]: USD
+                - cell "52.77" [ref=e1007]
+                - cell "19.23 USD" [ref=e1008]:
+                  - text: "19.23"
+                  - generic [ref=e1009]: USD
+                - cell "+12.25%" [ref=e1010]
+                - cell "0.51%" [ref=e1011]
+                - cell "Retail trade" [ref=e1012]:
+                  - link "Retail trade" [ref=e1013] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/retail-trade/
+                - cell "Buy" [ref=e1014]:
+                  - generic [ref=e1015]:
+                    - img [ref=e1016]:
+                      - img [ref=e1017]
+                    - text: Buy
+                - cell [ref=e1019]
+              - row "MA Mastercard Incorporated D 497.71 USD −1.04% 2.18 M 0.62 443.86 B USD 28.80 17.28 USD +21.21% 0.65% Finance Strong buy" [ref=e1020]:
+                - cell "MA Mastercard Incorporated D" [ref=e1021]:
+                  - generic [ref=e1022]:
+                    - link "MA" [ref=e1023] [cursor=pointer]:
+                      - /url: /symbols/NYSE-MA/
+                    - link "Mastercard Incorporated" [ref=e1024] [cursor=pointer]:
+                      - /url: /symbols/NYSE-MA/
+                    - generic "Quotes are delayed by 15 min" [ref=e1026]: D
+                - cell "497.71 USD" [ref=e1027]:
+                  - text: "497.71"
+                  - generic [ref=e1028]: USD
+                - cell "−1.04%" [ref=e1029]
+                - cell "2.18 M" [ref=e1030]
+                - cell "0.62" [ref=e1031]
+                - cell "443.86 B USD" [ref=e1032]:
+                  - text: 443.86 B
+                  - generic [ref=e1033]: USD
+                - cell "28.80" [ref=e1034]
+                - cell "17.28 USD" [ref=e1035]:
+                  - text: "17.28"
+                  - generic [ref=e1036]: USD
+                - cell "+21.21%" [ref=e1037]
+                - cell "0.65%" [ref=e1038]
+                - cell "Finance" [ref=e1039]:
+                  - link "Finance" [ref=e1040] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/finance/
+                - cell "Strong buy" [ref=e1041]:
+                  - generic [ref=e1042]:
+                    - img [ref=e1043]:
+                      - img [ref=e1044]
+                    - text: Strong buy
+                - cell [ref=e1046]
+              - row "CAT Caterpillar, Inc. D 892.01 USD +0.21% 1.47 M 0.60 415.04 B USD 44.38 20.10 USD −2.06% 0.68% Producer manufacturing Buy" [ref=e1047]:
+                - cell "CAT Caterpillar, Inc. D" [ref=e1048]:
+                  - generic [ref=e1049]:
+                    - link "CAT" [ref=e1050] [cursor=pointer]:
+                      - /url: /symbols/NYSE-CAT/
+                    - link "Caterpillar, Inc." [ref=e1051] [cursor=pointer]:
+                      - /url: /symbols/NYSE-CAT/
+                    - generic "Quotes are delayed by 15 min" [ref=e1053]: D
+                - cell "892.01 USD" [ref=e1054]:
+                  - text: "892.01"
+                  - generic [ref=e1055]: USD
+                - cell "+0.21%" [ref=e1056]
+                - cell "1.47 M" [ref=e1057]
+                - cell "0.60" [ref=e1058]
+                - cell "415.04 B USD" [ref=e1059]:
+                  - text: 415.04 B
+                  - generic [ref=e1060]: USD
+                - cell "44.38" [ref=e1061]
+                - cell "20.10 USD" [ref=e1062]:
+                  - text: "20.10"
+                  - generic [ref=e1063]: USD
+                - cell "−2.06%" [ref=e1064]
+                - cell "0.68%" [ref=e1065]
+                - cell "Producer manufacturing" [ref=e1066]:
+                  - link "Producer manufacturing" [ref=e1067] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/producer-manufacturing/
+                - cell "Buy" [ref=e1068]:
+                  - generic [ref=e1069]:
+                    - img [ref=e1070]:
+                      - img [ref=e1071]
+                    - text: Buy
+                - cell [ref=e1073]
+              - row "NFLX Netflix, Inc. D 92.59 USD −1.09% 14.69 M 0.30 389.88 B USD 29.92 3.09 USD +46.24% 0.00% Technology services Buy" [ref=e1074]:
+                - cell "NFLX Netflix, Inc. D" [ref=e1075]:
+                  - generic [ref=e1076]:
+                    - link "NFLX" [ref=e1077] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-NFLX/
+                    - link "Netflix, Inc." [ref=e1078] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-NFLX/
+                    - generic "Quotes are delayed by 15 min" [ref=e1080]: D
+                - cell "92.59 USD" [ref=e1081]:
+                  - text: "92.59"
+                  - generic [ref=e1082]: USD
+                - cell "−1.09%" [ref=e1083]
+                - cell "14.69 M" [ref=e1084]
+                - cell "0.30" [ref=e1085]
+                - cell "389.88 B USD" [ref=e1086]:
+                  - text: 389.88 B
+                  - generic [ref=e1087]: USD
+                - cell "29.92" [ref=e1088]
+                - cell "3.09 USD" [ref=e1089]:
+                  - text: "3.09"
+                  - generic [ref=e1090]: USD
+                - cell "+46.24%" [ref=e1091]
+                - cell "0.00%" [ref=e1092]
+                - cell "Technology services" [ref=e1093]:
+                  - link "Technology services" [ref=e1094] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/technology-services/
+                - cell "Buy" [ref=e1095]:
+                  - generic [ref=e1096]:
+                    - img [ref=e1097]:
+                      - img [ref=e1098]
+                    - text: Buy
+                - cell [ref=e1100]
+              - row "BAC Bank of America Corporation D 53.59 USD +0.24% 12.77 M 0.41 384.6 B USD 13.29 4.03 USD +20.41% 2.06% Finance Strong buy" [ref=e1101]:
+                - cell "BAC Bank of America Corporation D" [ref=e1102]:
+                  - generic [ref=e1103]:
+                    - link "BAC" [ref=e1104] [cursor=pointer]:
+                      - /url: /symbols/NYSE-BAC/
+                    - link "Bank of America Corporation" [ref=e1105] [cursor=pointer]:
+                      - /url: /symbols/NYSE-BAC/
+                    - generic "Quotes are delayed by 15 min" [ref=e1107]: D
+                - cell "53.59 USD" [ref=e1108]:
+                  - text: "53.59"
+                  - generic [ref=e1109]: USD
+                - cell "+0.24%" [ref=e1110]
+                - cell "12.77 M" [ref=e1111]
+                - cell "0.41" [ref=e1112]
+                - cell "384.6 B USD" [ref=e1113]:
+                  - text: 384.6 B
+                  - generic [ref=e1114]: USD
+                - cell "13.29" [ref=e1115]
+                - cell "4.03 USD" [ref=e1116]:
+                  - text: "4.03"
+                  - generic [ref=e1117]: USD
+                - cell "+20.41%" [ref=e1118]
+                - cell "2.06%" [ref=e1119]
+                - cell "Finance" [ref=e1120]:
+                  - link "Finance" [ref=e1121] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/finance/
+                - cell "Strong buy" [ref=e1122]:
+                  - generic [ref=e1123]:
+                    - img [ref=e1124]:
+                      - img [ref=e1125]
+                    - text: Strong buy
+                - cell [ref=e1127]
+              - row "CVX Chevron Corporation D 190.50 USD −1.45% 6.34 M 0.62 380.12 B USD 28.66 6.65 USD −31.46% 3.57% Energy minerals Buy" [ref=e1128]:
+                - cell "CVX Chevron Corporation D" [ref=e1129]:
+                  - generic [ref=e1130]:
+                    - link "CVX" [ref=e1131] [cursor=pointer]:
+                      - /url: /symbols/NYSE-CVX/
+                    - link "Chevron Corporation" [ref=e1132] [cursor=pointer]:
+                      - /url: /symbols/NYSE-CVX/
+                    - generic "Quotes are delayed by 15 min" [ref=e1134]: D
+                - cell "190.50 USD" [ref=e1135]:
+                  - text: "190.50"
+                  - generic [ref=e1136]: USD
+                - cell "−1.45%" [ref=e1137]
+                - cell "6.34 M" [ref=e1138]
+                - cell "0.62" [ref=e1139]
+                - cell "380.12 B USD" [ref=e1140]:
+                  - text: 380.12 B
+                  - generic [ref=e1141]: USD
+                - cell "28.66" [ref=e1142]
+                - cell "6.65 USD" [ref=e1143]:
+                  - text: "6.65"
+                  - generic [ref=e1144]: USD
+                - cell "−31.46%" [ref=e1145]
+                - cell "3.57%" [ref=e1146]
+                - cell "Energy minerals" [ref=e1147]:
+                  - link "Energy minerals" [ref=e1148] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/energy-minerals/
+                - cell "Buy" [ref=e1149]:
+                  - generic [ref=e1150]:
+                    - img [ref=e1151]:
+                      - img [ref=e1152]
+                    - text: Buy
+                - cell [ref=e1154]
+              - row "ABBV AbbVie Inc. D 207.80 USD −1.67% 2.98 M 0.37 367.55 B USD 102.21 2.03 USD −13.31% 3.19% Health technology Buy" [ref=e1155]:
+                - cell "ABBV AbbVie Inc. D" [ref=e1156]:
+                  - generic [ref=e1157]:
+                    - link "ABBV" [ref=e1158] [cursor=pointer]:
+                      - /url: /symbols/NYSE-ABBV/
+                    - link "AbbVie Inc." [ref=e1159] [cursor=pointer]:
+                      - /url: /symbols/NYSE-ABBV/
+                    - generic "Quotes are delayed by 15 min" [ref=e1161]: D
+                - cell "207.80 USD" [ref=e1162]:
+                  - text: "207.80"
+                  - generic [ref=e1163]: USD
+                - cell "−1.67%" [ref=e1164]
+                - cell "2.98 M" [ref=e1165]
+                - cell "0.37" [ref=e1166]
+                - cell "367.55 B USD" [ref=e1167]:
+                  - text: 367.55 B
+                  - generic [ref=e1168]: USD
+                - cell "102.21" [ref=e1169]
+                - cell "2.03 USD" [ref=e1170]:
+                  - text: "2.03"
+                  - generic [ref=e1171]: USD
+                - cell "−13.31%" [ref=e1172]
+                - cell "3.19%" [ref=e1173]
+                - cell "Health technology" [ref=e1174]:
+                  - link "Health technology" [ref=e1175] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/health-technology/
+                - cell "Buy" [ref=e1176]:
+                  - generic [ref=e1177]:
+                    - img [ref=e1178]:
+                      - img [ref=e1179]
+                    - text: Buy
+                - cell [ref=e1181]
+              - row "CSCO Cisco Systems, Inc. D 92.24 USD +0.81% 6.12 M 0.34 364.34 B USD 32.45 2.84 USD +24.57% 1.80% Electronic technology Buy" [ref=e1182]:
+                - cell "CSCO Cisco Systems, Inc. D" [ref=e1183]:
+                  - generic [ref=e1184]:
+                    - link "CSCO" [ref=e1185] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-CSCO/
+                    - link "Cisco Systems, Inc." [ref=e1186] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-CSCO/
+                    - generic "Quotes are delayed by 15 min" [ref=e1188]: D
+                - cell "92.24 USD" [ref=e1189]:
+                  - text: "92.24"
+                  - generic [ref=e1190]: USD
+                - cell "+0.81%" [ref=e1191]
+                - cell "6.12 M" [ref=e1192]
+                - cell "0.34" [ref=e1193]
+                - cell "364.34 B USD" [ref=e1194]:
+                  - text: 364.34 B
+                  - generic [ref=e1195]: USD
+                - cell "32.45" [ref=e1196]
+                - cell "2.84 USD" [ref=e1197]:
+                  - text: "2.84"
+                  - generic [ref=e1198]: USD
+                - cell "+24.57%" [ref=e1199]
+                - cell "1.80%" [ref=e1200]
+                - cell "Electronic technology" [ref=e1201]:
+                  - link "Electronic technology" [ref=e1202] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/electronic-technology/
+                - cell "Buy" [ref=e1203]:
+                  - generic [ref=e1204]:
+                    - img [ref=e1205]:
+                      - img [ref=e1206]
+                    - text: Buy
+                - cell [ref=e1208]
+              - row "PLTR Palantir Technologies Inc. D 145.10 USD +4.31% 22.34 M 0.57 347.03 B USD 229.30 0.63 USD +234.64% 0.00% Technology services Buy" [ref=e1209]:
+                - cell "PLTR Palantir Technologies Inc. D" [ref=e1210]:
+                  - generic [ref=e1211]:
+                    - link "PLTR" [ref=e1212] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-PLTR/
+                    - link "Palantir Technologies Inc." [ref=e1213] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-PLTR/
+                    - generic "Quotes are delayed by 15 min" [ref=e1215]: D
+                - cell "145.10 USD" [ref=e1216]:
+                  - text: "145.10"
+                  - generic [ref=e1217]: USD
+                - cell "+4.31%" [ref=e1218]
+                - cell "22.34 M" [ref=e1219]
+                - cell "0.57" [ref=e1220]
+                - cell "347.03 B USD" [ref=e1221]:
+                  - text: 347.03 B
+                  - generic [ref=e1222]: USD
+                - cell "229.30" [ref=e1223]
+                - cell "0.63 USD" [ref=e1224]:
+                  - text: "0.63"
+                  - generic [ref=e1225]: USD
+                - cell "+234.64%" [ref=e1226]
+                - cell "0.00%" [ref=e1227]
+                - cell "Technology services" [ref=e1228]:
+                  - link "Technology services" [ref=e1229] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/technology-services/
+                - cell "Buy" [ref=e1230]:
+                  - generic [ref=e1231]:
+                    - img [ref=e1232]:
+                      - img [ref=e1233]
+                    - text: Buy
+                - cell [ref=e1235]
+              - row "PG Procter & Gamble Company (The) D 147.29 USD +0.14% 3.33 M 0.34 342.98 B USD 21.54 6.84 USD +8.59% 2.90% Consumer non-durables Buy" [ref=e1236]:
+                - cell "PG Procter & Gamble Company (The) D" [ref=e1237]:
+                  - generic [ref=e1238]:
+                    - link "PG" [ref=e1239] [cursor=pointer]:
+                      - /url: /symbols/NYSE-PG/
+                    - link "Procter & Gamble Company (The)" [ref=e1240] [cursor=pointer]:
+                      - /url: /symbols/NYSE-PG/
+                    - generic "Quotes are delayed by 15 min" [ref=e1242]: D
+                - cell "147.29 USD" [ref=e1243]:
+                  - text: "147.29"
+                  - generic [ref=e1244]: USD
+                - cell "+0.14%" [ref=e1245]
+                - cell "3.33 M" [ref=e1246]
+                - cell "0.34" [ref=e1247]
+                - cell "342.98 B USD" [ref=e1248]:
+                  - text: 342.98 B
+                  - generic [ref=e1249]: USD
+                - cell "21.54" [ref=e1250]
+                - cell "6.84 USD" [ref=e1251]:
+                  - text: "6.84"
+                  - generic [ref=e1252]: USD
+                - cell "+8.59%" [ref=e1253]
+                - cell "2.90%" [ref=e1254]
+                - cell "Consumer non-durables" [ref=e1255]:
+                  - link "Consumer non-durables" [ref=e1256] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/consumer-non-durables/
+                - cell "Buy" [ref=e1257]:
+                  - generic [ref=e1258]:
+                    - img [ref=e1259]:
+                      - img [ref=e1260]
+                    - text: Buy
+                - cell [ref=e1262]
+              - row "KO Coca-Cola Company (The) D 78.36 USD −0.51% 5.32 M 0.35 337.25 B USD 24.67 3.18 USD +27.17% 2.62% Consumer non-durables Buy" [ref=e1263]:
+                - cell "KO Coca-Cola Company (The) D" [ref=e1264]:
+                  - generic [ref=e1265]:
+                    - link "KO" [ref=e1266] [cursor=pointer]:
+                      - /url: /symbols/NYSE-KO/
+                    - link "Coca-Cola Company (The)" [ref=e1267] [cursor=pointer]:
+                      - /url: /symbols/NYSE-KO/
+                    - generic "Quotes are delayed by 15 min" [ref=e1269]: D
+                - cell "78.36 USD" [ref=e1270]:
+                  - text: "78.36"
+                  - generic [ref=e1271]: USD
+                - cell "−0.51%" [ref=e1272]
+                - cell "5.32 M" [ref=e1273]
+                - cell "0.35" [ref=e1274]
+                - cell "337.25 B USD" [ref=e1275]:
+                  - text: 337.25 B
+                  - generic [ref=e1276]: USD
+                - cell "24.67" [ref=e1277]
+                - cell "3.18 USD" [ref=e1278]:
+                  - text: "3.18"
+                  - generic [ref=e1279]: USD
+                - cell "+27.17%" [ref=e1280]
+                - cell "2.62%" [ref=e1281]
+                - cell "Consumer non-durables" [ref=e1282]:
+                  - link "Consumer non-durables" [ref=e1283] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/consumer-non-durables/
+                - cell "Buy" [ref=e1284]:
+                  - generic [ref=e1285]:
+                    - img [ref=e1286]:
+                      - img [ref=e1287]
+                    - text: Buy
+                - cell [ref=e1289]
+              - row "UNH UnitedHealth Group Incorporated D 370.12 USD −0.10% 2.84 M 0.27 335.95 B USD 27.95 13.24 USD −44.65% 2.39% Health services Buy" [ref=e1290]:
+                - cell "UNH UnitedHealth Group Incorporated D" [ref=e1291]:
+                  - generic [ref=e1292]:
+                    - link "UNH" [ref=e1293] [cursor=pointer]:
+                      - /url: /symbols/NYSE-UNH/
+                    - link "UnitedHealth Group Incorporated" [ref=e1294] [cursor=pointer]:
+                      - /url: /symbols/NYSE-UNH/
+                    - generic "Quotes are delayed by 15 min" [ref=e1296]: D
+                - cell "370.12 USD" [ref=e1297]:
+                  - text: "370.12"
+                  - generic [ref=e1298]: USD
+                - cell "−0.10%" [ref=e1299]
+                - cell "2.84 M" [ref=e1300]
+                - cell "0.27" [ref=e1301]
+                - cell "335.95 B USD" [ref=e1302]:
+                  - text: 335.95 B
+                  - generic [ref=e1303]: USD
+                - cell "27.95" [ref=e1304]
+                - cell "13.24 USD" [ref=e1305]:
+                  - text: "13.24"
+                  - generic [ref=e1306]: USD
+                - cell "−44.65%" [ref=e1307]
+                - cell "2.39%" [ref=e1308]
+                - cell "Health services" [ref=e1309]:
+                  - link "Health services" [ref=e1310] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/health-services/
+                - cell "Buy" [ref=e1311]:
+                  - generic [ref=e1312]:
+                    - img [ref=e1313]:
+                      - img [ref=e1314]
+                    - text: Buy
+                - cell [ref=e1316]
+              - row "HD Home Depot, Inc. (The) D 324.94 USD −1.17% 1.49 M 0.41 323.65 B USD 22.83 14.24 USD −4.56% 2.81% Retail trade Buy" [ref=e1317]:
+                - cell "HD Home Depot, Inc. (The) D" [ref=e1318]:
+                  - generic [ref=e1319]:
+                    - link "HD" [ref=e1320] [cursor=pointer]:
+                      - /url: /symbols/NYSE-HD/
+                    - link "Home Depot, Inc. (The)" [ref=e1321] [cursor=pointer]:
+                      - /url: /symbols/NYSE-HD/
+                    - generic "Quotes are delayed by 15 min" [ref=e1323]: D
+                - cell "324.94 USD" [ref=e1324]:
+                  - text: "324.94"
+                  - generic [ref=e1325]: USD
+                - cell "−1.17%" [ref=e1326]
+                - cell "1.49 M" [ref=e1327]
+                - cell "0.41" [ref=e1328]
+                - cell "323.65 B USD" [ref=e1329]:
+                  - text: 323.65 B
+                  - generic [ref=e1330]: USD
+                - cell "22.83" [ref=e1331]
+                - cell "14.24 USD" [ref=e1332]:
+                  - text: "14.24"
+                  - generic [ref=e1333]: USD
+                - cell "−4.56%" [ref=e1334]
+                - cell "2.81%" [ref=e1335]
+                - cell "Retail trade" [ref=e1336]:
+                  - link "Retail trade" [ref=e1337] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/retail-trade/
+                - cell "Buy" [ref=e1338]:
+                  - generic [ref=e1339]:
+                    - img [ref=e1340]:
+                      - img [ref=e1341]
+                    - text: Buy
+                - cell [ref=e1343]
+              - row "LRCX Lam Research Corporation D 257.79 USD −0.03% 3.12 M 0.32 322.38 B USD 48.66 5.30 USD +47.60% 0.39% Producer manufacturing Buy" [ref=e1344]:
+                - cell "LRCX Lam Research Corporation D" [ref=e1345]:
+                  - generic [ref=e1346]:
+                    - link "LRCX" [ref=e1347] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-LRCX/
+                    - link "Lam Research Corporation" [ref=e1348] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-LRCX/
+                    - generic "Quotes are delayed by 15 min" [ref=e1350]: D
+                - cell "257.79 USD" [ref=e1351]:
+                  - text: "257.79"
+                  - generic [ref=e1352]: USD
+                - cell "−0.03%" [ref=e1353]
+                - cell "3.12 M" [ref=e1354]
+                - cell "0.32" [ref=e1355]
+                - cell "322.38 B USD" [ref=e1356]:
+                  - text: 322.38 B
+                  - generic [ref=e1357]: USD
+                - cell "48.66" [ref=e1358]
+                - cell "5.30 USD" [ref=e1359]:
+                  - text: "5.30"
+                  - generic [ref=e1360]: USD
+                - cell "+47.60%" [ref=e1361]
+                - cell "0.39%" [ref=e1362]
+                - cell "Producer manufacturing" [ref=e1363]:
+                  - link "Producer manufacturing" [ref=e1364] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/producer-manufacturing/
+                - cell "Buy" [ref=e1365]:
+                  - generic [ref=e1366]:
+                    - img [ref=e1367]:
+                      - img [ref=e1368]
+                    - text: Buy
+                - cell [ref=e1370]
+              - row "AMAT Applied Materials, Inc. D 391.47 USD −0.77% 1.92 M 0.32 310.67 B USD 40.10 9.76 USD +27.72% 0.47% Producer manufacturing Strong buy" [ref=e1371]:
+                - cell "AMAT Applied Materials, Inc. D" [ref=e1372]:
+                  - generic [ref=e1373]:
+                    - link "AMAT" [ref=e1374] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-AMAT/
+                    - link "Applied Materials, Inc." [ref=e1375] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-AMAT/
+                    - generic "Quotes are delayed by 15 min" [ref=e1377]: D
+                - cell "391.47 USD" [ref=e1378]:
+                  - text: "391.47"
+                  - generic [ref=e1379]: USD
+                - cell "−0.77%" [ref=e1380]
+                - cell "1.92 M" [ref=e1381]
+                - cell "0.32" [ref=e1382]
+                - cell "310.67 B USD" [ref=e1383]:
+                  - text: 310.67 B
+                  - generic [ref=e1384]: USD
+                - cell "40.10" [ref=e1385]
+                - cell "9.76 USD" [ref=e1386]:
+                  - text: "9.76"
+                  - generic [ref=e1387]: USD
+                - cell "+27.72%" [ref=e1388]
+                - cell "0.47%" [ref=e1389]
+                - cell "Producer manufacturing" [ref=e1390]:
+                  - link "Producer manufacturing" [ref=e1391] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/producer-manufacturing/
+                - cell "Strong buy" [ref=e1392]:
+                  - generic [ref=e1393]:
+                    - img [ref=e1394]:
+                      - img [ref=e1395]
+                    - text: Strong buy
+                - cell [ref=e1397]
+              - row "BABA Alibaba Group Holding Limited D DR 131.99 USD +0.08% 4.52 M 0.52 308.62 B USD 24.54 5.38 USD −22.28% 0.78% Retail trade Strong buy" [ref=e1398]:
+                - cell "BABA Alibaba Group Holding Limited D DR" [ref=e1399]:
+                  - generic [ref=e1400]:
+                    - link "BABA" [ref=e1401] [cursor=pointer]:
+                      - /url: /symbols/NYSE-BABA/
+                    - link "Alibaba Group Holding Limited" [ref=e1402] [cursor=pointer]:
+                      - /url: /symbols/NYSE-BABA/
+                    - generic [ref=e1403]:
+                      - generic "Quotes are delayed by 15 min" [ref=e1404]: D
+                      - generic "Depositary Receipt" [ref=e1405]: DR
+                - cell "131.99 USD" [ref=e1406]:
+                  - text: "131.99"
+                  - generic [ref=e1407]: USD
+                - cell "+0.08%" [ref=e1408]
+                - cell "4.52 M" [ref=e1409]
+                - cell "0.52" [ref=e1410]
+                - cell "308.62 B USD" [ref=e1411]:
+                  - text: 308.62 B
+                  - generic [ref=e1412]: USD
+                - cell "24.54" [ref=e1413]
+                - cell "5.38 USD" [ref=e1414]:
+                  - text: "5.38"
+                  - generic [ref=e1415]: USD
+                - cell "−22.28%" [ref=e1416]
+                - cell "0.78%" [ref=e1417]
+                - cell "Retail trade" [ref=e1418]:
+                  - link "Retail trade" [ref=e1419] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/retail-trade/
+                - cell "Strong buy" [ref=e1420]:
+                  - generic [ref=e1421]:
+                    - img [ref=e1422]:
+                      - img [ref=e1423]
+                    - text: Strong buy
+                - cell [ref=e1425]
+              - row "MS Morgan Stanley D 191.34 USD +0.39% 2.15 M 0.44 302.58 B USD 17.33 11.04 USD +29.51% 2.10% Finance Buy" [ref=e1426]:
+                - cell "MS Morgan Stanley D" [ref=e1427]:
+                  - generic [ref=e1428]:
+                    - link "MS" [ref=e1429] [cursor=pointer]:
+                      - /url: /symbols/NYSE-MS/
+                    - link "Morgan Stanley" [ref=e1430] [cursor=pointer]:
+                      - /url: /symbols/NYSE-MS/
+                    - generic "Quotes are delayed by 15 min" [ref=e1432]: D
+                - cell "191.34 USD" [ref=e1433]:
+                  - text: "191.34"
+                  - generic [ref=e1434]: USD
+                - cell "+0.39%" [ref=e1435]
+                - cell "2.15 M" [ref=e1436]
+                - cell "0.44" [ref=e1437]
+                - cell "302.58 B USD" [ref=e1438]:
+                  - text: 302.58 B
+                  - generic [ref=e1439]: USD
+                - cell "17.33" [ref=e1440]
+                - cell "11.04 USD" [ref=e1441]:
+                  - text: "11.04"
+                  - generic [ref=e1442]: USD
+                - cell "+29.51%" [ref=e1443]
+                - cell "2.10%" [ref=e1444]
+                - cell "Finance" [ref=e1445]:
+                  - link "Finance" [ref=e1446] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/finance/
+                - cell "Buy" [ref=e1447]:
+                  - generic [ref=e1448]:
+                    - img [ref=e1449]:
+                      - img [ref=e1450]
+                    - text: Buy
+                - cell [ref=e1452]
+              - row "GE GE Aerospace D 288.31 USD −0.56% 1.96 M 0.22 300.8 B USD 35.53 8.11 USD +26.53% 0.53% Electronic technology Buy" [ref=e1453]:
+                - cell "GE GE Aerospace D" [ref=e1454]:
+                  - generic [ref=e1455]:
+                    - link "GE" [ref=e1456] [cursor=pointer]:
+                      - /url: /symbols/NYSE-GE/
+                    - link "GE Aerospace" [ref=e1457] [cursor=pointer]:
+                      - /url: /symbols/NYSE-GE/
+                    - generic "Quotes are delayed by 15 min" [ref=e1459]: D
+                - cell "288.31 USD" [ref=e1460]:
+                  - text: "288.31"
+                  - generic [ref=e1461]: USD
+                - cell "−0.56%" [ref=e1462]
+                - cell "1.96 M" [ref=e1463]
+                - cell "0.22" [ref=e1464]
+                - cell "300.8 B USD" [ref=e1465]:
+                  - text: 300.8 B
+                  - generic [ref=e1466]: USD
+                - cell "35.53" [ref=e1467]
+                - cell "8.11 USD" [ref=e1468]:
+                  - text: "8.11"
+                  - generic [ref=e1469]: USD
+                - cell "+26.53%" [ref=e1470]
+                - cell "0.53%" [ref=e1471]
+                - cell "Electronic technology" [ref=e1472]:
+                  - link "Electronic technology" [ref=e1473] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/electronic-technology/
+                - cell "Buy" [ref=e1474]:
+                  - generic [ref=e1475]:
+                    - img [ref=e1476]:
+                      - img [ref=e1477]
+                    - text: Buy
+                - cell [ref=e1479]
+              - row "GEV GE Vernova Inc. D 1,077.20 USD −0.58% 1.06 M 0.33 289.47 B USD 31.38 34.32 USD +389.83% 0.14% Producer manufacturing Buy" [ref=e1480]:
+                - cell "GEV GE Vernova Inc. D" [ref=e1481]:
+                  - generic [ref=e1482]:
+                    - link "GEV" [ref=e1483] [cursor=pointer]:
+                      - /url: /symbols/NYSE-GEV/
+                    - link "GE Vernova Inc." [ref=e1484] [cursor=pointer]:
+                      - /url: /symbols/NYSE-GEV/
+                    - generic "Quotes are delayed by 15 min" [ref=e1486]: D
+                - cell "1,077.20 USD" [ref=e1487]:
+                  - text: 1,077.20
+                  - generic [ref=e1488]: USD
+                - cell "−0.58%" [ref=e1489]
+                - cell "1.06 M" [ref=e1490]
+                - cell "0.33" [ref=e1491]
+                - cell "289.47 B USD" [ref=e1492]:
+                  - text: 289.47 B
+                  - generic [ref=e1493]: USD
+                - cell "31.38" [ref=e1494]
+                - cell "34.32 USD" [ref=e1495]:
+                  - text: "34.32"
+                  - generic [ref=e1496]: USD
+                - cell "+389.83%" [ref=e1497]
+                - cell "0.14%" [ref=e1498]
+                - cell "Producer manufacturing" [ref=e1499]:
+                  - link "Producer manufacturing" [ref=e1500] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/producer-manufacturing/
+                - cell "Buy" [ref=e1501]:
+                  - generic [ref=e1502]:
+                    - img [ref=e1503]:
+                      - img [ref=e1504]
+                    - text: Buy
+                - cell [ref=e1506]
+              - row "MRK Merck & Company, Inc. D 112.61 USD +3.14% 6.73 M 0.66 278.13 B USD 31.69 3.55 USD −48.27% 3.04% Health technology Buy" [ref=e1507]:
+                - cell "MRK Merck & Company, Inc. D" [ref=e1508]:
+                  - generic [ref=e1509]:
+                    - link "MRK" [ref=e1510] [cursor=pointer]:
+                      - /url: /symbols/NYSE-MRK/
+                    - link "Merck & Company, Inc." [ref=e1511] [cursor=pointer]:
+                      - /url: /symbols/NYSE-MRK/
+                    - generic "Quotes are delayed by 15 min" [ref=e1513]: D
+                - cell "112.61 USD" [ref=e1514]:
+                  - text: "112.61"
+                  - generic [ref=e1515]: USD
+                - cell "+3.14%" [ref=e1516]
+                - cell "6.73 M" [ref=e1517]
+                - cell "0.66" [ref=e1518]
+                - cell "278.13 B USD" [ref=e1519]:
+                  - text: 278.13 B
+                  - generic [ref=e1520]: USD
+                - cell "31.69" [ref=e1521]
+                - cell "3.55 USD" [ref=e1522]:
+                  - text: "3.55"
+                  - generic [ref=e1523]: USD
+                - cell "−48.27%" [ref=e1524]
+                - cell "3.04%" [ref=e1525]
+                - cell "Health technology" [ref=e1526]:
+                  - link "Health technology" [ref=e1527] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/health-technology/
+                - cell "Buy" [ref=e1528]:
+                  - generic [ref=e1529]:
+                    - img [ref=e1530]:
+                      - img [ref=e1531]
+                    - text: Buy
+                - cell [ref=e1533]
+              - row "GS Goldman Sachs Group, Inc. (The) D 927.57 USD +0.41% 767.94 K 0.44 273.63 B USD 16.95 54.73 USD +27.00% 1.68% Finance Neutral" [ref=e1534]:
+                - cell "GS Goldman Sachs Group, Inc. (The) D" [ref=e1535]:
+                  - generic [ref=e1536]:
+                    - link "GS" [ref=e1537] [cursor=pointer]:
+                      - /url: /symbols/NYSE-GS/
+                    - link "Goldman Sachs Group, Inc. (The)" [ref=e1538] [cursor=pointer]:
+                      - /url: /symbols/NYSE-GS/
+                    - generic "Quotes are delayed by 15 min" [ref=e1540]: D
+                - cell "927.57 USD" [ref=e1541]:
+                  - text: "927.57"
+                  - generic [ref=e1542]: USD
+                - cell "+0.41%" [ref=e1543]
+                - cell "767.94 K" [ref=e1544]
+                - cell "0.44" [ref=e1545]
+                - cell "273.63 B USD" [ref=e1546]:
+                  - text: 273.63 B
+                  - generic [ref=e1547]: USD
+                - cell "16.95" [ref=e1548]
+                - cell "54.73 USD" [ref=e1549]:
+                  - text: "54.73"
+                  - generic [ref=e1550]: USD
+                - cell "+27.00%" [ref=e1551]
+                - cell "1.68%" [ref=e1552]
+                - cell "Finance" [ref=e1553]:
+                  - link "Finance" [ref=e1554] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/finance/
+                - cell "Neutral" [ref=e1555]:
+                  - generic [ref=e1556]:
+                    - img [ref=e1557]:
+                      - img [ref=e1558]
+                    - text: Neutral
+                - cell [ref=e1560]
+              - row "PM Philip Morris International Inc D 166.67 USD +0.97% 1.74 M 0.34 259.77 B USD 23.47 7.10 USD +45.92% 3.49% Consumer non-durables Buy" [ref=e1561]:
+                - cell "PM Philip Morris International Inc D" [ref=e1562]:
+                  - generic [ref=e1563]:
+                    - link "PM" [ref=e1564] [cursor=pointer]:
+                      - /url: /symbols/NYSE-PM/
+                    - link "Philip Morris International Inc" [ref=e1565] [cursor=pointer]:
+                      - /url: /symbols/NYSE-PM/
+                    - generic "Quotes are delayed by 15 min" [ref=e1567]: D
+                - cell "166.67 USD" [ref=e1568]:
+                  - text: "166.67"
+                  - generic [ref=e1569]: USD
+                - cell "+0.97%" [ref=e1570]
+                - cell "1.74 M" [ref=e1571]
+                - cell "0.34" [ref=e1572]
+                - cell "259.77 B USD" [ref=e1573]:
+                  - text: 259.77 B
+                  - generic [ref=e1574]: USD
+                - cell "23.47" [ref=e1575]
+                - cell "7.10 USD" [ref=e1576]:
+                  - text: "7.10"
+                  - generic [ref=e1577]: USD
+                - cell "+45.92%" [ref=e1578]
+                - cell "3.49%" [ref=e1579]
+                - cell "Consumer non-durables" [ref=e1580]:
+                  - link "Consumer non-durables" [ref=e1581] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/consumer-non-durables/
+                - cell "Buy" [ref=e1582]:
+                  - generic [ref=e1583]:
+                    - img [ref=e1584]:
+                      - img [ref=e1585]
+                    - text: Buy
+                - cell [ref=e1587]
+              - row "TXN Texas Instruments Incorporated D 279.95 USD −0.40% 2.04 M 0.19 254.78 B USD 47.89 5.85 USD +10.75% 1.98% Electronic technology Buy" [ref=e1588]:
+                - cell "TXN Texas Instruments Incorporated D" [ref=e1589]:
+                  - generic [ref=e1590]:
+                    - link "TXN" [ref=e1591] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-TXN/
+                    - link "Texas Instruments Incorporated" [ref=e1592] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-TXN/
+                    - generic "Quotes are delayed by 15 min" [ref=e1594]: D
+                - cell "279.95 USD" [ref=e1595]:
+                  - text: "279.95"
+                  - generic [ref=e1596]: USD
+                - cell "−0.40%" [ref=e1597]
+                - cell "2.04 M" [ref=e1598]
+                - cell "0.19" [ref=e1599]
+                - cell "254.78 B USD" [ref=e1600]:
+                  - text: 254.78 B
+                  - generic [ref=e1601]: USD
+                - cell "47.89" [ref=e1602]
+                - cell "5.85 USD" [ref=e1603]:
+                  - text: "5.85"
+                  - generic [ref=e1604]: USD
+                - cell "+10.75%" [ref=e1605]
+                - cell "1.98%" [ref=e1606]
+                - cell "Electronic technology" [ref=e1607]:
+                  - link "Electronic technology" [ref=e1608] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/electronic-technology/
+                - cell "Buy" [ref=e1609]:
+                  - generic [ref=e1610]:
+                    - img [ref=e1611]:
+                      - img [ref=e1612]
+                    - text: Buy
+                - cell [ref=e1614]
+              - row "WFC Wells Fargo & Company D 82.12 USD −0.13% 4.56 M 0.27 251.3 B USD 12.68 6.48 USD +16.34% 2.13% Finance Buy" [ref=e1615]:
+                - cell "WFC Wells Fargo & Company D" [ref=e1616]:
+                  - generic [ref=e1617]:
+                    - link "WFC" [ref=e1618] [cursor=pointer]:
+                      - /url: /symbols/NYSE-WFC/
+                    - link "Wells Fargo & Company" [ref=e1619] [cursor=pointer]:
+                      - /url: /symbols/NYSE-WFC/
+                    - generic "Quotes are delayed by 15 min" [ref=e1621]: D
+                - cell "82.12 USD" [ref=e1622]:
+                  - text: "82.12"
+                  - generic [ref=e1623]: USD
+                - cell "−0.13%" [ref=e1624]
+                - cell "4.56 M" [ref=e1625]
+                - cell "0.27" [ref=e1626]
+                - cell "251.3 B USD" [ref=e1627]:
+                  - text: 251.3 B
+                  - generic [ref=e1628]: USD
+                - cell "12.68" [ref=e1629]
+                - cell "6.48 USD" [ref=e1630]:
+                  - text: "6.48"
+                  - generic [ref=e1631]: USD
+                - cell "+16.34%" [ref=e1632]
+                - cell "2.13%" [ref=e1633]
+                - cell "Finance" [ref=e1634]:
+                  - link "Finance" [ref=e1635] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/finance/
+                - cell "Buy" [ref=e1636]:
+                  - generic [ref=e1637]:
+                    - img [ref=e1638]:
+                      - img [ref=e1639]
+                    - text: Buy
+                - cell [ref=e1641]
+              - row "LIN Linde plc D 512.06 USD +2.18% 1.38 M 0.69 237.29 B USD 35.08 14.60 USD +7.19% 1.22% Process industries Buy" [ref=e1642]:
+                - cell "LIN Linde plc D" [ref=e1643]:
+                  - generic [ref=e1644]:
+                    - link "LIN" [ref=e1645] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-LIN/
+                    - link "Linde plc" [ref=e1646] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-LIN/
+                    - generic "Quotes are delayed by 15 min" [ref=e1648]: D
+                - cell "512.06 USD" [ref=e1649]:
+                  - text: "512.06"
+                  - generic [ref=e1650]: USD
+                - cell "+2.18%" [ref=e1651]
+                - cell "1.38 M" [ref=e1652]
+                - cell "0.69" [ref=e1653]
+                - cell "237.29 B USD" [ref=e1654]:
+                  - text: 237.29 B
+                  - generic [ref=e1655]: USD
+                - cell "35.08" [ref=e1656]
+                - cell "14.60 USD" [ref=e1657]:
+                  - text: "14.60"
+                  - generic [ref=e1658]: USD
+                - cell "+7.19%" [ref=e1659]
+                - cell "1.22%" [ref=e1660]
+                - cell "Process industries" [ref=e1661]:
+                  - link "Process industries" [ref=e1662] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/process-industries/
+                - cell "Buy" [ref=e1663]:
+                  - generic [ref=e1664]:
+                    - img [ref=e1665]:
+                      - img [ref=e1666]
+                    - text: Buy
+                - cell [ref=e1668]
+              - row "RTX RTX Corporation D 174.38 USD −0.96% 2.3 M 0.35 234.83 B USD 32.68 5.34 USD +56.46% 1.54% Electronic technology Buy" [ref=e1669]:
+                - cell "RTX RTX Corporation D" [ref=e1670]:
+                  - generic [ref=e1671]:
+                    - link "RTX" [ref=e1672] [cursor=pointer]:
+                      - /url: /symbols/NYSE-RTX/
+                    - link "RTX Corporation" [ref=e1673] [cursor=pointer]:
+                      - /url: /symbols/NYSE-RTX/
+                    - generic "Quotes are delayed by 15 min" [ref=e1675]: D
+                - cell "174.38 USD" [ref=e1676]:
+                  - text: "174.38"
+                  - generic [ref=e1677]: USD
+                - cell "−0.96%" [ref=e1678]
+                - cell "2.3 M" [ref=e1679]
+                - cell "0.35" [ref=e1680]
+                - cell "234.83 B USD" [ref=e1681]:
+                  - text: 234.83 B
+                  - generic [ref=e1682]: USD
+                - cell "32.68" [ref=e1683]
+                - cell "5.34 USD" [ref=e1684]:
+                  - text: "5.34"
+                  - generic [ref=e1685]: USD
+                - cell "+56.46%" [ref=e1686]
+                - cell "1.54%" [ref=e1687]
+                - cell "Electronic technology" [ref=e1688]:
+                  - link "Electronic technology" [ref=e1689] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/electronic-technology/
+                - cell "Buy" [ref=e1690]:
+                  - generic [ref=e1691]:
+                    - img [ref=e1692]:
+                      - img [ref=e1693]
+                    - text: Buy
+                - cell [ref=e1695]
+              - row "KLAC KLA Corporation D 1,731.27 USD −1.09% 360.68 K 0.35 226.93 B USD 48.94 35.37 USD +28.56% 0.43% Electronic technology Buy" [ref=e1696]:
+                - cell "KLAC KLA Corporation D" [ref=e1697]:
+                  - generic [ref=e1698]:
+                    - link "KLAC" [ref=e1699] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-KLAC/
+                    - link "KLA Corporation" [ref=e1700] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-KLAC/
+                    - generic "Quotes are delayed by 15 min" [ref=e1702]: D
+                - cell "1,731.27 USD" [ref=e1703]:
+                  - text: 1,731.27
+                  - generic [ref=e1704]: USD
+                - cell "−1.09%" [ref=e1705]
+                - cell "360.68 K" [ref=e1706]
+                - cell "0.35" [ref=e1707]
+                - cell "226.93 B USD" [ref=e1708]:
+                  - text: 226.93 B
+                  - generic [ref=e1709]: USD
+                - cell "48.94" [ref=e1710]
+                - cell "35.37 USD" [ref=e1711]:
+                  - text: "35.37"
+                  - generic [ref=e1712]: USD
+                - cell "+28.56%" [ref=e1713]
+                - cell "0.43%" [ref=e1714]
+                - cell "Electronic technology" [ref=e1715]:
+                  - link "Electronic technology" [ref=e1716] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/electronic-technology/
+                - cell "Buy" [ref=e1717]:
+                  - generic [ref=e1718]:
+                    - img [ref=e1719]:
+                      - img [ref=e1720]
+                    - text: Buy
+                - cell [ref=e1722]
+              - row "ARM Arm Holdings plc D DR 214.80 USD +2.13% 3.13 M 0.28 223.36 B USD 286.21 0.75 USD −0.98% 0.00% Electronic technology Buy" [ref=e1723]:
+                - cell "ARM Arm Holdings plc D DR" [ref=e1724]:
+                  - generic [ref=e1725]:
+                    - link "ARM" [ref=e1726] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-ARM/
+                    - link "Arm Holdings plc" [ref=e1727] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-ARM/
+                    - generic [ref=e1728]:
+                      - generic "Quotes are delayed by 15 min" [ref=e1729]: D
+                      - generic "Depositary Receipt" [ref=e1730]: DR
+                - cell "214.80 USD" [ref=e1731]:
+                  - text: "214.80"
+                  - generic [ref=e1732]: USD
+                - cell "+2.13%" [ref=e1733]
+                - cell "3.13 M" [ref=e1734]
+                - cell "0.28" [ref=e1735]
+                - cell "223.36 B USD" [ref=e1736]:
+                  - text: 223.36 B
+                  - generic [ref=e1737]: USD
+                - cell "286.21" [ref=e1738]
+                - cell "0.75 USD" [ref=e1739]:
+                  - text: "0.75"
+                  - generic [ref=e1740]: USD
+                - cell "−0.98%" [ref=e1741]
+                - cell "0.00%" [ref=e1742]
+                - cell "Electronic technology" [ref=e1743]:
+                  - link "Electronic technology" [ref=e1744] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/electronic-technology/
+                - cell "Buy" [ref=e1745]:
+                  - generic [ref=e1746]:
+                    - img [ref=e1747]:
+                      - img [ref=e1748]
+                    - text: Buy
+                - cell [ref=e1750]
+              - row "ANET Arista Networks, Inc. D 176.14 USD +1.99% 3.07 M 0.42 221.79 B USD 63.97 2.75 USD +23.70% 0.00% Electronic technology Strong buy" [ref=e1751]:
+                - cell "ANET Arista Networks, Inc. D" [ref=e1752]:
+                  - generic [ref=e1753]:
+                    - link "ANET" [ref=e1754] [cursor=pointer]:
+                      - /url: /symbols/NYSE-ANET/
+                    - link "Arista Networks, Inc." [ref=e1755] [cursor=pointer]:
+                      - /url: /symbols/NYSE-ANET/
+                    - generic "Quotes are delayed by 15 min" [ref=e1757]: D
+                - cell "176.14 USD" [ref=e1758]:
+                  - text: "176.14"
+                  - generic [ref=e1759]: USD
+                - cell "+1.99%" [ref=e1760]
+                - cell "3.07 M" [ref=e1761]
+                - cell "0.42" [ref=e1762]
+                - cell "221.79 B USD" [ref=e1763]:
+                  - text: 221.79 B
+                  - generic [ref=e1764]: USD
+                - cell "63.97" [ref=e1765]
+                - cell "2.75 USD" [ref=e1766]:
+                  - text: "2.75"
+                  - generic [ref=e1767]: USD
+                - cell "+23.70%" [ref=e1768]
+                - cell "0.00%" [ref=e1769]
+                - cell "Electronic technology" [ref=e1770]:
+                  - link "Electronic technology" [ref=e1771] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/electronic-technology/
+                - cell "Strong buy" [ref=e1772]:
+                  - generic [ref=e1773]:
+                    - img [ref=e1774]:
+                      - img [ref=e1775]
+                    - text: Strong buy
+                - cell [ref=e1777]
+              - row "IBM International Business Machines Corporation D 233.53 USD +1.10% 1.72 M 0.20 219.49 B USD 20.65 11.31 USD +94.54% 2.91% Technology services Buy" [ref=e1778]:
+                - cell "IBM International Business Machines Corporation D" [ref=e1779]:
+                  - generic [ref=e1780]:
+                    - link "IBM" [ref=e1781] [cursor=pointer]:
+                      - /url: /symbols/NYSE-IBM/
+                    - link "International Business Machines Corporation" [ref=e1782] [cursor=pointer]:
+                      - /url: /symbols/NYSE-IBM/
+                    - generic "Quotes are delayed by 15 min" [ref=e1784]: D
+                - cell "233.53 USD" [ref=e1785]:
+                  - text: "233.53"
+                  - generic [ref=e1786]: USD
+                - cell "+1.10%" [ref=e1787]
+                - cell "1.72 M" [ref=e1788]
+                - cell "0.20" [ref=e1789]
+                - cell "219.49 B USD" [ref=e1790]:
+                  - text: 219.49 B
+                  - generic [ref=e1791]: USD
+                - cell "20.65" [ref=e1792]
+                - cell "11.31 USD" [ref=e1793]:
+                  - text: "11.31"
+                  - generic [ref=e1794]: USD
+                - cell "+94.54%" [ref=e1795]
+                - cell "2.91%" [ref=e1796]
+                - cell "Technology services" [ref=e1797]:
+                  - link "Technology services" [ref=e1798] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/technology-services/
+                - cell "Buy" [ref=e1799]:
+                  - generic [ref=e1800]:
+                    - img [ref=e1801]:
+                      - img [ref=e1802]
+                    - text: Buy
+                - cell [ref=e1804]
+              - row "C Citigroup, Inc. D 127.90 USD −0.06% 4.86 M 0.48 219.34 B USD 15.85 8.07 USD +27.48% 1.84% Finance Strong buy" [ref=e1805]:
+                - cell "C Citigroup, Inc. D" [ref=e1806]:
+                  - generic [ref=e1807]:
+                    - link "C" [ref=e1808] [cursor=pointer]:
+                      - /url: /symbols/NYSE-C/
+                    - link "Citigroup, Inc." [ref=e1809] [cursor=pointer]:
+                      - /url: /symbols/NYSE-C/
+                    - generic "Quotes are delayed by 15 min" [ref=e1811]: D
+                - cell "127.90 USD" [ref=e1812]:
+                  - text: "127.90"
+                  - generic [ref=e1813]: USD
+                - cell "−0.06%" [ref=e1814]
+                - cell "4.86 M" [ref=e1815]
+                - cell "0.48" [ref=e1816]
+                - cell "219.34 B USD" [ref=e1817]:
+                  - text: 219.34 B
+                  - generic [ref=e1818]: USD
+                - cell "15.85" [ref=e1819]
+                - cell "8.07 USD" [ref=e1820]:
+                  - text: "8.07"
+                  - generic [ref=e1821]: USD
+                - cell "+27.48%" [ref=e1822]
+                - cell "1.84%" [ref=e1823]
+                - cell "Finance" [ref=e1824]:
+                  - link "Finance" [ref=e1825] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/finance/
+                - cell "Strong buy" [ref=e1826]:
+                  - generic [ref=e1827]:
+                    - img [ref=e1828]:
+                      - img [ref=e1829]
+                    - text: Strong buy
+                - cell [ref=e1831]
+              - row "AXP American Express Company D 321.25 USD −0.56% 1.12 M 0.29 219.2 B USD 20.04 16.03 USD +11.99% 1.06% Finance Buy" [ref=e1832]:
+                - cell "AXP American Express Company D" [ref=e1833]:
+                  - generic [ref=e1834]:
+                    - link "AXP" [ref=e1835] [cursor=pointer]:
+                      - /url: /symbols/NYSE-AXP/
+                    - link "American Express Company" [ref=e1836] [cursor=pointer]:
+                      - /url: /symbols/NYSE-AXP/
+                    - generic "Quotes are delayed by 15 min" [ref=e1838]: D
+                - cell "321.25 USD" [ref=e1839]:
+                  - text: "321.25"
+                  - generic [ref=e1840]: USD
+                - cell "−0.56%" [ref=e1841]
+                - cell "1.12 M" [ref=e1842]
+                - cell "0.29" [ref=e1843]
+                - cell "219.2 B USD" [ref=e1844]:
+                  - text: 219.2 B
+                  - generic [ref=e1845]: USD
+                - cell "20.04" [ref=e1846]
+                - cell "16.03 USD" [ref=e1847]:
+                  - text: "16.03"
+                  - generic [ref=e1848]: USD
+                - cell "+11.99%" [ref=e1849]
+                - cell "1.06%" [ref=e1850]
+                - cell "Finance" [ref=e1851]:
+                  - link "Finance" [ref=e1852] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/finance/
+                - cell "Buy" [ref=e1853]:
+                  - generic [ref=e1854]:
+                    - img [ref=e1855]:
+                      - img [ref=e1856]
+                    - text: Buy
+                - cell [ref=e1858]
+              - row "PEP PepsiCo, Inc. D 157.07 USD −0.90% 2.02 M 0.35 214.68 B USD 24.67 6.37 USD −6.38% 3.59% Consumer non-durables Buy" [ref=e1859]:
+                - cell "PEP PepsiCo, Inc. D" [ref=e1860]:
+                  - generic [ref=e1861]:
+                    - link "PEP" [ref=e1862] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-PEP/
+                    - link "PepsiCo, Inc." [ref=e1863] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-PEP/
+                    - generic "Quotes are delayed by 15 min" [ref=e1865]: D
+                - cell "157.07 USD" [ref=e1866]:
+                  - text: "157.07"
+                  - generic [ref=e1867]: USD
+                - cell "−0.90%" [ref=e1868]
+                - cell "2.02 M" [ref=e1869]
+                - cell "0.35" [ref=e1870]
+                - cell "214.68 B USD" [ref=e1871]:
+                  - text: 214.68 B
+                  - generic [ref=e1872]: USD
+                - cell "24.67" [ref=e1873]
+                - cell "6.37 USD" [ref=e1874]:
+                  - text: "6.37"
+                  - generic [ref=e1875]: USD
+                - cell "−6.38%" [ref=e1876]
+                - cell "3.59%" [ref=e1877]
+                - cell "Consumer non-durables" [ref=e1878]:
+                  - link "Consumer non-durables" [ref=e1879] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/consumer-non-durables/
+                - cell "Buy" [ref=e1880]:
+                  - generic [ref=e1881]:
+                    - img [ref=e1882]:
+                      - img [ref=e1883]
+                    - text: Buy
+                - cell [ref=e1885]
+              - row "TMUS T-Mobile US, Inc. D 195.79 USD +0.15% 1.55 M 0.20 211.88 B USD 20.82 9.40 USD −8.36% 1.94% Communications Strong buy" [ref=e1886]:
+                - cell "TMUS T-Mobile US, Inc. D" [ref=e1887]:
+                  - generic [ref=e1888]:
+                    - link "TMUS" [ref=e1889] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-TMUS/
+                    - link "T-Mobile US, Inc." [ref=e1890] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-TMUS/
+                    - generic "Quotes are delayed by 15 min" [ref=e1892]: D
+                - cell "195.79 USD" [ref=e1893]:
+                  - text: "195.79"
+                  - generic [ref=e1894]: USD
+                - cell "+0.15%" [ref=e1895]
+                - cell "1.55 M" [ref=e1896]
+                - cell "0.20" [ref=e1897]
+                - cell "211.88 B USD" [ref=e1898]:
+                  - text: 211.88 B
+                  - generic [ref=e1899]: USD
+                - cell "20.82" [ref=e1900]
+                - cell "9.40 USD" [ref=e1901]:
+                  - text: "9.40"
+                  - generic [ref=e1902]: USD
+                - cell "−8.36%" [ref=e1903]
+                - cell "1.94%" [ref=e1904]
+                - cell "Communications" [ref=e1905]:
+                  - link "Communications" [ref=e1906] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/communications/
+                - cell "Strong buy" [ref=e1907]:
+                  - generic [ref=e1908]:
+                    - img [ref=e1909]:
+                      - img [ref=e1910]
+                    - text: Strong buy
+                - cell [ref=e1912]
+              - row "MCD McDonald's Corporation D 288.75 USD −1.65% 1.47 M 0.42 205.25 B USD 24.16 11.95 USD +4.92% 2.47% Consumer services Buy" [ref=e1913]:
+                - cell "MCD McDonald's Corporation D" [ref=e1914]:
+                  - generic [ref=e1915]:
+                    - link "MCD" [ref=e1916] [cursor=pointer]:
+                      - /url: /symbols/NYSE-MCD/
+                    - link "McDonald's Corporation" [ref=e1917] [cursor=pointer]:
+                      - /url: /symbols/NYSE-MCD/
+                    - generic "Quotes are delayed by 15 min" [ref=e1919]: D
+                - cell "288.75 USD" [ref=e1920]:
+                  - text: "288.75"
+                  - generic [ref=e1921]: USD
+                - cell "−1.65%" [ref=e1922]
+                - cell "1.47 M" [ref=e1923]
+                - cell "0.42" [ref=e1924]
+                - cell "205.25 B USD" [ref=e1925]:
+                  - text: 205.25 B
+                  - generic [ref=e1926]: USD
+                - cell "24.16" [ref=e1927]
+                - cell "11.95 USD" [ref=e1928]:
+                  - text: "11.95"
+                  - generic [ref=e1929]: USD
+                - cell "+4.92%" [ref=e1930]
+                - cell "2.47%" [ref=e1931]
+                - cell "Consumer services" [ref=e1932]:
+                  - link "Consumer services" [ref=e1933] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/consumer-services/
+                - cell "Buy" [ref=e1934]:
+                  - generic [ref=e1935]:
+                    - img [ref=e1936]:
+                      - img [ref=e1937]
+                    - text: Buy
+                - cell [ref=e1939]
+              - row "NEE NextEra Energy, Inc. D 97.36 USD −0.53% 2.99 M 0.29 203.03 B USD 24.72 3.94 USD +47.30% 2.37% Utilities Buy" [ref=e1940]:
+                - cell "NEE NextEra Energy, Inc. D" [ref=e1941]:
+                  - generic [ref=e1942]:
+                    - link "NEE" [ref=e1943] [cursor=pointer]:
+                      - /url: /symbols/NYSE-NEE/
+                    - link "NextEra Energy, Inc." [ref=e1944] [cursor=pointer]:
+                      - /url: /symbols/NYSE-NEE/
+                    - generic "Quotes are delayed by 15 min" [ref=e1946]: D
+                - cell "97.36 USD" [ref=e1947]:
+                  - text: "97.36"
+                  - generic [ref=e1948]: USD
+                - cell "−0.53%" [ref=e1949]
+                - cell "2.99 M" [ref=e1950]
+                - cell "0.29" [ref=e1951]
+                - cell "203.03 B USD" [ref=e1952]:
+                  - text: 203.03 B
+                  - generic [ref=e1953]: USD
+                - cell "24.72" [ref=e1954]
+                - cell "3.94 USD" [ref=e1955]:
+                  - text: "3.94"
+                  - generic [ref=e1956]: USD
+                - cell "+47.30%" [ref=e1957]
+                - cell "2.37%" [ref=e1958]
+                - cell "Utilities" [ref=e1959]:
+                  - link "Utilities" [ref=e1960] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/utilities/
+                - cell "Buy" [ref=e1961]:
+                  - generic [ref=e1962]:
+                    - img [ref=e1963]:
+                      - img [ref=e1964]
+                    - text: Buy
+                - cell [ref=e1966]
+              - row "VZ Verizon Communications Inc. D 47.93 USD −0.22% 9.9 M 0.38 202.13 B USD 11.68 4.10 USD −2.50% 5.76% Communications Buy" [ref=e1967]:
+                - cell "VZ Verizon Communications Inc. D" [ref=e1968]:
+                  - generic [ref=e1969]:
+                    - link "VZ" [ref=e1970] [cursor=pointer]:
+                      - /url: /symbols/NYSE-VZ/
+                    - link "Verizon Communications Inc." [ref=e1971] [cursor=pointer]:
+                      - /url: /symbols/NYSE-VZ/
+                    - generic "Quotes are delayed by 15 min" [ref=e1973]: D
+                - cell "47.93 USD" [ref=e1974]:
+                  - text: "47.93"
+                  - generic [ref=e1975]: USD
+                - cell "−0.22%" [ref=e1976]
+                - cell "9.9 M" [ref=e1977]
+                - cell "0.38" [ref=e1978]
+                - cell "202.13 B USD" [ref=e1979]:
+                  - text: 202.13 B
+                  - generic [ref=e1980]: USD
+                - cell "11.68" [ref=e1981]
+                - cell "4.10 USD" [ref=e1982]:
+                  - text: "4.10"
+                  - generic [ref=e1983]: USD
+                - cell "−2.50%" [ref=e1984]
+                - cell "5.76%" [ref=e1985]
+                - cell "Communications" [ref=e1986]:
+                  - link "Communications" [ref=e1987] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/communications/
+                - cell "Buy" [ref=e1988]:
+                  - generic [ref=e1989]:
+                    - img [ref=e1990]:
+                      - img [ref=e1991]
+                    - text: Buy
+                - cell [ref=e1993]
+              - row "ADI Analog Devices, Inc. D 395.80 USD −1.61% 864.79 K 0.23 193.23 B USD 72.30 5.47 USD +74.58% 1.01% Electronic technology Buy" [ref=e1994]:
+                - cell "ADI Analog Devices, Inc. D" [ref=e1995]:
+                  - generic [ref=e1996]:
+                    - link "ADI" [ref=e1997] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-ADI/
+                    - link "Analog Devices, Inc." [ref=e1998] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-ADI/
+                    - generic "Quotes are delayed by 15 min" [ref=e2000]: D
+                - cell "395.80 USD" [ref=e2001]:
+                  - text: "395.80"
+                  - generic [ref=e2002]: USD
+                - cell "−1.61%" [ref=e2003]
+                - cell "864.79 K" [ref=e2004]
+                - cell "0.23" [ref=e2005]
+                - cell "193.23 B USD" [ref=e2006]:
+                  - text: 193.23 B
+                  - generic [ref=e2007]: USD
+                - cell "72.30" [ref=e2008]
+                - cell "5.47 USD" [ref=e2009]:
+                  - text: "5.47"
+                  - generic [ref=e2010]: USD
+                - cell "+74.58%" [ref=e2011]
+                - cell "1.01%" [ref=e2012]
+                - cell "Electronic technology" [ref=e2013]:
+                  - link "Electronic technology" [ref=e2014] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/electronic-technology/
+                - cell "Buy" [ref=e2015]:
+                  - generic [ref=e2016]:
+                    - img [ref=e2017]:
+                      - img [ref=e2018]
+                    - text: Buy
+                - cell [ref=e2020]
+              - row "QCOM QUALCOMM Incorporated D 178.67 USD −0.51% 14.01 M 0.58 188.31 B USD 19.43 9.19 USD −6.38% 1.98% Electronic technology Neutral" [ref=e2021]:
+                - cell "QCOM QUALCOMM Incorporated D" [ref=e2022]:
+                  - generic [ref=e2023]:
+                    - link "QCOM" [ref=e2024] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-QCOM/
+                    - link "QUALCOMM Incorporated" [ref=e2025] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-QCOM/
+                    - generic "Quotes are delayed by 15 min" [ref=e2027]: D
+                - cell "178.67 USD" [ref=e2028]:
+                  - text: "178.67"
+                  - generic [ref=e2029]: USD
+                - cell "−0.51%" [ref=e2030]
+                - cell "14.01 M" [ref=e2031]
+                - cell "0.58" [ref=e2032]
+                - cell "188.31 B USD" [ref=e2033]:
+                  - text: 188.31 B
+                  - generic [ref=e2034]: USD
+                - cell "19.43" [ref=e2035]
+                - cell "9.19 USD" [ref=e2036]:
+                  - text: "9.19"
+                  - generic [ref=e2037]: USD
+                - cell "−6.38%" [ref=e2038]
+                - cell "1.98%" [ref=e2039]
+                - cell "Electronic technology" [ref=e2040]:
+                  - link "Electronic technology" [ref=e2041] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/electronic-technology/
+                - cell "Neutral" [ref=e2042]:
+                  - generic [ref=e2043]:
+                    - img [ref=e2044]:
+                      - img [ref=e2045]
+                    - text: Neutral
+                - cell [ref=e2047]
+              - row "DIS Walt Disney Company (The) D 103.42 USD −0.32% 2.86 M 0.40 183.21 B USD 15.24 6.79 USD +120.38% 1.20% Consumer services Strong buy" [ref=e2048]:
+                - cell "DIS Walt Disney Company (The) D" [ref=e2049]:
+                  - generic [ref=e2050]:
+                    - link "DIS" [ref=e2051] [cursor=pointer]:
+                      - /url: /symbols/NYSE-DIS/
+                    - link "Walt Disney Company (The)" [ref=e2052] [cursor=pointer]:
+                      - /url: /symbols/NYSE-DIS/
+                    - generic "Quotes are delayed by 15 min" [ref=e2054]: D
+                - cell "103.42 USD" [ref=e2055]:
+                  - text: "103.42"
+                  - generic [ref=e2056]: USD
+                - cell "−0.32%" [ref=e2057]
+                - cell "2.86 M" [ref=e2058]
+                - cell "0.40" [ref=e2059]
+                - cell "183.21 B USD" [ref=e2060]:
+                  - text: 183.21 B
+                  - generic [ref=e2061]: USD
+                - cell "15.24" [ref=e2062]
+                - cell "6.79 USD" [ref=e2063]:
+                  - text: "6.79"
+                  - generic [ref=e2064]: USD
+                - cell "+120.38%" [ref=e2065]
+                - cell "1.20%" [ref=e2066]
+                - cell "Consumer services" [ref=e2067]:
+                  - link "Consumer services" [ref=e2068] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/consumer-services/
+                - cell "Strong buy" [ref=e2069]:
+                  - generic [ref=e2070]:
+                    - img [ref=e2071]:
+                      - img [ref=e2072]
+                    - text: Strong buy
+                - cell [ref=e2074]
+              - row "T AT&T Inc. D 26.25 USD +0.46% 14.12 M 0.37 182.39 B USD 8.81 2.98 USD +83.06% 4.25% Communications Buy" [ref=e2075]:
+                - cell "T AT&T Inc. D" [ref=e2076]:
+                  - generic [ref=e2077]:
+                    - link "T" [ref=e2078] [cursor=pointer]:
+                      - /url: /symbols/NYSE-T/
+                    - link "AT&T Inc." [ref=e2079] [cursor=pointer]:
+                      - /url: /symbols/NYSE-T/
+                    - generic "Quotes are delayed by 15 min" [ref=e2081]: D
+                - cell "26.25 USD" [ref=e2082]:
+                  - text: "26.25"
+                  - generic [ref=e2083]: USD
+                - cell "+0.46%" [ref=e2084]
+                - cell "14.12 M" [ref=e2085]
+                - cell "0.37" [ref=e2086]
+                - cell "182.39 B USD" [ref=e2087]:
+                  - text: 182.39 B
+                  - generic [ref=e2088]: USD
+                - cell "8.81" [ref=e2089]
+                - cell "2.98 USD" [ref=e2090]:
+                  - text: "2.98"
+                  - generic [ref=e2091]: USD
+                - cell "+83.06%" [ref=e2092]
+                - cell "4.25%" [ref=e2093]
+                - cell "Communications" [ref=e2094]:
+                  - link "Communications" [ref=e2095] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/communications/
+                - cell "Buy" [ref=e2096]:
+                  - generic [ref=e2097]:
+                    - img [ref=e2098]:
+                      - img [ref=e2099]
+                    - text: Buy
+                - cell [ref=e2101]
+              - row "BA Boeing Company (The) D 229.68 USD +0.28% 1.95 M 0.28 181.05 B USD 118.08 1.95 USD — 0.00% Electronic technology Buy" [ref=e2102]:
+                - cell "BA Boeing Company (The) D" [ref=e2103]:
+                  - generic [ref=e2104]:
+                    - link "BA" [ref=e2105] [cursor=pointer]:
+                      - /url: /symbols/NYSE-BA/
+                    - link "Boeing Company (The)" [ref=e2106] [cursor=pointer]:
+                      - /url: /symbols/NYSE-BA/
+                    - generic "Quotes are delayed by 15 min" [ref=e2108]: D
+                - cell "229.68 USD" [ref=e2109]:
+                  - text: "229.68"
+                  - generic [ref=e2110]: USD
+                - cell "+0.28%" [ref=e2111]
+                - cell "1.95 M" [ref=e2112]
+                - cell "0.28" [ref=e2113]
+                - cell "181.05 B USD" [ref=e2114]:
+                  - text: 181.05 B
+                  - generic [ref=e2115]: USD
+                - cell "118.08" [ref=e2116]
+                - cell "1.95 USD" [ref=e2117]:
+                  - text: "1.95"
+                  - generic [ref=e2118]: USD
+                - cell "—" [ref=e2119]
+                - cell "0.00%" [ref=e2120]
+                - cell "Electronic technology" [ref=e2121]:
+                  - link "Electronic technology" [ref=e2122] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/electronic-technology/
+                - cell "Buy" [ref=e2123]:
+                  - generic [ref=e2124]:
+                    - img [ref=e2125]:
+                      - img [ref=e2126]
+                    - text: Buy
+                - cell [ref=e2128]
+              - row "APH Amphenol Corporation D 143.60 USD −2.49% 2.78 M 0.34 176.55 B USD 41.31 3.48 USD +68.47% 0.56% Electronic technology Buy" [ref=e2129]:
+                - cell "APH Amphenol Corporation D" [ref=e2130]:
+                  - generic [ref=e2131]:
+                    - link "APH" [ref=e2132] [cursor=pointer]:
+                      - /url: /symbols/NYSE-APH/
+                    - link "Amphenol Corporation" [ref=e2133] [cursor=pointer]:
+                      - /url: /symbols/NYSE-APH/
+                    - generic "Quotes are delayed by 15 min" [ref=e2135]: D
+                - cell "143.60 USD" [ref=e2136]:
+                  - text: "143.60"
+                  - generic [ref=e2137]: USD
+                - cell "−2.49%" [ref=e2138]
+                - cell "2.78 M" [ref=e2139]
+                - cell "0.34" [ref=e2140]
+                - cell "176.55 B USD" [ref=e2141]:
+                  - text: 176.55 B
+                  - generic [ref=e2142]: USD
+                - cell "41.31" [ref=e2143]
+                - cell "3.48 USD" [ref=e2144]:
+                  - text: "3.48"
+                  - generic [ref=e2145]: USD
+                - cell "+68.47%" [ref=e2146]
+                - cell "0.56%" [ref=e2147]
+                - cell "Electronic technology" [ref=e2148]:
+                  - link "Electronic technology" [ref=e2149] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/electronic-technology/
+                - cell "Buy" [ref=e2150]:
+                  - generic [ref=e2151]:
+                    - img [ref=e2152]:
+                      - img [ref=e2153]
+                    - text: Buy
+                - cell [ref=e2155]
+              - row "AMGN Amgen Inc. D 326.98 USD −5.57% 2.11 M 0.83 176.46 B USD 22.75 14.38 USD +31.22% 2.79% Health technology Buy" [ref=e2156]:
+                - cell "AMGN Amgen Inc. D" [ref=e2157]:
+                  - generic [ref=e2158]:
+                    - link "AMGN" [ref=e2159] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-AMGN/
+                    - link "Amgen Inc." [ref=e2160] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-AMGN/
+                    - generic "Quotes are delayed by 15 min" [ref=e2162]: D
+                - cell "326.98 USD" [ref=e2163]:
+                  - text: "326.98"
+                  - generic [ref=e2164]: USD
+                - cell "−5.57%" [ref=e2165]
+                - cell "2.11 M" [ref=e2166]
+                - cell "0.83" [ref=e2167]
+                - cell "176.46 B USD" [ref=e2168]:
+                  - text: 176.46 B
+                  - generic [ref=e2169]: USD
+                - cell "22.75" [ref=e2170]
+                - cell "14.38 USD" [ref=e2171]:
+                  - text: "14.38"
+                  - generic [ref=e2172]: USD
+                - cell "+31.22%" [ref=e2173]
+                - cell "2.79%" [ref=e2174]
+                - cell "Health technology" [ref=e2175]:
+                  - link "Health technology" [ref=e2176] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/health-technology/
+                - cell "Buy" [ref=e2177]:
+                  - generic [ref=e2178]:
+                    - img [ref=e2179]:
+                      - img [ref=e2180]
+                    - text: Buy
+                - cell [ref=e2182]
+              - row "TMO Thermo Fisher Scientific Inc D 470.70 USD −1.72% 696.53 K 0.29 174.92 B USD 25.87 18.19 USD +6.76% 0.37% Health technology Strong buy" [ref=e2183]:
+                - cell "TMO Thermo Fisher Scientific Inc D" [ref=e2184]:
+                  - generic [ref=e2185]:
+                    - link "TMO" [ref=e2186] [cursor=pointer]:
+                      - /url: /symbols/NYSE-TMO/
+                    - link "Thermo Fisher Scientific Inc" [ref=e2187] [cursor=pointer]:
+                      - /url: /symbols/NYSE-TMO/
+                    - generic "Quotes are delayed by 15 min" [ref=e2189]: D
+                - cell "470.70 USD" [ref=e2190]:
+                  - text: "470.70"
+                  - generic [ref=e2191]: USD
+                - cell "−1.72%" [ref=e2192]
+                - cell "696.53 K" [ref=e2193]
+                - cell "0.29" [ref=e2194]
+                - cell "174.92 B USD" [ref=e2195]:
+                  - text: 174.92 B
+                  - generic [ref=e2196]: USD
+                - cell "25.87" [ref=e2197]
+                - cell "18.19 USD" [ref=e2198]:
+                  - text: "18.19"
+                  - generic [ref=e2199]: USD
+                - cell "+6.76%" [ref=e2200]
+                - cell "0.37%" [ref=e2201]
+                - cell "Health technology" [ref=e2202]:
+                  - link "Health technology" [ref=e2203] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/health-technology/
+                - cell "Strong buy" [ref=e2204]:
+                  - generic [ref=e2205]:
+                    - img [ref=e2206]:
+                      - img [ref=e2207]
+                    - text: Strong buy
+                - cell [ref=e2209]
+              - row "BLK BlackRock, Inc. D 1,068.75 USD +0.30% 228.31 K 0.39 174.18 B USD 27.11 39.42 USD −4.24% 2.00% Finance Strong buy" [ref=e2210]:
+                - cell "BLK BlackRock, Inc. D" [ref=e2211]:
+                  - generic [ref=e2212]:
+                    - link "BLK" [ref=e2213] [cursor=pointer]:
+                      - /url: /symbols/NYSE-BLK/
+                    - link "BlackRock, Inc." [ref=e2214] [cursor=pointer]:
+                      - /url: /symbols/NYSE-BLK/
+                    - generic "Quotes are delayed by 15 min" [ref=e2216]: D
+                - cell "1,068.75 USD" [ref=e2217]:
+                  - text: 1,068.75
+                  - generic [ref=e2218]: USD
+                - cell "+0.30%" [ref=e2219]
+                - cell "228.31 K" [ref=e2220]
+                - cell "0.39" [ref=e2221]
+                - cell "174.18 B USD" [ref=e2222]:
+                  - text: 174.18 B
+                  - generic [ref=e2223]: USD
+                - cell "27.11" [ref=e2224]
+                - cell "39.42 USD" [ref=e2225]:
+                  - text: "39.42"
+                  - generic [ref=e2226]: USD
+                - cell "−4.24%" [ref=e2227]
+                - cell "2.00%" [ref=e2228]
+                - cell "Finance" [ref=e2229]:
+                  - link "Finance" [ref=e2230] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/finance/
+                - cell "Strong buy" [ref=e2231]:
+                  - generic [ref=e2232]:
+                    - img [ref=e2233]:
+                      - img [ref=e2234]
+                    - text: Strong buy
+                - cell [ref=e2236]
+              - row "TJX TJX Companies, Inc. (The) D 156.55 USD −0.13% 1.26 M 0.34 173.27 B USD 32.12 4.87 USD +14.42% 1.08% Retail trade Buy" [ref=e2237]:
+                - cell "TJX TJX Companies, Inc. (The) D" [ref=e2238]:
+                  - generic [ref=e2239]:
+                    - link "TJX" [ref=e2240] [cursor=pointer]:
+                      - /url: /symbols/NYSE-TJX/
+                    - link "TJX Companies, Inc. (The)" [ref=e2241] [cursor=pointer]:
+                      - /url: /symbols/NYSE-TJX/
+                    - generic "Quotes are delayed by 15 min" [ref=e2243]: D
+                - cell "156.55 USD" [ref=e2244]:
+                  - text: "156.55"
+                  - generic [ref=e2245]: USD
+                - cell "−0.13%" [ref=e2246]
+                - cell "1.26 M" [ref=e2247]
+                - cell "0.34" [ref=e2248]
+                - cell "173.27 B USD" [ref=e2249]:
+                  - text: 173.27 B
+                  - generic [ref=e2250]: USD
+                - cell "32.12" [ref=e2251]
+                - cell "4.87 USD" [ref=e2252]:
+                  - text: "4.87"
+                  - generic [ref=e2253]: USD
+                - cell "+14.42%" [ref=e2254]
+                - cell "1.08%" [ref=e2255]
+                - cell "Retail trade" [ref=e2256]:
+                  - link "Retail trade" [ref=e2257] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/retail-trade/
+                - cell "Buy" [ref=e2258]:
+                  - generic [ref=e2259]:
+                    - img [ref=e2260]:
+                      - img [ref=e2261]
+                    - text: Buy
+                - cell [ref=e2263]
+              - row "ETN Eaton Corporation, PLC D 427.53 USD −1.27% 1.28 M 0.51 165.87 B USD 40.90 10.45 USD +10.03% 0.97% Producer manufacturing Buy" [ref=e2264]:
+                - cell "ETN Eaton Corporation, PLC D" [ref=e2265]:
+                  - generic [ref=e2266]:
+                    - link "ETN" [ref=e2267] [cursor=pointer]:
+                      - /url: /symbols/NYSE-ETN/
+                    - link "Eaton Corporation, PLC" [ref=e2268] [cursor=pointer]:
+                      - /url: /symbols/NYSE-ETN/
+                    - generic "Quotes are delayed by 15 min" [ref=e2270]: D
+                - cell "427.53 USD" [ref=e2271]:
+                  - text: "427.53"
+                  - generic [ref=e2272]: USD
+                - cell "−1.27%" [ref=e2273]
+                - cell "1.28 M" [ref=e2274]
+                - cell "0.51" [ref=e2275]
+                - cell "165.87 B USD" [ref=e2276]:
+                  - text: 165.87 B
+                  - generic [ref=e2277]: USD
+                - cell "40.90" [ref=e2278]
+                - cell "10.45 USD" [ref=e2279]:
+                  - text: "10.45"
+                  - generic [ref=e2280]: USD
+                - cell "+10.03%" [ref=e2281]
+                - cell "0.97%" [ref=e2282]
+                - cell "Producer manufacturing" [ref=e2283]:
+                  - link "Producer manufacturing" [ref=e2284] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/producer-manufacturing/
+                - cell "Buy" [ref=e2285]:
+                  - generic [ref=e2286]:
+                    - img [ref=e2287]:
+                      - img [ref=e2288]
+                    - text: Buy
+                - cell [ref=e2290]
+              - row "SHOP Shopify Inc. D 127.12 USD +4.94% 4.5 M 0.70 165.77 B USD 136.96 0.93 USD −38.12% 0.00% Commercial services Buy" [ref=e2291]:
+                - cell "SHOP Shopify Inc. D" [ref=e2292]:
+                  - generic [ref=e2293]:
+                    - link "SHOP" [ref=e2294] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-SHOP/
+                    - link "Shopify Inc." [ref=e2295] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-SHOP/
+                    - generic "Quotes are delayed by 15 min" [ref=e2297]: D
+                - cell "127.12 USD" [ref=e2298]:
+                  - text: "127.12"
+                  - generic [ref=e2299]: USD
+                - cell "+4.94%" [ref=e2300]
+                - cell "4.5 M" [ref=e2301]
+                - cell "0.70" [ref=e2302]
+                - cell "165.77 B USD" [ref=e2303]:
+                  - text: 165.77 B
+                  - generic [ref=e2304]: USD
+                - cell "136.96" [ref=e2305]
+                - cell "0.93 USD" [ref=e2306]:
+                  - text: "0.93"
+                  - generic [ref=e2307]: USD
+                - cell "−38.12%" [ref=e2308]
+                - cell "0.00%" [ref=e2309]
+                - cell "Commercial services" [ref=e2310]:
+                  - link "Commercial services" [ref=e2311] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/commercial-services/
+                - cell "Buy" [ref=e2312]:
+                  - generic [ref=e2313]:
+                    - img [ref=e2314]:
+                      - img [ref=e2315]
+                    - text: Buy
+                - cell [ref=e2317]
+              - row "SNDK Sandisk Corporation D 1,107.79 USD +1.03% 15.37 M 1.10 163.51 B USD — −7.59 USD −338.20% 0.00% Electronic technology Buy" [ref=e2318]:
+                - cell "SNDK Sandisk Corporation D" [ref=e2319]:
+                  - generic [ref=e2320]:
+                    - link "SNDK" [ref=e2321] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-SNDK/
+                    - link "Sandisk Corporation" [ref=e2322] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-SNDK/
+                    - generic "Quotes are delayed by 15 min" [ref=e2324]: D
+                - cell "1,107.79 USD" [ref=e2325]:
+                  - text: 1,107.79
+                  - generic [ref=e2326]: USD
+                - cell "+1.03%" [ref=e2327]
+                - cell "15.37 M" [ref=e2328]
+                - cell "1.10" [ref=e2329]
+                - cell "163.51 B USD" [ref=e2330]:
+                  - text: 163.51 B
+                  - generic [ref=e2331]: USD
+                - cell "—" [ref=e2332]
+                - cell "−7.59 USD" [ref=e2333]:
+                  - text: −7.59
+                  - generic [ref=e2334]: USD
+                - cell "−338.20%" [ref=e2335]
+                - cell "0.00%" [ref=e2336]
+                - cell "Electronic technology" [ref=e2337]:
+                  - link "Electronic technology" [ref=e2338] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/electronic-technology/
+                - cell "Buy" [ref=e2339]:
+                  - generic [ref=e2340]:
+                    - img [ref=e2341]:
+                      - img [ref=e2342]
+                    - text: Buy
+                - cell [ref=e2344]
+              - row "GILD Gilead Sciences, Inc. D 131.53 USD +0.52% 1.84 M 0.31 163.25 B USD 19.39 6.78 USD +1,747.53% 2.44% Health technology Buy" [ref=e2345]:
+                - cell "GILD Gilead Sciences, Inc. D" [ref=e2346]:
+                  - generic [ref=e2347]:
+                    - link "GILD" [ref=e2348] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-GILD/
+                    - link "Gilead Sciences, Inc." [ref=e2349] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-GILD/
+                    - generic "Quotes are delayed by 15 min" [ref=e2351]: D
+                - cell "131.53 USD" [ref=e2352]:
+                  - text: "131.53"
+                  - generic [ref=e2353]: USD
+                - cell "+0.52%" [ref=e2354]
+                - cell "1.84 M" [ref=e2355]
+                - cell "0.31" [ref=e2356]
+                - cell "163.25 B USD" [ref=e2357]:
+                  - text: 163.25 B
+                  - generic [ref=e2358]: USD
+                - cell "19.39" [ref=e2359]
+                - cell "6.78 USD" [ref=e2360]:
+                  - text: "6.78"
+                  - generic [ref=e2361]: USD
+                - cell "+1,747.53%" [ref=e2362]
+                - cell "2.44%" [ref=e2363]
+                - cell "Health technology" [ref=e2364]:
+                  - link "Health technology" [ref=e2365] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/health-technology/
+                - cell "Buy" [ref=e2366]:
+                  - generic [ref=e2367]:
+                    - img [ref=e2368]:
+                      - img [ref=e2369]
+                    - text: Buy
+                - cell [ref=e2371]
+              - row "ISRG Intuitive Surgical, Inc. D 459.19 USD +0.34% 689.42 K 0.26 162.63 B USD 55.70 8.24 USD +20.92% 0.00% Health technology Buy" [ref=e2372]:
+                - cell "ISRG Intuitive Surgical, Inc. D" [ref=e2373]:
+                  - generic [ref=e2374]:
+                    - link "ISRG" [ref=e2375] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-ISRG/
+                    - link "Intuitive Surgical, Inc." [ref=e2376] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-ISRG/
+                    - generic "Quotes are delayed by 15 min" [ref=e2378]: D
+                - cell "459.19 USD" [ref=e2379]:
+                  - text: "459.19"
+                  - generic [ref=e2380]: USD
+                - cell "+0.34%" [ref=e2381]
+                - cell "689.42 K" [ref=e2382]
+                - cell "0.26" [ref=e2383]
+                - cell "162.63 B USD" [ref=e2384]:
+                  - text: 162.63 B
+                  - generic [ref=e2385]: USD
+                - cell "55.70" [ref=e2386]
+                - cell "8.24 USD" [ref=e2387]:
+                  - text: "8.24"
+                  - generic [ref=e2388]: USD
+                - cell "+20.92%" [ref=e2389]
+                - cell "0.00%" [ref=e2390]
+                - cell "Health technology" [ref=e2391]:
+                  - link "Health technology" [ref=e2392] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/health-technology/
+                - cell "Buy" [ref=e2393]:
+                  - generic [ref=e2394]:
+                    - img [ref=e2395]:
+                      - img [ref=e2396]
+                    - text: Buy
+                - cell [ref=e2398]
+              - row "STX Seagate Technology Holdings PLC D 715.86 USD +6.27% 4.86 M 1.07 160.52 B USD 67.95 10.54 USD +52.23% 0.43% Electronic technology Buy" [ref=e2399]:
+                - cell "STX Seagate Technology Holdings PLC D" [ref=e2400]:
+                  - generic [ref=e2401]:
+                    - link "STX" [ref=e2402] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-STX/
+                    - link "Seagate Technology Holdings PLC" [ref=e2403] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-STX/
+                    - generic "Quotes are delayed by 15 min" [ref=e2405]: D
+                - cell "715.86 USD" [ref=e2406]:
+                  - text: "715.86"
+                  - generic [ref=e2407]: USD
+                - cell "+6.27%" [ref=e2408]
+                - cell "4.86 M" [ref=e2409]
+                - cell "1.07" [ref=e2410]
+                - cell "160.52 B USD" [ref=e2411]:
+                  - text: 160.52 B
+                  - generic [ref=e2412]: USD
+                - cell "67.95" [ref=e2413]
+                - cell "10.54 USD" [ref=e2414]:
+                  - text: "10.54"
+                  - generic [ref=e2415]: USD
+                - cell "+52.23%" [ref=e2416]
+                - cell "0.43%" [ref=e2417]
+                - cell "Electronic technology" [ref=e2418]:
+                  - link "Electronic technology" [ref=e2419] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/electronic-technology/
+                - cell "Buy" [ref=e2420]:
+                  - generic [ref=e2421]:
+                    - img [ref=e2422]:
+                      - img [ref=e2423]
+                    - text: Buy
+                - cell [ref=e2425]
+              - row "SCHW Charles Schwab Corporation (The) D 92.34 USD +0.76% 4.03 M 0.33 160.49 B USD 18.30 5.04 USD +53.35% 1.23% Finance Buy" [ref=e2426]:
+                - cell "SCHW Charles Schwab Corporation (The) D" [ref=e2427]:
+                  - generic [ref=e2428]:
+                    - link "SCHW" [ref=e2429] [cursor=pointer]:
+                      - /url: /symbols/NYSE-SCHW/
+                    - link "Charles Schwab Corporation (The)" [ref=e2430] [cursor=pointer]:
+                      - /url: /symbols/NYSE-SCHW/
+                    - generic "Quotes are delayed by 15 min" [ref=e2432]: D
+                - cell "92.34 USD" [ref=e2433]:
+                  - text: "92.34"
+                  - generic [ref=e2434]: USD
+                - cell "+0.76%" [ref=e2435]
+                - cell "4.03 M" [ref=e2436]
+                - cell "0.33" [ref=e2437]
+                - cell "160.49 B USD" [ref=e2438]:
+                  - text: 160.49 B
+                  - generic [ref=e2439]: USD
+                - cell "18.30" [ref=e2440]
+                - cell "5.04 USD" [ref=e2441]:
+                  - text: "5.04"
+                  - generic [ref=e2442]: USD
+                - cell "+53.35%" [ref=e2443]
+                - cell "1.23%" [ref=e2444]
+                - cell "Finance" [ref=e2445]:
+                  - link "Finance" [ref=e2446] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/finance/
+                - cell "Buy" [ref=e2447]:
+                  - generic [ref=e2448]:
+                    - img [ref=e2449]:
+                      - img [ref=e2450]
+                    - text: Buy
+                - cell [ref=e2452]
+              - row "UNP Union Pacific Corporation D 267.26 USD −0.82% 965.57 K 0.25 158.68 B USD 22.00 12.15 USD +9.44% 2.03% Transportation Buy" [ref=e2453]:
+                - cell "UNP Union Pacific Corporation D" [ref=e2454]:
+                  - generic [ref=e2455]:
+                    - link "UNP" [ref=e2456] [cursor=pointer]:
+                      - /url: /symbols/NYSE-UNP/
+                    - link "Union Pacific Corporation" [ref=e2457] [cursor=pointer]:
+                      - /url: /symbols/NYSE-UNP/
+                    - generic "Quotes are delayed by 15 min" [ref=e2459]: D
+                - cell "267.26 USD" [ref=e2460]:
+                  - text: "267.26"
+                  - generic [ref=e2461]: USD
+                - cell "−0.82%" [ref=e2462]
+                - cell "965.57 K" [ref=e2463]
+                - cell "0.25" [ref=e2464]
+                - cell "158.68 B USD" [ref=e2465]:
+                  - text: 158.68 B
+                  - generic [ref=e2466]: USD
+                - cell "22.00" [ref=e2467]
+                - cell "12.15 USD" [ref=e2468]:
+                  - text: "12.15"
+                  - generic [ref=e2469]: USD
+                - cell "+9.44%" [ref=e2470]
+                - cell "2.03%" [ref=e2471]
+                - cell "Transportation" [ref=e2472]:
+                  - link "Transportation" [ref=e2473] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/transportation/
+                - cell "Buy" [ref=e2474]:
+                  - generic [ref=e2475]:
+                    - img [ref=e2476]:
+                      - img [ref=e2477]
+                    - text: Buy
+                - cell [ref=e2479]
+              - row "ABT Abbott Laboratories D 89.89 USD −1.00% 7.43 M 0.54 156.56 B USD 25.04 3.59 USD −53.44% 2.69% Health technology Buy" [ref=e2480]:
+                - cell "ABT Abbott Laboratories D" [ref=e2481]:
+                  - generic [ref=e2482]:
+                    - link "ABT" [ref=e2483] [cursor=pointer]:
+                      - /url: /symbols/NYSE-ABT/
+                    - link "Abbott Laboratories" [ref=e2484] [cursor=pointer]:
+                      - /url: /symbols/NYSE-ABT/
+                    - generic "Quotes are delayed by 15 min" [ref=e2486]: D
+                - cell "89.89 USD" [ref=e2487]:
+                  - text: "89.89"
+                  - generic [ref=e2488]: USD
+                - cell "−1.00%" [ref=e2489]
+                - cell "7.43 M" [ref=e2490]
+                - cell "0.54" [ref=e2491]
+                - cell "156.56 B USD" [ref=e2492]:
+                  - text: 156.56 B
+                  - generic [ref=e2493]: USD
+                - cell "25.04" [ref=e2494]
+                - cell "3.59 USD" [ref=e2495]:
+                  - text: "3.59"
+                  - generic [ref=e2496]: USD
+                - cell "−53.44%" [ref=e2497]
+                - cell "2.69%" [ref=e2498]
+                - cell "Health technology" [ref=e2499]:
+                  - link "Health technology" [ref=e2500] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/health-technology/
+                - cell "Buy" [ref=e2501]:
+                  - generic [ref=e2502]:
+                    - img [ref=e2503]:
+                      - img [ref=e2504]
+                    - text: Buy
+                - cell [ref=e2506]
+              - row "DE Deere & Company D 578.93 USD −1.85% 408.12 K 0.41 156.37 B USD 32.64 17.74 USD −21.39% 1.10% Producer manufacturing Buy" [ref=e2507]:
+                - cell "DE Deere & Company D" [ref=e2508]:
+                  - generic [ref=e2509]:
+                    - link "DE" [ref=e2510] [cursor=pointer]:
+                      - /url: /symbols/NYSE-DE/
+                    - link "Deere & Company" [ref=e2511] [cursor=pointer]:
+                      - /url: /symbols/NYSE-DE/
+                    - generic "Quotes are delayed by 15 min" [ref=e2513]: D
+                - cell "578.93 USD" [ref=e2514]:
+                  - text: "578.93"
+                  - generic [ref=e2515]: USD
+                - cell "−1.85%" [ref=e2516]
+                - cell "408.12 K" [ref=e2517]
+                - cell "0.41" [ref=e2518]
+                - cell "156.37 B USD" [ref=e2519]:
+                  - text: 156.37 B
+                  - generic [ref=e2520]: USD
+                - cell "32.64" [ref=e2521]
+                - cell "17.74 USD" [ref=e2522]:
+                  - text: "17.74"
+                  - generic [ref=e2523]: USD
+                - cell "−21.39%" [ref=e2524]
+                - cell "1.10%" [ref=e2525]
+                - cell "Producer manufacturing" [ref=e2526]:
+                  - link "Producer manufacturing" [ref=e2527] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/producer-manufacturing/
+                - cell "Buy" [ref=e2528]:
+                  - generic [ref=e2529]:
+                    - img [ref=e2530]:
+                      - img [ref=e2531]
+                    - text: Buy
+                - cell [ref=e2533]
+              - row "BX Blackstone Inc. D 127.54 USD +1.56% 3.1 M 0.47 155.7 B USD 32.70 3.90 USD +18.00% 3.77% Finance Buy" [ref=e2534]:
+                - cell "BX Blackstone Inc. D" [ref=e2535]:
+                  - generic [ref=e2536]:
+                    - link "BX" [ref=e2537] [cursor=pointer]:
+                      - /url: /symbols/NYSE-BX/
+                    - link "Blackstone Inc." [ref=e2538] [cursor=pointer]:
+                      - /url: /symbols/NYSE-BX/
+                    - generic "Quotes are delayed by 15 min" [ref=e2540]: D
+                - cell "127.54 USD" [ref=e2541]:
+                  - text: "127.54"
+                  - generic [ref=e2542]: USD
+                - cell "+1.56%" [ref=e2543]
+                - cell "3.1 M" [ref=e2544]
+                - cell "0.47" [ref=e2545]
+                - cell "155.7 B USD" [ref=e2546]:
+                  - text: 155.7 B
+                  - generic [ref=e2547]: USD
+                - cell "32.70" [ref=e2548]
+                - cell "3.90 USD" [ref=e2549]:
+                  - text: "3.90"
+                  - generic [ref=e2550]: USD
+                - cell "+18.00%" [ref=e2551]
+                - cell "3.77%" [ref=e2552]
+                - cell "Finance" [ref=e2553]:
+                  - link "Finance" [ref=e2554] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/finance/
+                - cell "Buy" [ref=e2555]:
+                  - generic [ref=e2556]:
+                    - img [ref=e2557]:
+                      - img [ref=e2558]
+                    - text: Buy
+                - cell [ref=e2560]
+              - row "APP Applovin Corporation D 462.22 USD +3.56% 1.43 M 0.42 155.43 B USD 48.92 9.45 USD +108.08% 0.00% Technology services Strong buy" [ref=e2561]:
+                - cell "APP Applovin Corporation D" [ref=e2562]:
+                  - generic [ref=e2563]:
+                    - link "APP" [ref=e2564] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-APP/
+                    - link "Applovin Corporation" [ref=e2565] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-APP/
+                    - generic "Quotes are delayed by 15 min" [ref=e2567]: D
+                - cell "462.22 USD" [ref=e2568]:
+                  - text: "462.22"
+                  - generic [ref=e2569]: USD
+                - cell "+3.56%" [ref=e2570]
+                - cell "1.43 M" [ref=e2571]
+                - cell "0.42" [ref=e2572]
+                - cell "155.43 B USD" [ref=e2573]:
+                  - text: 155.43 B
+                  - generic [ref=e2574]: USD
+                - cell "48.92" [ref=e2575]
+                - cell "9.45 USD" [ref=e2576]:
+                  - text: "9.45"
+                  - generic [ref=e2577]: USD
+                - cell "+108.08%" [ref=e2578]
+                - cell "0.00%" [ref=e2579]
+                - cell "Technology services" [ref=e2580]:
+                  - link "Technology services" [ref=e2581] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/technology-services/
+                - cell "Strong buy" [ref=e2582]:
+                  - generic [ref=e2583]:
+                    - img [ref=e2584]:
+                      - img [ref=e2585]
+                    - text: Strong buy
+                - cell [ref=e2587]
+              - row "WELL Welltower Inc. D 217.36 USD +0.01% 832.74 K 0.28 153.44 B USD — −0.60 USD −164.84% 1.33% Finance Strong buy" [ref=e2588]:
+                - cell "WELL Welltower Inc. D" [ref=e2589]:
+                  - generic [ref=e2590]:
+                    - link "WELL" [ref=e2591] [cursor=pointer]:
+                      - /url: /symbols/NYSE-WELL/
+                    - link "Welltower Inc." [ref=e2592] [cursor=pointer]:
+                      - /url: /symbols/NYSE-WELL/
+                    - generic "Quotes are delayed by 15 min" [ref=e2594]: D
+                - cell "217.36 USD" [ref=e2595]:
+                  - text: "217.36"
+                  - generic [ref=e2596]: USD
+                - cell "+0.01%" [ref=e2597]
+                - cell "832.74 K" [ref=e2598]
+                - cell "0.28" [ref=e2599]
+                - cell "153.44 B USD" [ref=e2600]:
+                  - text: 153.44 B
+                  - generic [ref=e2601]: USD
+                - cell "—" [ref=e2602]
+                - cell "−0.60 USD" [ref=e2603]:
+                  - text: −0.60
+                  - generic [ref=e2604]: USD
+                - cell "−164.84%" [ref=e2605]
+                - cell "1.33%" [ref=e2606]
+                - cell "Finance" [ref=e2607]:
+                  - link "Finance" [ref=e2608] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/finance/
+                - cell "Strong buy" [ref=e2609]:
+                  - generic [ref=e2610]:
+                    - img [ref=e2611]:
+                      - img [ref=e2612]
+                    - text: Strong buy
+                - cell [ref=e2614]
+              - row "UBER Uber Technologies, Inc. D 75.16 USD +0.74% 5.66 M 0.40 153.09 B USD 15.92 4.72 USD +3.03% 0.00% Transportation Strong buy" [ref=e2615]:
+                - cell "UBER Uber Technologies, Inc. D" [ref=e2616]:
+                  - generic [ref=e2617]:
+                    - link "UBER" [ref=e2618] [cursor=pointer]:
+                      - /url: /symbols/NYSE-UBER/
+                    - link "Uber Technologies, Inc." [ref=e2619] [cursor=pointer]:
+                      - /url: /symbols/NYSE-UBER/
+                    - generic "Quotes are delayed by 15 min" [ref=e2621]: D
+                - cell "75.16 USD" [ref=e2622]:
+                  - text: "75.16"
+                  - generic [ref=e2623]: USD
+                - cell "+0.74%" [ref=e2624]
+                - cell "5.66 M" [ref=e2625]
+                - cell "0.40" [ref=e2626]
+                - cell "153.09 B USD" [ref=e2627]:
+                  - text: 153.09 B
+                  - generic [ref=e2628]: USD
+                - cell "15.92" [ref=e2629]
+                - cell "4.72 USD" [ref=e2630]:
+                  - text: "4.72"
+                  - generic [ref=e2631]: USD
+                - cell "+3.03%" [ref=e2632]
+                - cell "0.00%" [ref=e2633]
+                - cell "Transportation" [ref=e2634]:
+                  - link "Transportation" [ref=e2635] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/transportation/
+                - cell "Strong buy" [ref=e2636]:
+                  - generic [ref=e2637]:
+                    - img [ref=e2638]:
+                      - img [ref=e2639]
+                    - text: Strong buy
+                - cell [ref=e2641]
+              - row "COP ConocoPhillips D 123.61 USD −1.73% 3.26 M 0.35 150.66 B USD 19.52 6.33 USD −18.87% 2.58% Energy minerals Buy" [ref=e2642]:
+                - cell "COP ConocoPhillips D" [ref=e2643]:
+                  - generic [ref=e2644]:
+                    - link "COP" [ref=e2645] [cursor=pointer]:
+                      - /url: /symbols/NYSE-COP/
+                    - link "ConocoPhillips" [ref=e2646] [cursor=pointer]:
+                      - /url: /symbols/NYSE-COP/
+                    - generic "Quotes are delayed by 15 min" [ref=e2648]: D
+                - cell "123.61 USD" [ref=e2649]:
+                  - text: "123.61"
+                  - generic [ref=e2650]: USD
+                - cell "−1.73%" [ref=e2651]
+                - cell "3.26 M" [ref=e2652]
+                - cell "0.35" [ref=e2653]
+                - cell "150.66 B USD" [ref=e2654]:
+                  - text: 150.66 B
+                  - generic [ref=e2655]: USD
+                - cell "19.52" [ref=e2656]
+                - cell "6.33 USD" [ref=e2657]:
+                  - text: "6.33"
+                  - generic [ref=e2658]: USD
+                - cell "−18.87%" [ref=e2659]
+                - cell "2.58%" [ref=e2660]
+                - cell "Energy minerals" [ref=e2661]:
+                  - link "Energy minerals" [ref=e2662] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/energy-minerals/
+                - cell "Buy" [ref=e2663]:
+                  - generic [ref=e2664]:
+                    - img [ref=e2665]:
+                      - img [ref=e2666]
+                    - text: Buy
+                - cell [ref=e2668]
+              - row "PFE Pfizer, Inc. D 26.47 USD −0.88% 15.91 M 0.44 150.54 B USD 19.53 1.36 USD −3.66% 6.44% Health technology Neutral" [ref=e2669]:
+                - cell "PFE Pfizer, Inc. D" [ref=e2670]:
+                  - generic [ref=e2671]:
+                    - link "PFE" [ref=e2672] [cursor=pointer]:
+                      - /url: /symbols/NYSE-PFE/
+                    - link "Pfizer, Inc." [ref=e2673] [cursor=pointer]:
+                      - /url: /symbols/NYSE-PFE/
+                    - generic "Quotes are delayed by 15 min" [ref=e2675]: D
+                - cell "26.47 USD" [ref=e2676]:
+                  - text: "26.47"
+                  - generic [ref=e2677]: USD
+                - cell "−0.88%" [ref=e2678]
+                - cell "15.91 M" [ref=e2679]
+                - cell "0.44" [ref=e2680]
+                - cell "150.54 B USD" [ref=e2681]:
+                  - text: 150.54 B
+                  - generic [ref=e2682]: USD
+                - cell "19.53" [ref=e2683]
+                - cell "1.36 USD" [ref=e2684]:
+                  - text: "1.36"
+                  - generic [ref=e2685]: USD
+                - cell "−3.66%" [ref=e2686]
+                - cell "6.44%" [ref=e2687]
+                - cell "Health technology" [ref=e2688]:
+                  - link "Health technology" [ref=e2689] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/health-technology/
+                - cell "Neutral" [ref=e2690]:
+                  - generic [ref=e2691]:
+                    - img [ref=e2692]:
+                      - img [ref=e2693]
+                    - text: Neutral
+                - cell [ref=e2695]
+              - row "CRM Salesforce, Inc. D 183.41 USD +3.90% 6.6 M 0.49 150.04 B USD 23.49 7.81 USD +22.75% 0.96% Technology services Buy" [ref=e2696]:
+                - cell "CRM Salesforce, Inc. D" [ref=e2697]:
+                  - generic [ref=e2698]:
+                    - link "CRM" [ref=e2699] [cursor=pointer]:
+                      - /url: /symbols/NYSE-CRM/
+                    - link "Salesforce, Inc." [ref=e2700] [cursor=pointer]:
+                      - /url: /symbols/NYSE-CRM/
+                    - generic "Quotes are delayed by 15 min" [ref=e2702]: D
+                - cell "183.41 USD" [ref=e2703]:
+                  - text: "183.41"
+                  - generic [ref=e2704]: USD
+                - cell "+3.90%" [ref=e2705]
+                - cell "6.6 M" [ref=e2706]
+                - cell "0.49" [ref=e2707]
+                - cell "150.04 B USD" [ref=e2708]:
+                  - text: 150.04 B
+                  - generic [ref=e2709]: USD
+                - cell "23.49" [ref=e2710]
+                - cell "7.81 USD" [ref=e2711]:
+                  - text: "7.81"
+                  - generic [ref=e2712]: USD
+                - cell "+22.75%" [ref=e2713]
+                - cell "0.96%" [ref=e2714]
+                - cell "Technology services" [ref=e2715]:
+                  - link "Technology services" [ref=e2716] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/technology-services/
+                - cell "Buy" [ref=e2717]:
+                  - generic [ref=e2718]:
+                    - img [ref=e2719]:
+                      - img [ref=e2720]
+                    - text: Buy
+                - cell [ref=e2722]
+              - row "PANW Palo Alto Networks, Inc. D 182.44 USD +1.74% 2.53 M 0.42 148.87 B USD 100.95 1.81 USD +2.10% 0.00% Technology services Strong buy" [ref=e2723]:
+                - cell "PANW Palo Alto Networks, Inc. D" [ref=e2724]:
+                  - generic [ref=e2725]:
+                    - link "PANW" [ref=e2726] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-PANW/
+                    - link "Palo Alto Networks, Inc." [ref=e2727] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-PANW/
+                    - generic "Quotes are delayed by 15 min" [ref=e2729]: D
+                - cell "182.44 USD" [ref=e2730]:
+                  - text: "182.44"
+                  - generic [ref=e2731]: USD
+                - cell "+1.74%" [ref=e2732]
+                - cell "2.53 M" [ref=e2733]
+                - cell "0.42" [ref=e2734]
+                - cell "148.87 B USD" [ref=e2735]:
+                  - text: 148.87 B
+                  - generic [ref=e2736]: USD
+                - cell "100.95" [ref=e2737]
+                - cell "1.81 USD" [ref=e2738]:
+                  - text: "1.81"
+                  - generic [ref=e2739]: USD
+                - cell "+2.10%" [ref=e2740]
+                - cell "0.00%" [ref=e2741]
+                - cell "Technology services" [ref=e2742]:
+                  - link "Technology services" [ref=e2743] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/technology-services/
+                - cell "Strong buy" [ref=e2744]:
+                  - generic [ref=e2745]:
+                    - img [ref=e2746]:
+                      - img [ref=e2747]
+                    - text: Strong buy
+                - cell [ref=e2749]
+              - row "WDC Western Digital Corporation D 432.01 USD −0.58% 12 M 1.67 146.47 B USD 25.79 16.75 USD +218.51% 0.10% Electronic technology Buy" [ref=e2750]:
+                - cell "WDC Western Digital Corporation D" [ref=e2751]:
+                  - generic [ref=e2752]:
+                    - link "WDC" [ref=e2753] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-WDC/
+                    - link "Western Digital Corporation" [ref=e2754] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-WDC/
+                    - generic "Quotes are delayed by 15 min" [ref=e2756]: D
+                - cell "432.01 USD" [ref=e2757]:
+                  - text: "432.01"
+                  - generic [ref=e2758]: USD
+                - cell "−0.58%" [ref=e2759]
+                - cell "12 M" [ref=e2760]
+                - cell "1.67" [ref=e2761]
+                - cell "146.47 B USD" [ref=e2762]:
+                  - text: 146.47 B
+                  - generic [ref=e2763]: USD
+                - cell "25.79" [ref=e2764]
+                - cell "16.75 USD" [ref=e2765]:
+                  - text: "16.75"
+                  - generic [ref=e2766]: USD
+                - cell "+218.51%" [ref=e2767]
+                - cell "0.10%" [ref=e2768]
+                - cell "Electronic technology" [ref=e2769]:
+                  - link "Electronic technology" [ref=e2770] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/electronic-technology/
+                - cell "Buy" [ref=e2771]:
+                  - generic [ref=e2772]:
+                    - img [ref=e2773]:
+                      - img [ref=e2774]
+                    - text: Buy
+                - cell [ref=e2776]
+              - row "MRVL Marvell Technology, Inc. D 165.78 USD +0.38% 7.91 M 0.26 144.97 B USD 53.63 3.09 USD — 0.15% Electronic technology Strong buy" [ref=e2777]:
+                - cell "MRVL Marvell Technology, Inc. D" [ref=e2778]:
+                  - generic [ref=e2779]:
+                    - link "MRVL" [ref=e2780] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-MRVL/
+                    - link "Marvell Technology, Inc." [ref=e2781] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-MRVL/
+                    - generic "Quotes are delayed by 15 min" [ref=e2783]: D
+                - cell "165.78 USD" [ref=e2784]:
+                  - text: "165.78"
+                  - generic [ref=e2785]: USD
+                - cell "+0.38%" [ref=e2786]
+                - cell "7.91 M" [ref=e2787]
+                - cell "0.26" [ref=e2788]
+                - cell "144.97 B USD" [ref=e2789]:
+                  - text: 144.97 B
+                  - generic [ref=e2790]: USD
+                - cell "53.63" [ref=e2791]
+                - cell "3.09 USD" [ref=e2792]:
+                  - text: "3.09"
+                  - generic [ref=e2793]: USD
+                - cell "—" [ref=e2794]
+                - cell "0.15%" [ref=e2795]
+                - cell "Electronic technology" [ref=e2796]:
+                  - link "Electronic technology" [ref=e2797] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/electronic-technology/
+                - cell "Strong buy" [ref=e2798]:
+                  - generic [ref=e2799]:
+                    - img [ref=e2800]:
+                      - img [ref=e2801]
+                    - text: Strong buy
+                - cell [ref=e2803]
+              - row "PDD PDD Holdings Inc. D DR 99.85 USD −0.03% 2.45 M 0.37 142.17 B USD 10.72 9.32 USD −11.76% 0.00% Retail trade Buy" [ref=e2804]:
+                - cell "PDD PDD Holdings Inc. D DR" [ref=e2805]:
+                  - generic [ref=e2806]:
+                    - link "PDD" [ref=e2807] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-PDD/
+                    - link "PDD Holdings Inc." [ref=e2808] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-PDD/
+                    - generic [ref=e2809]:
+                      - generic "Quotes are delayed by 15 min" [ref=e2810]: D
+                      - generic "Depositary Receipt" [ref=e2811]: DR
+                - cell "99.85 USD" [ref=e2812]:
+                  - text: "99.85"
+                  - generic [ref=e2813]: USD
+                - cell "−0.03%" [ref=e2814]
+                - cell "2.45 M" [ref=e2815]
+                - cell "0.37" [ref=e2816]
+                - cell "142.17 B USD" [ref=e2817]:
+                  - text: 142.17 B
+                  - generic [ref=e2818]: USD
+                - cell "10.72" [ref=e2819]
+                - cell "9.32 USD" [ref=e2820]:
+                  - text: "9.32"
+                  - generic [ref=e2821]: USD
+                - cell "−11.76%" [ref=e2822]
+                - cell "0.00%" [ref=e2823]
+                - cell "Retail trade" [ref=e2824]:
+                  - link "Retail trade" [ref=e2825] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/retail-trade/
+                - cell "Buy" [ref=e2826]:
+                  - generic [ref=e2827]:
+                    - img [ref=e2828]:
+                      - img [ref=e2829]
+                    - text: Buy
+                - cell [ref=e2831]
+              - row "SCCO Southern Copper Corporation D 171.00 USD −0.40% 556.96 K 0.38 141.26 B USD 28.68 5.96 USD +36.79% 1.94% Non-energy minerals Sell" [ref=e2832]:
+                - cell "SCCO Southern Copper Corporation D" [ref=e2833]:
+                  - generic [ref=e2834]:
+                    - link "SCCO" [ref=e2835] [cursor=pointer]:
+                      - /url: /symbols/NYSE-SCCO/
+                    - link "Southern Copper Corporation" [ref=e2836] [cursor=pointer]:
+                      - /url: /symbols/NYSE-SCCO/
+                    - generic "Quotes are delayed by 15 min" [ref=e2838]: D
+                - cell "171.00 USD" [ref=e2839]:
+                  - text: "171.00"
+                  - generic [ref=e2840]: USD
+                - cell "−0.40%" [ref=e2841]
+                - cell "556.96 K" [ref=e2842]
+                - cell "0.38" [ref=e2843]
+                - cell "141.26 B USD" [ref=e2844]:
+                  - text: 141.26 B
+                  - generic [ref=e2845]: USD
+                - cell "28.68" [ref=e2846]
+                - cell "5.96 USD" [ref=e2847]:
+                  - text: "5.96"
+                  - generic [ref=e2848]: USD
+                - cell "+36.79%" [ref=e2849]
+                - cell "1.94%" [ref=e2850]
+                - cell "Non-energy minerals" [ref=e2851]:
+                  - link "Non-energy minerals" [ref=e2852] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/non-energy-minerals/
+                - cell "Sell" [ref=e2853]:
+                  - generic [ref=e2854]:
+                    - img [ref=e2855]:
+                      - img [ref=e2856]
+                    - text: Sell
+                - cell [ref=e2858]
+              - row "GLW Corning Incorporated D 160.53 USD −2.26% 4.7 M 0.44 137.9 B USD 76.90 2.09 USD +299.46% 0.68% Electronic technology Buy" [ref=e2859]:
+                - cell "GLW Corning Incorporated D" [ref=e2860]:
+                  - generic [ref=e2861]:
+                    - link "GLW" [ref=e2862] [cursor=pointer]:
+                      - /url: /symbols/NYSE-GLW/
+                    - link "Corning Incorporated" [ref=e2863] [cursor=pointer]:
+                      - /url: /symbols/NYSE-GLW/
+                    - generic "Quotes are delayed by 15 min" [ref=e2865]: D
+                - cell "160.53 USD" [ref=e2866]:
+                  - text: "160.53"
+                  - generic [ref=e2867]: USD
+                - cell "−2.26%" [ref=e2868]
+                - cell "4.7 M" [ref=e2869]
+                - cell "0.44" [ref=e2870]
+                - cell "137.9 B USD" [ref=e2871]:
+                  - text: 137.9 B
+                  - generic [ref=e2872]: USD
+                - cell "76.90" [ref=e2873]
+                - cell "2.09 USD" [ref=e2874]:
+                  - text: "2.09"
+                  - generic [ref=e2875]: USD
+                - cell "+299.46%" [ref=e2876]
+                - cell "0.68%" [ref=e2877]
+                - cell "Electronic technology" [ref=e2878]:
+                  - link "Electronic technology" [ref=e2879] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/electronic-technology/
+                - cell "Buy" [ref=e2880]:
+                  - generic [ref=e2881]:
+                    - img [ref=e2882]:
+                      - img [ref=e2883]
+                    - text: Buy
+                - cell [ref=e2885]
+              - row "DELL Dell Technologies Inc. D 210.14 USD +0.57% 1.73 M 0.31 137.23 B USD 24.10 8.72 USD +40.21% 1.06% Electronic technology Buy" [ref=e2886]:
+                - cell "DELL Dell Technologies Inc. D" [ref=e2887]:
+                  - generic [ref=e2888]:
+                    - link "DELL" [ref=e2889] [cursor=pointer]:
+                      - /url: /symbols/NYSE-DELL/
+                    - link "Dell Technologies Inc." [ref=e2890] [cursor=pointer]:
+                      - /url: /symbols/NYSE-DELL/
+                    - generic "Quotes are delayed by 15 min" [ref=e2892]: D
+                - cell "210.14 USD" [ref=e2893]:
+                  - text: "210.14"
+                  - generic [ref=e2894]: USD
+                - cell "+0.57%" [ref=e2895]
+                - cell "1.73 M" [ref=e2896]
+                - cell "0.31" [ref=e2897]
+                - cell "137.23 B USD" [ref=e2898]:
+                  - text: 137.23 B
+                  - generic [ref=e2899]: USD
+                - cell "24.10" [ref=e2900]
+                - cell "8.72 USD" [ref=e2901]:
+                  - text: "8.72"
+                  - generic [ref=e2902]: USD
+                - cell "+40.21%" [ref=e2903]
+                - cell "1.06%" [ref=e2904]
+                - cell "Electronic technology" [ref=e2905]:
+                  - link "Electronic technology" [ref=e2906] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/electronic-technology/
+                - cell "Buy" [ref=e2907]:
+                  - generic [ref=e2908]:
+                    - img [ref=e2909]:
+                      - img [ref=e2910]
+                    - text: Buy
+                - cell [ref=e2912]
+              - row "IBKR Interactive Brokers Group, Inc. D 80.86 USD +1.71% 2.05 M 0.42 137.15 B USD 34.85 2.32 USD +28.12% 0.40% Finance Buy" [ref=e2913]:
+                - cell "IBKR Interactive Brokers Group, Inc. D" [ref=e2914]:
+                  - generic [ref=e2915]:
+                    - link "IBKR" [ref=e2916] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-IBKR/
+                    - link "Interactive Brokers Group, Inc." [ref=e2917] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-IBKR/
+                    - generic "Quotes are delayed by 15 min" [ref=e2919]: D
+                - cell "80.86 USD" [ref=e2920]:
+                  - text: "80.86"
+                  - generic [ref=e2921]: USD
+                - cell "+1.71%" [ref=e2922]
+                - cell "2.05 M" [ref=e2923]
+                - cell "0.42" [ref=e2924]
+                - cell "137.15 B USD" [ref=e2925]:
+                  - text: 137.15 B
+                  - generic [ref=e2926]: USD
+                - cell "34.85" [ref=e2927]
+                - cell "2.32 USD" [ref=e2928]:
+                  - text: "2.32"
+                  - generic [ref=e2929]: USD
+                - cell "+28.12%" [ref=e2930]
+                - cell "0.40%" [ref=e2931]
+                - cell "Finance" [ref=e2932]:
+                  - link "Finance" [ref=e2933] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/finance/
+                - cell "Buy" [ref=e2934]:
+                  - generic [ref=e2935]:
+                    - img [ref=e2936]:
+                      - img [ref=e2937]
+                    - text: Buy
+                - cell [ref=e2939]
+              - row "HON Honeywell International Inc. D 212.77 USD −0.73% 908.63 K 0.20 134.82 B USD 30.16 7.05 USD −18.97% 2.16% Electronic technology Buy" [ref=e2940]:
+                - cell "HON Honeywell International Inc. D" [ref=e2941]:
+                  - generic [ref=e2942]:
+                    - link "HON" [ref=e2943] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-HON/
+                    - link "Honeywell International Inc." [ref=e2944] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-HON/
+                    - generic "Quotes are delayed by 15 min" [ref=e2946]: D
+                - cell "212.77 USD" [ref=e2947]:
+                  - text: "212.77"
+                  - generic [ref=e2948]: USD
+                - cell "−0.73%" [ref=e2949]
+                - cell "908.63 K" [ref=e2950]
+                - cell "0.20" [ref=e2951]
+                - cell "134.82 B USD" [ref=e2952]:
+                  - text: 134.82 B
+                  - generic [ref=e2953]: USD
+                - cell "30.16" [ref=e2954]
+                - cell "7.05 USD" [ref=e2955]:
+                  - text: "7.05"
+                  - generic [ref=e2956]: USD
+                - cell "−18.97%" [ref=e2957]
+                - cell "2.16%" [ref=e2958]
+                - cell "Electronic technology" [ref=e2959]:
+                  - link "Electronic technology" [ref=e2960] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/electronic-technology/
+                - cell "Buy" [ref=e2961]:
+                  - generic [ref=e2962]:
+                    - img [ref=e2963]:
+                      - img [ref=e2964]
+                    - text: Buy
+                - cell [ref=e2966]
+              - row "PLD Prologis, Inc. D 141.31 USD −0.50% 970.67 K 0.27 134.81 B USD 35.59 3.97 USD +0.21% 2.89% Finance Buy" [ref=e2967]:
+                - cell "PLD Prologis, Inc. D" [ref=e2968]:
+                  - generic [ref=e2969]:
+                    - link "PLD" [ref=e2970] [cursor=pointer]:
+                      - /url: /symbols/NYSE-PLD/
+                    - link "Prologis, Inc." [ref=e2971] [cursor=pointer]:
+                      - /url: /symbols/NYSE-PLD/
+                    - generic "Quotes are delayed by 15 min" [ref=e2973]: D
+                - cell "141.31 USD" [ref=e2974]:
+                  - text: "141.31"
+                  - generic [ref=e2975]: USD
+                - cell "−0.50%" [ref=e2976]
+                - cell "970.67 K" [ref=e2977]
+                - cell "0.27" [ref=e2978]
+                - cell "134.81 B USD" [ref=e2979]:
+                  - text: 134.81 B
+                  - generic [ref=e2980]: USD
+                - cell "35.59" [ref=e2981]
+                - cell "3.97 USD" [ref=e2982]:
+                  - text: "3.97"
+                  - generic [ref=e2983]: USD
+                - cell "+0.21%" [ref=e2984]
+                - cell "2.89%" [ref=e2985]
+                - cell "Finance" [ref=e2986]:
+                  - link "Finance" [ref=e2987] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/finance/
+                - cell "Buy" [ref=e2988]:
+                  - generic [ref=e2989]:
+                    - img [ref=e2990]:
+                      - img [ref=e2991]
+                    - text: Buy
+                - cell [ref=e2993]
+              - row "BKNG Booking Holdings Inc. Common Stock D 170.40 USD +1.21% 2.23 M 0.29 132.04 B USD 22.40 7.61 USD +18.31% 0.93% Consumer services Strong buy" [ref=e2994]:
+                - cell "BKNG Booking Holdings Inc. Common Stock D" [ref=e2995]:
+                  - generic [ref=e2996]:
+                    - link "BKNG" [ref=e2997] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-BKNG/
+                    - link "Booking Holdings Inc. Common Stock" [ref=e2998] [cursor=pointer]:
+                      - /url: /symbols/NASDAQ-BKNG/
+                    - generic "Quotes are delayed by 15 min" [ref=e3000]: D
+                - cell "170.40 USD" [ref=e3001]:
+                  - text: "170.40"
+                  - generic [ref=e3002]: USD
+                - cell "+1.21%" [ref=e3003]
+                - cell "2.23 M" [ref=e3004]
+                - cell "0.29" [ref=e3005]
+                - cell "132.04 B USD" [ref=e3006]:
+                  - text: 132.04 B
+                  - generic [ref=e3007]: USD
+                - cell "22.40" [ref=e3008]
+                - cell "7.61 USD" [ref=e3009]:
+                  - text: "7.61"
+                  - generic [ref=e3010]: USD
+                - cell "+18.31%" [ref=e3011]
+                - cell "0.93%" [ref=e3012]
+                - cell "Consumer services" [ref=e3013]:
+                  - link "Consumer services" [ref=e3014] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/consumer-services/
+                - cell "Strong buy" [ref=e3015]:
+                  - generic [ref=e3016]:
+                    - img [ref=e3017]:
+                      - img [ref=e3018]
+                    - text: Strong buy
+                - cell [ref=e3020]
+              - row "LOW Lowe's Companies, Inc. D 234.37 USD −1.85% 664.15 K 0.25 131.26 B USD 19.78 11.85 USD −2.98% 2.01% Retail trade Buy" [ref=e3021]:
+                - cell "LOW Lowe's Companies, Inc. D" [ref=e3022]:
+                  - generic [ref=e3023]:
+                    - link "LOW" [ref=e3024] [cursor=pointer]:
+                      - /url: /symbols/NYSE-LOW/
+                    - link "Lowe's Companies, Inc." [ref=e3025] [cursor=pointer]:
+                      - /url: /symbols/NYSE-LOW/
+                    - generic "Quotes are delayed by 15 min" [ref=e3027]: D
+                - cell "234.37 USD" [ref=e3028]:
+                  - text: "234.37"
+                  - generic [ref=e3029]: USD
+                - cell "−1.85%" [ref=e3030]
+                - cell "664.15 K" [ref=e3031]
+                - cell "0.25" [ref=e3032]
+                - cell "131.26 B USD" [ref=e3033]:
+                  - text: 131.26 B
+                  - generic [ref=e3034]: USD
+                - cell "19.78" [ref=e3035]
+                - cell "11.85 USD" [ref=e3036]:
+                  - text: "11.85"
+                  - generic [ref=e3037]: USD
+                - cell "−2.98%" [ref=e3038]
+                - cell "2.01%" [ref=e3039]
+                - cell "Retail trade" [ref=e3040]:
+                  - link "Retail trade" [ref=e3041] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/retail-trade/
+                - cell "Buy" [ref=e3042]:
+                  - generic [ref=e3043]:
+                    - img [ref=e3044]:
+                      - img [ref=e3045]
+                    - text: Buy
+                - cell [ref=e3047]
+              - row "SPGI S&P Global Inc. D 429.58 USD −0.38% 397.38 K 0.23 127.16 B USD 27.18 15.81 USD +24.10% 0.89% Commercial services Strong buy" [ref=e3048]:
+                - cell "SPGI S&P Global Inc. D" [ref=e3049]:
+                  - generic [ref=e3050]:
+                    - link "SPGI" [ref=e3051] [cursor=pointer]:
+                      - /url: /symbols/NYSE-SPGI/
+                    - link "S&P Global Inc." [ref=e3052] [cursor=pointer]:
+                      - /url: /symbols/NYSE-SPGI/
+                    - generic "Quotes are delayed by 15 min" [ref=e3054]: D
+                - cell "429.58 USD" [ref=e3055]:
+                  - text: "429.58"
+                  - generic [ref=e3056]: USD
+                - cell "−0.38%" [ref=e3057]
+                - cell "397.38 K" [ref=e3058]
+                - cell "0.23" [ref=e3059]
+                - cell "127.16 B USD" [ref=e3060]:
+                  - text: 127.16 B
+                  - generic [ref=e3061]: USD
+                - cell "27.18" [ref=e3062]
+                - cell "15.81 USD" [ref=e3063]:
+                  - text: "15.81"
+                  - generic [ref=e3064]: USD
+                - cell "+24.10%" [ref=e3065]
+                - cell "0.89%" [ref=e3066]
+                - cell "Commercial services" [ref=e3067]:
+                  - link "Commercial services" [ref=e3068] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/commercial-services/
+                - cell "Strong buy" [ref=e3069]:
+                  - generic [ref=e3070]:
+                    - img [ref=e3071]:
+                      - img [ref=e3072]
+                    - text: Strong buy
+                - cell [ref=e3074]
+              - row "CB Chubb Limited D 326.99 USD −0.00% 544.97 K 0.28 126.83 B USD 11.55 28.31 USD +36.29% 1.19% Finance Buy" [ref=e3075]:
+                - cell "CB Chubb Limited D" [ref=e3076]:
+                  - generic [ref=e3077]:
+                    - link "CB" [ref=e3078] [cursor=pointer]:
+                      - /url: /symbols/NYSE-CB/
+                    - link "Chubb Limited" [ref=e3079] [cursor=pointer]:
+                      - /url: /symbols/NYSE-CB/
+                    - generic "Quotes are delayed by 15 min" [ref=e3081]: D
+                - cell "326.99 USD" [ref=e3082]:
+                  - text: "326.99"
+                  - generic [ref=e3083]: USD
+                - cell "−0.00%" [ref=e3084]
+                - cell "544.97 K" [ref=e3085]
+                - cell "0.28" [ref=e3086]
+                - cell "126.83 B USD" [ref=e3087]:
+                  - text: 126.83 B
+                  - generic [ref=e3088]: USD
+                - cell "11.55" [ref=e3089]
+                - cell "28.31 USD" [ref=e3090]:
+                  - text: "28.31"
+                  - generic [ref=e3091]: USD
+                - cell "+36.29%" [ref=e3092]
+                - cell "1.19%" [ref=e3093]
+                - cell "Finance" [ref=e3094]:
+                  - link "Finance" [ref=e3095] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/finance/
+                - cell "Buy" [ref=e3096]:
+                  - generic [ref=e3097]:
+                    - img [ref=e3098]:
+                      - img [ref=e3099]
+                    - text: Buy
+                - cell [ref=e3101]
+              - row "VRT Vertiv Holdings, LLC D 329.97 USD +0.45% 2.82 M 0.44 126.74 B USD 82.83 3.98 USD +130.95% 0.06% Electronic technology Buy" [ref=e3102]:
+                - cell "VRT Vertiv Holdings, LLC D" [ref=e3103]:
+                  - generic [ref=e3104]:
+                    - link "VRT" [ref=e3105] [cursor=pointer]:
+                      - /url: /symbols/NYSE-VRT/
+                    - link "Vertiv Holdings, LLC" [ref=e3106] [cursor=pointer]:
+                      - /url: /symbols/NYSE-VRT/
+                    - generic "Quotes are delayed by 15 min" [ref=e3108]: D
+                - cell "329.97 USD" [ref=e3109]:
+                  - text: "329.97"
+                  - generic [ref=e3110]: USD
+                - cell "+0.45%" [ref=e3111]
+                - cell "2.82 M" [ref=e3112]
+                - cell "0.44" [ref=e3113]
+                - cell "126.74 B USD" [ref=e3114]:
+                  - text: 126.74 B
+                  - generic [ref=e3115]: USD
+                - cell "82.83" [ref=e3116]
+                - cell "3.98 USD" [ref=e3117]:
+                  - text: "3.98"
+                  - generic [ref=e3118]: USD
+                - cell "+130.95%" [ref=e3119]
+                - cell "0.06%" [ref=e3120]
+                - cell "Electronic technology" [ref=e3121]:
+                  - link "Electronic technology" [ref=e3122] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/electronic-technology/
+                - cell "Buy" [ref=e3123]:
+                  - generic [ref=e3124]:
+                    - img [ref=e3125]:
+                      - img [ref=e3126]
+                    - text: Buy
+                - cell [ref=e3128]
+              - row "DHR Danaher Corporation D 175.01 USD −2.20% 1.97 M 0.32 123.86 B USD 33.82 5.17 USD +0.32% 0.76% Health technology Strong buy" [ref=e3129]:
+                - cell "DHR Danaher Corporation D" [ref=e3130]:
+                  - generic [ref=e3131]:
+                    - link "DHR" [ref=e3132] [cursor=pointer]:
+                      - /url: /symbols/NYSE-DHR/
+                    - link "Danaher Corporation" [ref=e3133] [cursor=pointer]:
+                      - /url: /symbols/NYSE-DHR/
+                    - generic "Quotes are delayed by 15 min" [ref=e3135]: D
+                - cell "175.01 USD" [ref=e3136]:
+                  - text: "175.01"
+                  - generic [ref=e3137]: USD
+                - cell "−2.20%" [ref=e3138]
+                - cell "1.97 M" [ref=e3139]
+                - cell "0.32" [ref=e3140]
+                - cell "123.86 B USD" [ref=e3141]:
+                  - text: 123.86 B
+                  - generic [ref=e3142]: USD
+                - cell "33.82" [ref=e3143]
+                - cell "5.17 USD" [ref=e3144]:
+                  - text: "5.17"
+                  - generic [ref=e3145]: USD
+                - cell "+0.32%" [ref=e3146]
+                - cell "0.76%" [ref=e3147]
+                - cell "Health technology" [ref=e3148]:
+                  - link "Health technology" [ref=e3149] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/health-technology/
+                - cell "Strong buy" [ref=e3150]:
+                  - generic [ref=e3151]:
+                    - img [ref=e3152]:
+                      - img [ref=e3153]
+                    - text: Strong buy
+                - cell [ref=e3155]
+              - row "MO Altria Group, Inc. D 73.54 USD +1.23% 5.51 M 0.55 122.91 B USD 17.86 4.12 USD −37.14% 5.78% Consumer non-durables Neutral" [ref=e3156]:
+                - cell "MO Altria Group, Inc. D" [ref=e3157]:
+                  - generic [ref=e3158]:
+                    - link "MO" [ref=e3159] [cursor=pointer]:
+                      - /url: /symbols/NYSE-MO/
+                    - link "Altria Group, Inc." [ref=e3160] [cursor=pointer]:
+                      - /url: /symbols/NYSE-MO/
+                    - generic "Quotes are delayed by 15 min" [ref=e3162]: D
+                - cell "73.54 USD" [ref=e3163]:
+                  - text: "73.54"
+                  - generic [ref=e3164]: USD
+                - cell "+1.23%" [ref=e3165]
+                - cell "5.51 M" [ref=e3166]
+                - cell "0.55" [ref=e3167]
+                - cell "122.91 B USD" [ref=e3168]:
+                  - text: 122.91 B
+                  - generic [ref=e3169]: USD
+                - cell "17.86" [ref=e3170]
+                - cell "4.12 USD" [ref=e3171]:
+                  - text: "4.12"
+                  - generic [ref=e3172]: USD
+                - cell "−37.14%" [ref=e3173]
+                - cell "5.78%" [ref=e3174]
+                - cell "Consumer non-durables" [ref=e3175]:
+                  - link "Consumer non-durables" [ref=e3176] [cursor=pointer]:
+                    - /url: /markets/stocks-usa/sectorandindustry-sector/consumer-non-durables/
+                - cell "Neutral" [ref=e3177]:
+                  - generic [ref=e3178]:
+                    - img [ref=e3179]:
+                      - img [ref=e3180]
+                    - text: Neutral
+                - cell [ref=e3182]
+  - generic:
+    - generic:
+      - generic:
+        - generic: Earnings per share diluted growth %, TTM YoY
+  - generic:
+    - generic:
+      - generic:
+        - generic:
+          - generic:
+            - generic:
+              - log:
+                - list
+            - generic:
+              - log:
+                - list
+            - generic:
+              - log:
+                - list
+            - generic:
+              - log:
+                - list
+            - generic:
+              - log:
+                - list
+            - generic:
+              - log:
+                - list
+            - generic:
+              - log:
+                - list
+            - generic:
+              - log:
+                - list
+            - generic:
+              - log:
+                - list
+            - generic:
+              - log:
+                - list
+            - generic:
+              - log:
+                - list
+            - generic:
+              - log:
+                - list
+            - generic:
+              - log:
+                - list
+            - generic:
+              - log:
+                - list
+            - generic:
+              - log:
+                - list
+            - generic:
+              - log:
+                - list
+            - generic:
+              - log:
+                - list
+            - generic:
+              - log:
+                - list
+            - generic:
+              - log:
+                - list
+            - generic:
+              - log:
+                - list
+            - generic:
+              - log:
+                - list
+  - generic [ref=e3333]:
+    - generic [ref=e3342]:
+      - img "Look first" [ref=e3344]:
+        - img [ref=e3345]
+      - img "Then leap" [ref=e3348]:
+        - img [ref=e3349]
+    - generic [ref=e3352]:
+      - generic [ref=e3353]:
+        - img [ref=e3354]:
+          - img [ref=e3355]
+        - button "Close" [ref=e3358]:
+          - img [ref=e3360]:
+            - img [ref=e3361]
+          - generic [ref=e3363]: Close
+      - generic [ref=e3366]:
+        - paragraph [ref=e3367]: Sign in
+        - generic [ref=e3368]:
+          - iframe [ref=e3371]:
+            - button "Continue with Google. Opens in new tab" [ref=f1e3] [cursor=pointer]:
+              - generic [ref=f1e5]:
+                - img [ref=f1e7]
+                - generic [ref=f1e14]: Continue with Google
+          - button "Show more options" [ref=e3372]:
+            - generic [ref=e3374]: Show more options
+            - img [ref=e3375]:
+              - img [ref=e3376]
+        - generic [ref=e3379]: or
+        - button "Email" [ref=e3380]:
+          - img [ref=e3382]:
+            - img [ref=e3383]
+          - generic [ref=e3386]: Email
+      - paragraph [ref=e3388]:
+        - text: Do not have an account?
+        - link "Sign up" [ref=e3389] [cursor=pointer]:
+          - /url: "#"

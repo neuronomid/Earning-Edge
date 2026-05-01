@@ -261,7 +261,7 @@ apscheduler>=3.10
 
 ### Scope (in)
 - Playwright (Python, async). Headed in dev, headless in prod via env flag.
-- Open `https://www.tradingview.com/screener/`, apply "Upcoming earnings date = Next week", sort market cap descending, pick top 5 rows.
+- Open `https://www.tradingview.com/screener/`, apply "Upcoming earnings date = Next week", do not change any other TradingView filters or sorting, and pick the top 5 visible rows.
 - Extraction strategy order from §5.3:
   1. Browser accessibility snapshot.
   2. Visible table text.

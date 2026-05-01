@@ -4,7 +4,6 @@ import re
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
-from itertools import pairwise
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -67,7 +66,6 @@ class TradingViewBrowserClient:
             try:
                 await self._load_screener(page)
                 await self._apply_next_week_filter(page)
-                await self._sort_market_cap_desc(page, limit=limit)
                 await self._maybe_add_earnings_date_column(page)
                 accessible_rows = await self._extract_accessibility_rows(page, limit=limit)
                 table_html = await self._table_html(page)
@@ -105,18 +103,6 @@ class TradingViewBrowserClient:
             await page.wait_for_timeout(800)
 
         await self._wait_for_table(page)
-
-    async def _sort_market_cap_desc(self, page: Page, *, limit: int) -> None:
-        sort_button = (await self._screener_table(page)).get_by_role("button", name="Change sort")
-        if await sort_button.count() == 0:
-            return
-
-        for _ in range(3):
-            rows = await self._extract_accessibility_rows(page, limit=limit)
-            if _market_caps_desc(rows):
-                return
-            await sort_button.first.click()
-            await page.wait_for_timeout(1000)
 
     async def _maybe_add_earnings_date_column(self, page: Page) -> None:
         headers = await self._header_aliases(page)
@@ -328,10 +314,3 @@ def _header_index(headers: list[str | None], alias: str) -> int | None:
         if header == alias:
             return index
     return None
-
-
-def _market_caps_desc(rows: list[CandidateRecord]) -> bool:
-    comparable = [row.market_cap for row in rows if row.market_cap is not None]
-    if len(comparable) < 2:
-        return True
-    return all(left >= right for left, right in pairwise(comparable))

@@ -58,8 +58,6 @@ Open TradingView Screener
    ↓
 Filter: Upcoming earnings date = Next week
    ↓
-Sort: Market capitalization descending
-   ↓
 Select top 5 companies
    ↓
 Gather market data, chart data, option chain data, earnings context, and news
@@ -139,9 +137,13 @@ Then apply:
 
 ```text
 Filter: Upcoming earnings date = Next week
-Sort: Market capitalization = Descending
 Select: Top 5 rows
 ```
+
+After applying the `Upcoming earnings date = Next week` filter, the agent
+should not change any additional TradingView filters or sorting unless the user
+explicitly asks for it. The top five rows should be taken exactly as
+TradingView displays them after that filter is applied.
 
 ### 5.2 Allowed Automation Method
 
@@ -853,17 +855,15 @@ Required filter:
 Upcoming earnings date = Next week
 ```
 
-Required sort:
-
-```text
-Market capitalization = Descending
-```
-
 Required selection:
 
 ```text
 Top 5 rows
 ```
+
+After the required filter is applied, do not change any additional TradingView
+filters or sorting unless the user explicitly asks for it. Use the first five
+visible rows exactly as TradingView presents them.
 
 ### 14.2 Candidate Validation
 
@@ -2117,8 +2117,9 @@ The workflow passes if:
 - manual scan can be triggered from Telegram
 - TradingView screener opens successfully
 - the earnings filter is applied
-- the table is sorted by market cap descending
-- top five companies are extracted
+- no additional TradingView filters or sorting are changed after applying the
+  earnings filter unless explicitly requested by the user
+- the top five visible companies are extracted
 - option chains are retrieved or failure is logged
 - one recommendation or no-trade result is produced
 - Telegram message is delivered

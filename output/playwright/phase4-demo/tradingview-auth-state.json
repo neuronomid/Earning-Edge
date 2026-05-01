@@ -1,0 +1,242 @@
+{
+  "cookies": [
+    {
+      "name": "_GRECAPTCHA",
+      "value": "09AKhCRwjh4oQSbfCM4N_7i641RflOvRfk6jOaebSeolbSKmYHJ_YfoSVWNALOVBjIDkuJXoOeKIgwA2uZ9Nrc-_Y",
+      "domain": "www.recaptcha.net",
+      "path": "/recaptcha",
+      "expires": 1793211436.766835,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "None"
+    },
+    {
+      "name": "_sp_ses.cf1a",
+      "value": "*",
+      "domain": ".tradingview.com",
+      "path": "/",
+      "expires": 1785435253,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "None"
+    },
+    {
+      "name": "cookiePrivacyPreferenceBannerProduction",
+      "value": "notApplicable",
+      "domain": ".tradingview.com",
+      "path": "/",
+      "expires": 1812219102.260619,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "cookiesSettings",
+      "value": "{\"analytics\":true,\"advertising\":true}",
+      "domain": ".tradingview.com",
+      "path": "/",
+      "expires": 1812219102.261306,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_ga",
+      "value": "GA1.1.1384658672.1777659102",
+      "domain": ".tradingview.com",
+      "path": "/",
+      "expires": 1812219102.395022,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "sp",
+      "value": "2fcfec33-03de-4315-9ee2-3eafdc26f16e",
+      "domain": "snowplow-pixel.tradingview.com",
+      "path": "/",
+      "expires": 1809195253.490611,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "None"
+    },
+    {
+      "name": "_gcl_au",
+      "value": "1.1.602913271.1777659103",
+      "domain": ".tradingview.com",
+      "path": "/",
+      "expires": 1785435102,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "g_state",
+      "value": "{\"i_l\":0,\"i_ll\":1777659102854,\"i_b\":\"7E6RlOB+lfFTuYm5sdiztTwaSqRNgeTlULD0tg40Rqs\",\"i_e\":{\"enable_itp_optimization\":0},\"i_et\":1777659102442}",
+      "domain": "www.tradingview.com",
+      "path": "/",
+      "expires": 1793211102,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_sp_id.cf1a",
+      "value": "6227575c-9749-4c2a-899a-9cefe95c0397.1777659102.1.1777659253..bab4b801-f724-4076-903c-fdd80dca1a7d..38708a27-d140-4c4a-9f83-950e9fae4584.1777659102192.5",
+      "domain": ".tradingview.com",
+      "path": "/",
+      "expires": 1812219253.443231,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "None"
+    },
+    {
+      "name": "_ga_YVVRYGL0E0",
+      "value": "GS2.1.s1777659102$o1$g1$t1777659314$j60$l0$h0",
+      "domain": ".tradingview.com",
+      "path": "/",
+      "expires": 1812219314.56291,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "device_t",
+      "value": "OHpjZUNBOjA.bNxmXAFV36qmn0UHLjfPjN4zFriNLp7Cl7YLFfIqXt8",
+      "domain": ".tradingview.com",
+      "path": "/",
+      "expires": 1808763497.600961,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "None"
+    },
+    {
+      "name": "sessionid",
+      "value": "zbvx1pzdgjfdog4276bdsfhu5q55ogum",
+      "domain": ".tradingview.com",
+      "path": "/",
+      "expires": 1785694697.601022,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "sessionid_sign",
+      "value": "v3:Mnrm9b8w7+pw06pCprRj1DACCAZd/aeMPnRJg3PlUqA=",
+      "domain": ".tradingview.com",
+      "path": "/",
+      "expires": 1785694697.601034,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "png",
+      "value": "1e7d5c03-46ed-473f-9c4b-ae4efaf2597f",
+      "domain": ".tradingview.com",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "etg",
+      "value": "1e7d5c03-46ed-473f-9c4b-ae4efaf2597f",
+      "domain": ".tradingview.com",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "cachec",
+      "value": "1e7d5c03-46ed-473f-9c4b-ae4efaf2597f",
+      "domain": ".tradingview.com",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "tv_ecuid",
+      "value": "1e7d5c03-46ed-473f-9c4b-ae4efaf2597f",
+      "domain": ".tradingview.com",
+      "path": "/",
+      "expires": 1812219500.860206,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    }
+  ],
+  "origins": [
+    {
+      "origin": "https://www.tradingview.com",
+      "localStorage": [
+        {
+          "name": "snowplowOutQueue_tv_cf_post2.expires",
+          "value": "1840731253444"
+        },
+        {
+          "name": "tvlocalstorage.available",
+          "value": "true"
+        },
+        {
+          "name": "first_visit_time",
+          "value": "1777659162356"
+        },
+        {
+          "name": "snowplowOutQueue_tv_cf_post2",
+          "value": "[]"
+        },
+        {
+          "name": "auto-show-email-for-signin",
+          "value": "1"
+        },
+        {
+          "name": "_gcl_ls",
+          "value": "{\"schema\":\"gcl\",\"version\":1,\"gcl_ctr\":{\"value\":{\"value\":0,\"timeouts\":0,\"errors\":0,\"eopCount\":0,\"creationTimeMs\":1777659102660},\"expires\":1785435102660}}"
+        },
+        {
+          "name": "tv_ecuid",
+          "value": "1e7d5c03-46ed-473f-9c4b-ae4efaf2597f"
+        },
+        {
+          "name": "last-crosstab-monotonic-timestamp",
+          "value": "1777659498312"
+        },
+        {
+          "name": "_grecaptcha",
+          "value": "09AKhCRwiADkYzJN-TkdZKlNj0_jsRUuqksl2gzzKLQgD9e1hIeWkceypPXDqc7ONQOwh2FSr-TxWUYWCjIbPT2uYvQFmrzFmGM36JttrjuZOeznr5z545DHSZr651YPbe"
+        },
+        {
+          "name": "trial_availiable",
+          "value": "0"
+        },
+        {
+          "name": "last_username",
+          "value": "edgeagenta40bi"
+        },
+        {
+          "name": "signupSource",
+          "value": "Edit filter"
+        }
+      ]
+    },
+    {
+      "origin": "https://www.recaptcha.net",
+      "localStorage": [
+        {
+          "name": "rc::a",
+          "value": "MTU5cHlhMG81bW5jMw=="
+        },
+        {
+          "name": "rc::f",
+          "value": "0aACQnAle8396VPKl-T_s7BEt_vrR54p3-8v3JSHCxqWN0hYYewUBChxgVo2b31APSWjM3kFU"
+        }
+      ]
+    }
+  ]
+}
