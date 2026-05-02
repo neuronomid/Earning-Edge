@@ -9,8 +9,8 @@ This file stores repo-specific operating instructions for Codex agents working i
 
 - Service: TradingView
 - Sign-in method: Email/password
-- Email: `edgeagent@atomicmail.io`
-- Password: `Edgeagent2026!`
+- Email: set via environment variable `TRADINGVIEW_EMAIL`
+- Password: set via environment variable `TRADINGVIEW_PASSWORD`
 
 ## Required Behaviour
 
