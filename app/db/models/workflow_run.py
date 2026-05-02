@@ -33,7 +33,7 @@ class WorkflowRun(Base):
     )
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    tradingview_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    screener_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
     selected_candidate_count: Mapped[int] = mapped_column(Integer, default=0)
     final_recommendation_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),

@@ -187,7 +187,7 @@ class LoggingService:
             "status": run.status,
             "started_at": _dt(run.started_at),
             "finished_at": _dt(run.finished_at),
-            "tradingview_status": run.tradingview_status,
+            "screener_status": run.screener_status,
             "fallback_used": outcome.batch.fallback_used,
             "warning_text": outcome.batch.warning_text,
             "selected_candidate_count": len(outcome.candidates),

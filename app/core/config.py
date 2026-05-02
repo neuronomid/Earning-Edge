@@ -38,11 +38,8 @@ class Settings(BaseSettings):
 
     market_analysis_model: str = "claude-opus-4.7-thinking"
     lightweight_model: str = "gemini-3.1-flash"
-    tradingview_email: str = Field(default="")
-    tradingview_password: str = Field(default="")
-    tradingview_headless: bool = False
-    tradingview_timeout_ms: int = 30000
-    tradingview_storage_state_path: str = "var/tradingview/storage-state.json"
+    finviz_headless: bool = True
+    finviz_timeout_ms: int = 30000
     finnhub_api_key: str = Field(default="")
 
     @property

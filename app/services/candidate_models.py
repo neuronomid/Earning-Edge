@@ -5,7 +5,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Literal
 
-TradingViewStatus = Literal["success", "failed"]
+ScreenerStatus = Literal["success", "failed"]
 
 
 @dataclass(slots=True, frozen=True)
@@ -18,13 +18,13 @@ class CandidateRecord:
     daily_change_percent: Decimal | None = None
     volume: int | None = None
     sector: str | None = None
-    sources: tuple[str, ...] = ("tradingview",)
+    sources: tuple[str, ...] = ("finviz",)
     validation_notes: tuple[str, ...] = ()
 
 
 @dataclass(slots=True, frozen=True)
 class CandidateBatch:
     candidates: tuple[CandidateRecord, ...]
-    tradingview_status: TradingViewStatus
+    screener_status: ScreenerStatus
     fallback_used: bool
     warning_text: str | None = None

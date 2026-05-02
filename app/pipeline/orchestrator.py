@@ -139,7 +139,7 @@ class PipelineOrchestrator:
             await self.notifier.send_text(user.telegram_chat_id, render_scan_started())
 
         batch = await self.candidate_step.execute()
-        run.tradingview_status = batch.tradingview_status
+        run.screener_status = batch.screener_status
         run.selected_candidate_count = len(batch.candidates)
 
         candidates = [
