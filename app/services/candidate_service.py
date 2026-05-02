@@ -16,11 +16,11 @@ from app.services.earnings_calendar.reconciler import (
     CandidateValidationError,
 )
 from app.services.earnings_calendar.yfinance_source import YFinanceEarningsSource
-from app.services.tradingview.browser import TradingViewBrowserClient
-from app.services.tradingview.extractor import TradingViewExtractor
+from app.services.finviz.browser import FinvizBrowserClient
+from app.services.finviz.extractor import FinvizExtractor
 
-TRADINGVIEW_FALLBACK_WARNING = (
-    "⚠️ TradingView did not load correctly, so I used backup earnings data for this scan."
+FINVIZ_FALLBACK_WARNING = (
+    "⚠️ Finviz did not load correctly, so I used backup earnings data for this scan."
 )
 
 
@@ -47,7 +47,7 @@ class CandidateDataSource(Protocol):
 class CandidateService:
     def __init__(
         self,
-        extractor: TradingViewExtractor,
+        extractor: FinvizExtractor,
         *,
         sources: Sequence[CandidateDataSource],
         reconciler: CandidateReconciler | None = None,
@@ -67,7 +67,7 @@ class CandidateService:
             backup_rows = await self._load_backup_candidates(window=window, limit=5)
             if len(backup_rows) < 5:
                 raise CandidateSelectionError(
-                    "TradingView extraction failed and backup earnings candidates were not enough"
+                    "Finviz extraction failed and backup earnings candidates were not enough"
                 ) from exc
             validated = await self._validate_rows(backup_rows, window=window, limit=5)
             if len(validated) < 5:
@@ -76,19 +76,19 @@ class CandidateService:
                 ) from exc
             return CandidateBatch(
                 candidates=tuple(validated[:5]),
-                tradingview_status="failed",
+                screener_status="failed",
                 fallback_used=True,
-                warning_text=TRADINGVIEW_FALLBACK_WARNING,
+                warning_text=FINVIZ_FALLBACK_WARNING,
             )
 
         validated = await self._validate_rows(extracted, window=window, limit=5)
         if len(validated) < 5:
             raise CandidateSelectionError(
-                "TradingView produced fewer than five validated candidates"
+                "Finviz produced fewer than five validated candidates"
             )
         return CandidateBatch(
             candidates=tuple(validated[:5]),
-            tradingview_status="success",
+            screener_status="success",
             fallback_used=False,
             warning_text=None,
         )
@@ -199,14 +199,11 @@ def _date_in_window(value: date, *, window: tuple[date, date]) -> bool:
 @lru_cache(maxsize=1)
 def get_candidate_service() -> CandidateService:
     settings = get_settings()
-    browser = TradingViewBrowserClient(
-        email=settings.tradingview_email,
-        password=settings.tradingview_password,
-        headless=settings.tradingview_headless,
-        timeout_ms=settings.tradingview_timeout_ms,
-        storage_state_path=settings.tradingview_storage_state_path,
+    browser = FinvizBrowserClient(
+        headless=settings.finviz_headless,
+        timeout_ms=settings.finviz_timeout_ms,
     )
-    extractor = TradingViewExtractor(browser)
+    extractor = FinvizExtractor(browser)
     return CandidateService(
         extractor,
         sources=(

@@ -50,7 +50,7 @@ class CandidateReconciler:
         )
         if primary.market_cap is not None and backup_market_cap is not None:
             if _relative_difference(primary.market_cap, backup_market_cap) > Decimal("0.05"):
-                notes.append("market cap differs across sources; kept TradingView ranking value")
+                notes.append("market cap differs across sources; kept Finviz ranking value")
 
         dates = {record.earnings_date for record in records if record.earnings_date is not None}
         if len(dates) > 1:

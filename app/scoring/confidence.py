@@ -10,6 +10,25 @@ from app.scoring.types import (
     spread_percent,
 )
 
+# Maximum raw score each component can produce.
+_MAX_IDENTITY: int = 15
+_MAX_EARNINGS: int = 20
+_MAX_MARKET: int = 15
+_MAX_OPTIONS: int = 20
+_MAX_CROSS_SOURCE: int = 10
+_MAX_CALCULATION: int = 10
+_MAX_NEWS: int = 10
+
+# Importance weights — must sum to 1.0.
+# Higher weight = larger share of the 0-100 final score.
+_W_EARNINGS: float = 0.25      # wrong date → wrong trade
+_W_OPTIONS: float = 0.22       # can't select contract without chain
+_W_MARKET: float = 0.20        # price drives all sizing/breakeven math
+_W_IDENTITY: float = 0.13      # fundamental but rarely fails
+_W_CROSS_SOURCE: float = 0.10  # data conflicts affect reliability
+_W_CALCULATION: float = 0.07   # errors degrade output quality
+_W_NEWS: float = 0.03          # useful catalyst signal but optional
+
 
 def compute_data_confidence(
     candidate: CandidateContext,
@@ -21,44 +40,27 @@ def compute_data_confidence(
     notes: list[str] = []
     blockers: list[str] = []
 
-    identity_score = 15 if candidate.identity_verified and candidate.ticker.strip() else 8
-
-    if not candidate.ticker.strip():
-        blockers.append("Ticker is missing.")
-        identity_score = 0
-
-    if candidate.verified_earnings_date:
-        earnings_score = 20
-    else:
-        earnings_score = 12
-        blockers.append("Earnings date could not be verified.")
-
-    market_score = 15
-    if candidate.market_snapshot.current_price is None:
-        market_score = 0
-        blockers.append("Current price is unavailable.")
-    elif candidate.market_snapshot.as_of_date is None:
-        market_score = 10
-        notes.append("Market snapshot has no as-of date.")
-    elif candidate.market_snapshot.latest_volume is None:
-        market_score = 12
-        notes.append("Market snapshot has no fresh volume reading.")
-
+    # --- raw component scores (same logic as before) ---
+    identity_score = _identity_score(candidate, blockers)
+    earnings_score = _earnings_score(candidate, blockers)
+    market_score = _market_score(candidate, blockers)
     options_score = _options_data_score(candidate, selected_contract, notes)
     cross_source_score = _cross_source_score(candidate, notes)
     news_score = _news_score(candidate, notes)
     calculation_score = _calculation_score(candidate, notes)
 
-    raw_score = (
-        identity_score
-        + earnings_score
-        + market_score
-        + options_score
-        + cross_source_score
-        + news_score
-        + calculation_score
-        + candidate.market_snapshot.confidence_adjustment
+    # --- normalize each component to [0, 1] then apply weight ---
+    weighted = (
+        (identity_score / _MAX_IDENTITY) * _W_IDENTITY
+        + (earnings_score / _MAX_EARNINGS) * _W_EARNINGS
+        + (market_score / _MAX_MARKET) * _W_MARKET
+        + (options_score / _MAX_OPTIONS) * _W_OPTIONS
+        + (cross_source_score / _MAX_CROSS_SOURCE) * _W_CROSS_SOURCE
+        + (news_score / _MAX_NEWS) * _W_NEWS
+        + (calculation_score / _MAX_CALCULATION) * _W_CALCULATION
     )
+
+    raw_score = int(round(weighted * 100)) + candidate.market_snapshot.confidence_adjustment
 
     if require_selected_contract:
         blockers.extend(_contract_blockers(selected_contract))
@@ -82,14 +84,37 @@ def compute_data_confidence(
     for note in candidate.market_snapshot.confidence_notes:
         notes.append(f"{note.field}: {note.detail}")
 
-    deduped_notes = tuple(dict.fromkeys(notes))
-    deduped_blockers = tuple(dict.fromkeys(blockers))
     return DataConfidenceResult(
         score=score,
         label=label,
-        blockers=deduped_blockers,
-        notes=deduped_notes,
+        blockers=tuple(dict.fromkeys(blockers)),
+        notes=tuple(dict.fromkeys(notes)),
     )
+
+
+def _identity_score(candidate: CandidateContext, blockers: list[str]) -> int:
+    if not candidate.ticker.strip():
+        blockers.append("Ticker is missing.")
+        return 0
+    return 15 if candidate.identity_verified else 8
+
+
+def _earnings_score(candidate: CandidateContext, blockers: list[str]) -> int:
+    if candidate.verified_earnings_date:
+        return 20
+    blockers.append("Earnings date could not be verified.")
+    return 12
+
+
+def _market_score(candidate: CandidateContext, blockers: list[str]) -> int:
+    if candidate.market_snapshot.current_price is None:
+        blockers.append("Current price is unavailable.")
+        return 0
+    if candidate.market_snapshot.as_of_date is None:
+        return 10
+    if candidate.market_snapshot.latest_volume is None:
+        return 12
+    return 15
 
 
 def _options_data_score(
@@ -108,8 +133,7 @@ def _options_data_score(
     if contract.strike > 0 and contract.expiry is not None:
         score += 4
 
-    premium = option_premium(contract)
-    if premium is not None:
+    if option_premium(contract) is not None:
         score += 4
 
     if contract.volume is not None or contract.open_interest is not None:
@@ -130,18 +154,16 @@ def _options_data_score(
             notes.append("Selected contract relies on yfinance option data.")
             score -= 2
 
-    return clamp_int(score, lower=0, upper=20)
+    return clamp_int(score, lower=0, upper=_MAX_OPTIONS)
 
 
 def _cross_source_score(candidate: CandidateContext, notes: list[str]) -> int:
     if not candidate.source_conflicts:
         return 10
-
-    severe = any(conflict.severity == "severe" for conflict in candidate.source_conflicts)
-    moderate = any(conflict.severity == "moderate" for conflict in candidate.source_conflicts)
+    severe = any(c.severity == "severe" for c in candidate.source_conflicts)
+    moderate = any(c.severity == "moderate" for c in candidate.source_conflicts)
     for conflict in candidate.source_conflicts:
         notes.append(f"{conflict.field}: {conflict.detail}")
-
     if severe:
         return 2
     if moderate:
@@ -171,7 +193,6 @@ def _calculation_score(candidate: CandidateContext, notes: list[str]) -> int:
 def _contract_blockers(selected_contract: OptionContractInput | None) -> tuple[str, ...]:
     if selected_contract is None:
         return ("No usable option contract was selected.",)
-
     blockers: list[str] = []
     if not selected_contract.option_type:
         blockers.append("Contract type is unavailable.")

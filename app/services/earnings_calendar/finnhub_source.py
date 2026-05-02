@@ -10,7 +10,7 @@ from typing import Any
 import httpx
 
 from app.services.candidate_models import CandidateRecord
-from app.services.tradingview.parser import parse_date_value
+from app.services.parsing import parse_date_value
 
 
 class FinnhubEarningsSource:
