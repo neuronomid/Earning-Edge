@@ -113,11 +113,7 @@ class HeuristicDecisionStep:
 
         return StructuredDecision(
             action="no_trade",
-            reasoning=(
-                "No trade cleared the minimum bar this time. The best setups still had weaker "
-                "direction, pricing, liquidity, or data confidence than I want for an "
-                "earnings hold."
-            ),
+            reasoning=_no_trade_reason(best),
             key_evidence=[],
             key_concerns=_key_concerns(best),
             watchlist_tickers=watchlist,
@@ -244,3 +240,26 @@ def _key_concerns(candidate: PipelineCandidate) -> list[str]:
     concerns = list(candidate.evaluation.confidence.blockers)
     concerns.extend(candidate.evaluation.confidence.notes)
     return concerns[:4]
+
+
+def _no_trade_reason(candidate: PipelineCandidate) -> str:
+    blockers = candidate.evaluation.confidence.blockers
+    if blockers:
+        return blockers[0]
+
+    veto_reasons = [
+        veto.reason
+        for contract in candidate.evaluation.considered_contracts
+        for veto in contract.vetoes
+    ]
+    if veto_reasons:
+        return veto_reasons[0]
+
+    if candidate.evaluation.reasons:
+        return candidate.evaluation.reasons[0]
+
+    return (
+        "No trade cleared the minimum bar this time. The best setups still had weaker "
+        "direction, pricing, liquidity, or data confidence than I want for an "
+        "earnings hold."
+    )

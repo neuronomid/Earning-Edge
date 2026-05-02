@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from functools import lru_cache
@@ -23,6 +23,7 @@ from app.db.repositories.candidate_repo import CandidateRepository
 from app.db.repositories.contract_repo import OptionContractRepository
 from app.db.repositories.recommendation_repo import RecommendationRepository
 from app.db.repositories.user_repo import UserRepository
+from app.llm.types import LLMAuthenticationError
 from app.pipeline.steps.candidates import CandidateSelectionStep, CandidateStep
 from app.pipeline.steps.decide import DecisionStep, HeuristicDecisionStep
 from app.pipeline.steps.market_data import MarketDataFetchStep, MarketDataStep
@@ -174,6 +175,7 @@ class PipelineOrchestrator:
         secrets: _UserSecrets,
     ) -> PipelineCandidate:
         calculation_errors: list[str] = []
+        effective_user_context = user_context
 
         try:
             market_snapshot = await self.market_data_step.execute(
@@ -188,6 +190,13 @@ class PipelineOrchestrator:
             news_bundle = await self.news_step.execute(
                 record,
                 openrouter_api_key=secrets.openrouter_api_key,
+            )
+        except LLMAuthenticationError as exc:
+            calculation_errors.append(f"News fallback used: {exc}")
+            news_bundle = _fallback_news_bundle(record, error=str(exc))
+            effective_user_context = replace(
+                user_context,
+                has_valid_openrouter_api_key=False,
             )
         except Exception as exc:
             calculation_errors.append(f"News fallback used: {exc}")
@@ -219,8 +228,8 @@ class PipelineOrchestrator:
             source_conflicts=(),
             calculation_errors=tuple(calculation_errors),
         )
-        evaluation = await self.scoring_step.execute(context, user_context)
-        sizing = await self._size_candidate(user_context, evaluation)
+        evaluation = await self.scoring_step.execute(context, effective_user_context)
+        sizing = await self._size_candidate(effective_user_context, evaluation)
         return PipelineCandidate(
             record=record,
             context=context,
