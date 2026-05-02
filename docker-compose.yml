@@ -27,7 +27,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-earning_edge}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-earning_edge_dev}
     ports:
-      - "5432:5432"
+      - "15432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -40,7 +40,7 @@ services:
     image: redis:7
     container_name: earning-edge-redis
     ports:
-      - "6379:6379"
+      - "16379:6379"
     volumes:
       - redis_data:/data
     healthcheck:

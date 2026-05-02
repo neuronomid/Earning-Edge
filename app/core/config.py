@@ -60,10 +60,10 @@ class Settings(BaseSettings):
     def scheduler_database_url(self) -> str:
         url = make_url(self.database_url)
         if url.drivername == "postgresql+asyncpg":
-            return str(url.set(drivername="postgresql+psycopg"))
-        if url.drivername == "sqlite+aiosqlite":
-            return str(url.set(drivername="sqlite"))
-        return str(url)
+            url = url.set(drivername="postgresql+psycopg")
+        elif url.drivername == "sqlite+aiosqlite":
+            url = url.set(drivername="sqlite")
+        return url.render_as_string(hide_password=False)
 
 
 @lru_cache(maxsize=1)
