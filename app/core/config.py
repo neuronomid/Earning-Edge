@@ -36,8 +36,9 @@ class Settings(BaseSettings):
     telegram_webhook_url: str = Field(default="")
     telegram_webhook_secret: str = Field(default="")
 
-    market_analysis_model: str = "claude-opus-4.7-thinking"
-    lightweight_model: str = "gemini-3.1-flash"
+    market_analysis_model: str = "anthropic/claude-opus-4.7"
+    lightweight_model: str = "google/gemini-3.1-flash-lite-preview"
+    market_analysis_reasoning_effort: Literal["off", "low", "medium", "high"] = "medium"
     finviz_headless: bool = True
     finviz_timeout_ms: int = 30000
     finnhub_api_key: str = Field(default="")

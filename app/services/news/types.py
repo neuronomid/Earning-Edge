@@ -56,3 +56,4 @@ class NewsBundle(_FrozenModel):
     articles: tuple[NewsArticle, ...] = ()
     brief: NewsBrief
     used_ir_fallback: bool = False
+    used_llm_summary: bool = False

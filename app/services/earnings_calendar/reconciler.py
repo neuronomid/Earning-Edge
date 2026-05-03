@@ -17,6 +17,10 @@ class CandidateReconciler:
         self,
         primary: CandidateRecord,
         backups: Iterable[CandidateRecord | None],
+        *,
+        allow_unverified_earnings_date: bool = False,
+        fallback_earnings_date: date | None = None,
+        fallback_note: str | None = None,
     ) -> CandidateRecord:
         records = [primary, *[record for record in backups if record is not None]]
 
@@ -35,8 +39,14 @@ class CandidateReconciler:
         volume = primary.volume or _first_non_none(record.volume for record in records)
         sector = primary.sector or _first_non_blank(record.sector for record in records)
 
-        earnings_date = self._resolve_earnings_date(records)
+        earnings_date, earnings_date_verified = self._resolve_earnings_date(
+            records,
+            allow_unverified=allow_unverified_earnings_date,
+            fallback_earnings_date=fallback_earnings_date,
+        )
         notes = list(primary.validation_notes)
+        if not earnings_date_verified and fallback_note:
+            notes.append(fallback_note)
 
         if company_name is None:
             raise CandidateValidationError("company has no usable market data")
@@ -61,6 +71,8 @@ class CandidateReconciler:
             company_name=company_name,
             market_cap=market_cap,
             earnings_date=earnings_date,
+            earnings_date_verified=earnings_date_verified,
+            screener_rank=primary.screener_rank,
             current_price=current_price,
             daily_change_percent=daily_change_percent,
             volume=volume,
@@ -69,19 +81,29 @@ class CandidateReconciler:
             validation_notes=tuple(dict.fromkeys(notes)),
         )
 
-    def _resolve_earnings_date(self, records: list[CandidateRecord]) -> date:
+    def _resolve_earnings_date(
+        self,
+        records: list[CandidateRecord],
+        *,
+        allow_unverified: bool,
+        fallback_earnings_date: date | None,
+    ) -> tuple[date, bool]:
         dates = [record.earnings_date for record in records if record.earnings_date is not None]
         if not dates:
+            if allow_unverified and fallback_earnings_date is not None:
+                return fallback_earnings_date, False
             raise CandidateValidationError("earnings date cannot be verified")
 
         counts = Counter(dates)
         if len(counts) == 1:
-            return dates[0]
+            return dates[0], True
 
         chosen_date, support = counts.most_common(1)[0]
-        if support < 2:
-            raise CandidateValidationError("earnings date cannot be verified")
-        return chosen_date
+        if support >= 2:
+            return chosen_date, True
+        if allow_unverified and fallback_earnings_date is not None:
+            return fallback_earnings_date, False
+        raise CandidateValidationError("earnings date cannot be verified")
 
 
 def _first_non_none[T](values: Iterable[T | None]) -> T | None:

@@ -8,8 +8,8 @@ import pytest
 
 from app.services.candidate_models import CandidateRecord
 from app.services.candidate_service import (
-    TRADINGVIEW_FALLBACK_WARNING,
-    CandidateSelectionError,
+    FINVIZ_CONFLICT_NOTE,
+    FINVIZ_FALLBACK_WARNING,
     CandidateService,
 )
 
@@ -72,42 +72,42 @@ def _candidate(
     )
 
 
-async def test_candidate_service_validates_tradingview_rows() -> None:
-    tradingview_rows = [
+async def test_candidate_service_validates_finviz_rows() -> None:
+    finviz_rows = [
         _candidate(
             "AAA",
             "900",
             earnings_date=None,
             current_price="100.00",
-            sources=("tradingview",),
+            sources=("finviz",),
         ),
         _candidate(
             "BBB",
             "800",
             earnings_date=None,
             current_price="90.00",
-            sources=("tradingview",),
+            sources=("finviz",),
         ),
         _candidate(
             "CCC",
             "700",
             earnings_date=None,
             current_price="80.00",
-            sources=("tradingview",),
+            sources=("finviz",),
         ),
         _candidate(
             "DDD",
             "600",
             earnings_date=None,
             current_price="70.00",
-            sources=("tradingview",),
+            sources=("finviz",),
         ),
         _candidate(
             "EEE",
             "500",
             earnings_date=None,
             current_price="60.00",
-            sources=("tradingview",),
+            sources=("finviz",),
         ),
     ]
     source = FakeSource(
@@ -130,14 +130,14 @@ async def test_candidate_service_validates_tradingview_rows() -> None:
         upcoming=[],
     )
     service = CandidateService(
-        FakeExtractor(rows=tradingview_rows),
+        FakeExtractor(rows=finviz_rows),
         sources=(source,),
         today_provider=lambda: date(2026, 5, 1),
     )
 
     batch = await service.get_top_five()
 
-    assert batch.tradingview_status == "success"
+    assert batch.screener_status == "success"
     assert batch.fallback_used is False
     assert [candidate.ticker for candidate in batch.candidates] == [
         "AAA",
@@ -149,7 +149,7 @@ async def test_candidate_service_validates_tradingview_rows() -> None:
     assert all(candidate.earnings_date == date(2026, 5, 8) for candidate in batch.candidates)
 
 
-async def test_candidate_service_falls_back_when_tradingview_fails() -> None:
+async def test_candidate_service_falls_back_when_finviz_fails() -> None:
     backup_rows = [
         _candidate(
             "AAA",
@@ -192,16 +192,16 @@ async def test_candidate_service_falls_back_when_tradingview_fails() -> None:
         upcoming=backup_rows,
     )
     service = CandidateService(
-        FakeExtractor(error=RuntimeError("TradingView down")),
+        FakeExtractor(error=RuntimeError("Finviz down")),
         sources=(source,),
         today_provider=lambda: date(2026, 5, 1),
     )
 
     batch = await service.get_top_five()
 
-    assert batch.tradingview_status == "failed"
+    assert batch.screener_status == "failed"
     assert batch.fallback_used is True
-    assert batch.warning_text == TRADINGVIEW_FALLBACK_WARNING
+    assert batch.warning_text == FINVIZ_FALLBACK_WARNING
     assert [candidate.ticker for candidate in batch.candidates] == [
         "AAA",
         "BBB",
@@ -211,42 +211,42 @@ async def test_candidate_service_falls_back_when_tradingview_fails() -> None:
     ]
 
 
-async def test_candidate_service_rejects_candidates_outside_next_week_window() -> None:
-    tradingview_rows = [
+async def test_candidate_service_keeps_finviz_top_five_when_backup_date_conflicts() -> None:
+    finviz_rows = [
         _candidate(
             "AAA",
             "900",
             earnings_date=None,
             current_price="100.00",
-            sources=("tradingview",),
+            sources=("finviz",),
         ),
         _candidate(
             "BBB",
             "800",
             earnings_date=None,
             current_price="90.00",
-            sources=("tradingview",),
+            sources=("finviz",),
         ),
         _candidate(
             "CCC",
             "700",
             earnings_date=None,
             current_price="80.00",
-            sources=("tradingview",),
+            sources=("finviz",),
         ),
         _candidate(
             "DDD",
             "600",
             earnings_date=None,
             current_price="70.00",
-            sources=("tradingview",),
+            sources=("finviz",),
         ),
         _candidate(
             "EEE",
             "500",
             earnings_date=None,
             current_price="60.00",
-            sources=("tradingview",),
+            sources=("finviz",),
         ),
     ]
     source = FakeSource(
@@ -269,13 +269,21 @@ async def test_candidate_service_rejects_candidates_outside_next_week_window() -
         upcoming=[],
     )
     service = CandidateService(
-        FakeExtractor(rows=tradingview_rows),
+        FakeExtractor(rows=finviz_rows),
         sources=(source,),
         today_provider=lambda: date(2026, 5, 1),
     )
 
-    with pytest.raises(
-        CandidateSelectionError,
-        match="fewer than five validated candidates",
-    ):
-        await service.get_top_five()
+    batch = await service.get_top_five()
+
+    assert [candidate.ticker for candidate in batch.candidates] == [
+        "AAA",
+        "BBB",
+        "CCC",
+        "DDD",
+        "EEE",
+    ]
+    assert batch.candidates[0].earnings_date == date(2026, 5, 4)
+    assert batch.candidates[0].earnings_date_verified is False
+    assert FINVIZ_CONFLICT_NOTE in batch.candidates[0].validation_notes
+    assert all(candidate.earnings_date is not None for candidate in batch.candidates)

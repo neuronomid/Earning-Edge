@@ -2,7 +2,7 @@
 
 Use `deploy/docker-compose.prod.yml` on the VPS. It builds from
 `Dockerfile.playwright` so the runtime has the browser dependencies needed for
-TradingView, then overrides the container command back to `uvicorn`.
+Finviz, then overrides the container command back to `uvicorn`.
 
 ## Secrets
 
@@ -23,10 +23,8 @@ POSTGRES_PASSWORD=...
 REDIS_HOST=redis
 REDIS_PORT=6379
 TELEGRAM_BOT_TOKEN=...
-TRADINGVIEW_EMAIL=...
-TRADINGVIEW_PASSWORD=...
-TRADINGVIEW_HEADLESS=true
-TRADINGVIEW_TIMEOUT_MS=30000
+FINVIZ_HEADLESS=true
+FINVIZ_TIMEOUT_MS=30000
 FINNHUB_API_KEY=
 ```
 
@@ -39,14 +37,12 @@ docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.producti
 docker compose -f deploy/docker-compose.prod.yml logs -f app
 ```
 
-The compose file keeps these paths persistent across restarts:
-
-- `../var/tradingview` for Playwright auth state
-- `../var/runs` for JSON run archives
+The compose file keeps `../var/runs` persistent across restarts for JSON run
+archives.
 
 ## Hardening Notes
 
-- TradingView runs headless in production via `TRADINGVIEW_HEADLESS=true`.
+- Finviz runs headless in production via `FINVIZ_HEADLESS=true`.
 - Docker log rotation is enabled with `max-size=10m` and `max-file=5`.
 - Postgres and Redis are internal-only in the prod compose file; do not publish
   those ports unless you also lock them down at the network layer.

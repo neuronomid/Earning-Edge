@@ -28,11 +28,25 @@ class ArticleFetcher:
         self.logger = logger or get_logger(__name__)
 
     async def fetch(self, result: SearchResult) -> NewsArticle | None:
-        raw_html = await self._download(result.url)
+        try:
+            raw_html = await self._download(result.url)
+        except Exception as exc:
+            self.logger.info(
+                "news_fetch_download_failed_using_snippet",
+                url=result.url,
+                error=str(exc),
+            )
+            return _article_from_snippet(result)
+
         text = await asyncio.to_thread(_extract_text, raw_html)
         normalized = _normalize_text(text)
         if len(normalized.split()) < 40:
-            return None
+            self.logger.info(
+                "news_fetch_extract_thin_using_snippet",
+                url=result.url,
+                extracted_words=len(normalized.split()),
+            )
+            return _article_from_snippet(result)
 
         content = normalized[: self.max_chars].strip()
         return NewsArticle(
@@ -117,3 +131,26 @@ def _normalize_text(text: str) -> str:
 def _domain_from_url(url: str) -> str | None:
     netloc = urlsplit(url).netloc.strip().lower()
     return netloc or None
+
+
+def _article_from_snippet(result: SearchResult) -> NewsArticle | None:
+    """Best-effort article when full extraction fails.
+
+    DDG news snippets are short but usually carry the headline thesis, which
+    is enough for Gemini to generate a useful catalyst note. Without this,
+    paywall- and JS-heavy publishers cause every article to be dropped and
+    Opus receives an empty news bundle.
+    """
+    snippet = (result.snippet or "").strip()
+    if not snippet:
+        return None
+    fallback_content = f"{result.title.strip()}\n\n{snippet}".strip()
+    return NewsArticle(
+        title=result.title,
+        url=result.url,
+        snippet=snippet,
+        content=fallback_content,
+        source=result.source or _domain_from_url(result.url),
+        published_at=result.published_at,
+        is_ir_fallback=result.is_ir_fallback,
+    )

@@ -313,7 +313,7 @@ def sessionmaker_from(session: AsyncSession) -> async_sessionmaker[AsyncSession]
 def make_batch(
     *,
     rows: tuple[tuple[str, int, int], ...] = DEFAULT_BATCH_ROWS,
-    tradingview_status: str = "success",
+    screener_status: str = "success",
     fallback_used: bool = False,
     warning_text: str | None = None,
 ) -> CandidateBatch:
@@ -323,7 +323,7 @@ def make_batch(
     )
     return CandidateBatch(
         candidates=records,
-        tradingview_status=tradingview_status,  # type: ignore[arg-type]
+        screener_status=screener_status,  # type: ignore[arg-type]
         fallback_used=fallback_used,
         warning_text=warning_text,
     )

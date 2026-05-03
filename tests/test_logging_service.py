@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from uuid import uuid4
 
+from app.core.config import Settings
 from app.db.models.recommendation import Recommendation
 from app.db.models.user import User
 from app.db.models.workflow_run import WorkflowRun
 from app.llm.schemas import ChosenContract, StructuredDecision
-from app.pipeline.types import PipelineCandidate, PipelineOutcome
+from app.pipeline.types import DecisionTrace, PipelineCandidate, PipelineOutcome
 from app.scoring.types import (
     CandidateContext,
     CandidateEvaluation,
@@ -23,7 +25,7 @@ from app.scoring.types import (
 from app.services.candidate_models import CandidateBatch, CandidateRecord
 from app.services.logging_service import LoggingService
 from app.services.market_data.types import MarketSnapshot, ReturnMetrics
-from app.services.news.types import NewsBrief, NewsBundle
+from app.services.news.types import NewsArticle, NewsBrief, NewsBundle
 from app.services.sizing_types import SizingResult
 
 
@@ -54,7 +56,7 @@ def test_logging_service_builds_complete_artifacts_and_archive(tmp_path) -> None
         status="success",
         started_at=started_at,
         finished_at=finished_at,
-        tradingview_status="success",
+        screener_status="success",
         selected_candidate_count=2,
         final_recommendation_id=rec_id,
     )
@@ -110,7 +112,7 @@ def test_logging_service_builds_complete_artifacts_and_archive(tmp_path) -> None
     outcome = PipelineOutcome(
         batch=CandidateBatch(
             candidates=(selected.record, rejected.record),
-            tradingview_status="success",
+            screener_status="success",
             fallback_used=False,
             warning_text=None,
         ),
@@ -169,6 +171,7 @@ def test_logging_service_builds_complete_artifacts_and_archive(tmp_path) -> None
         "key_concerns",
         "rejected_alternatives",
         "data_confidence",
+        "decision_engine",
         "model_used_heavy",
         "model_used_light",
         "telegram_message",
@@ -176,9 +179,11 @@ def test_logging_service_builds_complete_artifacts_and_archive(tmp_path) -> None
     }
     candidate_keys = {
         "ticker",
+        "screener_rank",
         "company_name",
         "market_cap",
         "earnings_date",
+        "earnings_date_verified",
         "direction_classification",
         "candidate_direction_score",
         "best_contract_score",
@@ -188,6 +193,7 @@ def test_logging_service_builds_complete_artifacts_and_archive(tmp_path) -> None
         "reason_selected_or_rejected",
         "data_sources_used",
         "missing_data_fields",
+        "validation_notes",
     }
     contract_keys = {
         "ticker",
@@ -215,6 +221,11 @@ def test_logging_service_builds_complete_artifacts_and_archive(tmp_path) -> None
     assert contract_keys.issubset(artifacts.option_contracts[0].keys())
     assert artifacts.recommendation_card["selected_strategy"] == "Long call"
     assert artifacts.recommendation_card["data_confidence"] == 88
+    assert artifacts.recommendation_card["decision_engine"] == "heuristic"
+    assert artifacts.recommendation_card["model_used_heavy"] is None
+    assert artifacts.recommendation_card["model_used_light"] is None
+    assert artifacts.run_summary["screener_tickers"] == ["AMD", "AAPL"]
+    assert artifacts.run_summary["decision_engine"] == "heuristic"
     rejected_contracts = [
         contract for contract in artifacts.option_contracts if not contract["passed_hard_filters"]
     ]
@@ -233,6 +244,143 @@ def test_logging_service_builds_complete_artifacts_and_archive(tmp_path) -> None
     assert (archive_dir / "telegram_message.txt").read_text(encoding="utf-8") == (
         "Weekly Earnings Options Signal"
     )
+
+
+def test_logging_service_records_actual_model_usage(tmp_path) -> None:
+    user_id = uuid4()
+    run_id = uuid4()
+    rec_id = uuid4()
+    created_at = datetime(2026, 5, 1, 16, 5, tzinfo=UTC)
+
+    user = User(
+        id=user_id,
+        telegram_chat_id="12345",
+        account_size=Decimal("20000.00"),
+        risk_profile="Balanced",
+        broker="IBKR",
+        timezone_label="ET",
+        timezone_iana="America/Toronto",
+        strategy_permission="long_and_short",
+        max_contracts=3,
+        openrouter_api_key_encrypted="enc",
+    )
+    run = WorkflowRun(
+        id=run_id,
+        user_id=user_id,
+        trigger_type="manual",
+        status="success",
+        started_at=created_at,
+        finished_at=created_at,
+        screener_status="success",
+        selected_candidate_count=1,
+        final_recommendation_id=rec_id,
+    )
+    recommendation = Recommendation(
+        id=rec_id,
+        user_id=user_id,
+        run_id=run_id,
+        ticker="AMD",
+        company_name="AMD Corp.",
+        strategy="long_call",
+        option_type="call",
+        position_side="long",
+        strike=Decimal("104.00"),
+        expiry=date(2026, 5, 16),
+        suggested_entry=Decimal("1.25"),
+        suggested_quantity=2,
+        estimated_max_loss="$125.00 max loss per contract",
+        account_risk_percent=Decimal("2.0000"),
+        confidence_score=82,
+        risk_level="High",
+        reasoning_summary="AMD had the strongest setup in the run.",
+        key_evidence_json=["Momentum held up into earnings."],
+        key_concerns_json=["IV crush remains a risk."],
+        telegram_message_id="42",
+        created_at=created_at,
+    )
+    candidate = _candidate(
+        ticker="AMD",
+        current_price=Decimal("102"),
+        contract_inputs=(_contract("AMD", strike="104", bid="1.10", ask="1.25"),),
+        final_score=82,
+        direction_score=80,
+        confidence_score=88,
+        chosen_index=0,
+        rejected_indexes={},
+        action="recommend",
+    )
+    candidate = replace(
+        candidate,
+        news_bundle=candidate.news_bundle.model_copy(
+            update={
+                "used_llm_summary": True,
+                "articles": (
+                    NewsArticle(
+                        title="AMD beats expectations",
+                        url="https://example.com/amd",
+                        snippet="AMD earnings beat",
+                        content="AMD reported strong quarterly results.",
+                        source="example.com",
+                    ),
+                ),
+            }
+        ),
+    )
+    outcome = PipelineOutcome(
+        batch=CandidateBatch(
+            candidates=(candidate.record,),
+            screener_status="success",
+            fallback_used=False,
+            warning_text=None,
+        ),
+        decision=StructuredDecision(
+            action="recommend",
+            chosen_ticker="AMD",
+            chosen_contract=ChosenContract(
+                ticker="AMD",
+                option_type="call",
+                position_side="long",
+                strike=Decimal("104"),
+                expiry=date(2026, 5, 16),
+                rationale="Highest combined score.",
+            ),
+            direction_score=80,
+            contract_score=84,
+            final_score=82,
+            reasoning="AMD had the cleanest mix of trend, liquidity, and confidence.",
+            key_evidence=["Relative strength stayed positive."],
+            key_concerns=["IV crush remains a risk."],
+            watchlist_tickers=["AMD"],
+        ),
+        candidates=(candidate,),
+        selected=candidate,
+        decision_trace=DecisionTrace(
+            engine="llm",
+            heavy_model_used="claude-opus-4.7-thinking",
+        ),
+    )
+
+    service = LoggingService(
+        archive_root=tmp_path / "runs",
+        settings=Settings(
+            app_encryption_key="x" * 44,
+            market_analysis_model="claude-opus-4.7-thinking",
+            lightweight_model="gemini-3.1-flash",
+        ),
+    )
+    artifacts = service.build_run_artifacts(
+        run=run,
+        user=user,
+        outcome=outcome,
+        recommendation=recommendation,
+        telegram_message="Weekly Earnings Options Signal",
+    )
+
+    assert artifacts.recommendation_card["decision_engine"] == "llm"
+    assert artifacts.recommendation_card["model_used_heavy"] == "claude-opus-4.7-thinking"
+    assert artifacts.recommendation_card["model_used_light"] == "gemini-3.1-flash"
+    assert artifacts.run_summary["model_used_heavy"] == "claude-opus-4.7-thinking"
+    assert artifacts.run_summary["model_used_light"] == "gemini-3.1-flash"
 
 
 def _candidate(

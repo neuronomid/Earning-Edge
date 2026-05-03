@@ -315,7 +315,7 @@ def test_data_confidence_logs_source_conflict_without_forcing_blocker() -> None:
             SourceConflict(
                 field="market_cap",
                 severity="moderate",
-                detail="TradingView and the backup overview disagreed on market cap.",
+                detail="Finviz and the backup overview disagreed on market cap.",
             ),
         ),
     )

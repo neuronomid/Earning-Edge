@@ -72,7 +72,7 @@ class FinvizBrowserClient:
         )
 
         records: list[CandidateRecord] = []
-        for cells in raw_rows:
+        for index, cells in enumerate(raw_rows, start=1):
             if len(cells) < 11:
                 continue
             ticker = cells[1].strip().upper()
@@ -84,6 +84,7 @@ class FinvizBrowserClient:
                     company_name=cells[2] or None,
                     sector=cells[3] or None,
                     market_cap=parse_compact_decimal(cells[6]),
+                    screener_rank=index,
                     current_price=parse_compact_decimal(cells[8]),
                     daily_change_percent=parse_percent(cells[9]),
                     volume=parse_compact_int(cells[10]),

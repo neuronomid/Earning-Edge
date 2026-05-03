@@ -9,7 +9,7 @@ from app.db.repositories.run_repo import WorkflowRunRepository
 from app.llm.types import LLMAuthenticationError
 from app.pipeline.orchestrator import PipelineOrchestrator
 from app.pipeline.steps.scoring import CandidateScoringStep
-from app.services.candidate_service import TRADINGVIEW_FALLBACK_WARNING
+from app.services.candidate_service import FINVIZ_FALLBACK_WARNING
 from tests.e2e.testkit import (
     FakeNotifier,
     FakeScoringStep,
@@ -29,13 +29,13 @@ from tests.e2e.testkit import (
 pytestmark = pytest.mark.asyncio
 
 
-async def test_tradingview_failure_warning_surfaces_in_message_and_logs(
+async def test_finviz_failure_warning_surfaces_in_message_and_logs(
     db_session: AsyncSession,
 ) -> None:
     batch = make_batch(
-        tradingview_status="failed",
+        screener_status="failed",
         fallback_used=True,
-        warning_text=TRADINGVIEW_FALLBACK_WARNING,
+        warning_text=FINVIZ_FALLBACK_WARNING,
     )
     notifier = FakeNotifier()
     orchestrator = PipelineOrchestrator(
@@ -65,7 +65,7 @@ async def test_tradingview_failure_warning_surfaces_in_message_and_logs(
         sizing_step=FakeSizingStep(),
         notifier=notifier,
     )
-    user = await make_user(db_session, telegram_chat_id="e2e-tradingview-fallback")
+    user = await make_user(db_session, telegram_chat_id="e2e-finviz-fallback")
     run = await WorkflowRunRepository(db_session).add(
         WorkflowRun(user_id=user.id, trigger_type="manual", status="running")
     )
@@ -73,11 +73,11 @@ async def test_tradingview_failure_warning_surfaces_in_message_and_logs(
     await orchestrator.run(db_session, run)
     await db_session.commit()
 
-    assert run.tradingview_status == "failed"
+    assert run.screener_status == "failed"
     assert run.run_summary_json is not None
-    assert run.run_summary_json["warning_text"] == TRADINGVIEW_FALLBACK_WARNING
+    assert run.run_summary_json["warning_text"] == FINVIZ_FALLBACK_WARNING
     assert run.telegram_message_text is not None
-    assert TRADINGVIEW_FALLBACK_WARNING in run.telegram_message_text
+    assert FINVIZ_FALLBACK_WARNING in run.telegram_message_text
 
 
 async def test_invalid_openrouter_key_blocks_recommendation(db_session: AsyncSession) -> None:

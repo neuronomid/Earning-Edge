@@ -85,6 +85,7 @@ class LoggingService:
         ranked_candidates = _rank_candidates(outcome.candidates)
         selected = outcome.selected
         selected_ticker = selected.record.ticker if selected is not None else None
+        selected_contract_score = outcome.final_contract
         top_candidate = ranked_candidates[0] if ranked_candidates else None
 
         candidate_cards = [
@@ -112,7 +113,11 @@ class LoggingService:
             for card in candidate_cards
             if card["ticker"] != selected_ticker
         ][:3]
-        selected_contract = None if selected is None else _selected_contract(selected)
+        selected_contract = (
+            None
+            if selected_contract_score is None
+            else _selected_contract_fields(selected_contract_score)
+        )
         confidence_score = (
             recommendation.confidence_score
             if recommendation is not None
@@ -135,7 +140,10 @@ class LoggingService:
             "trigger_type": run.trigger_type,
             "selected_ticker": selected_ticker,
             "selected_company": None if selected is None else selected.context.company_name,
-            "selected_strategy": _selected_strategy(selected, outcome.decision.action),
+            "selected_strategy": _selected_strategy(
+                selected_contract_score,
+                outcome.decision.action,
+            ),
             "selected_contract": selected_contract,
             "selected_contract_rationale": (
                 None
@@ -166,8 +174,10 @@ class LoggingService:
             "key_concerns": list(outcome.decision.key_concerns),
             "rejected_alternatives": rejected_alternatives,
             "data_confidence": data_confidence,
-            "model_used_heavy": self.settings.market_analysis_model,
-            "model_used_light": self.settings.lightweight_model,
+            "decision_engine": outcome.decision_trace.engine,
+            "decision_engine_notes": list(outcome.decision_trace.notes),
+            "model_used_heavy": _heavy_model_used(outcome),
+            "model_used_light": _light_model_used(outcome, self.settings),
             "decision_action": outcome.decision.action,
             "decision_reasoning": outcome.decision.reasoning,
             "watchlist_tickers": list(outcome.decision.watchlist_tickers),
@@ -190,10 +200,15 @@ class LoggingService:
             "screener_status": run.screener_status,
             "fallback_used": outcome.batch.fallback_used,
             "warning_text": outcome.batch.warning_text,
+            "screener_tickers": [record.ticker for record in outcome.batch.candidates],
             "selected_candidate_count": len(outcome.candidates),
             "final_recommendation_id": None if recommendation is None else str(recommendation.id),
             "selected_ticker": selected_ticker,
             "decision_action": outcome.decision.action,
+            "decision_engine": outcome.decision_trace.engine,
+            "decision_engine_notes": list(outcome.decision_trace.notes),
+            "model_used_heavy": _heavy_model_used(outcome),
+            "model_used_light": _light_model_used(outcome, self.settings),
             "contracts_considered_count": len(option_contracts),
             "rejected_contract_count": sum(
                 1 for contract in option_contracts if not contract["passed_hard_filters"]
@@ -260,11 +275,13 @@ def _candidate_card(
     best_contract = _best_contract(candidate)
     return {
         "ticker": candidate.record.ticker,
+        "screener_rank": candidate.record.screener_rank,
         "company_name": candidate.context.company_name,
         "market_cap": _decimal(
             candidate.record.market_cap or candidate.context.market_snapshot.market_cap
         ),
         "earnings_date": _date(candidate.context.earnings_date),
+        "earnings_date_verified": candidate.context.verified_earnings_date,
         "direction_classification": candidate.evaluation.direction.classification,
         "candidate_direction_score": candidate.evaluation.direction.score,
         "best_contract_score": None if best_contract is None else best_contract.score,
@@ -282,6 +299,7 @@ def _candidate_card(
         ),
         "data_sources_used": _data_sources(candidate),
         "missing_data_fields": _missing_data_fields(candidate),
+        "validation_notes": list(candidate.record.validation_notes),
     }
 
 
@@ -358,13 +376,6 @@ def _best_contract(candidate: PipelineCandidate) -> ContractScoreResult | None:
     return None
 
 
-def _selected_contract(candidate: PipelineCandidate) -> dict[str, Any] | None:
-    contract = candidate.evaluation.chosen_contract
-    if contract is None:
-        return None
-    return _selected_contract_fields(contract)
-
-
 def _selected_contract_fields(contract: ContractScoreResult) -> dict[str, Any]:
     return {
         "strike": _decimal(contract.contract.strike),
@@ -374,14 +385,10 @@ def _selected_contract_fields(contract: ContractScoreResult) -> dict[str, Any]:
     }
 
 
-def _selected_strategy(candidate: PipelineCandidate | None, final_action: str) -> str:
-    if (
-        candidate is None
-        or candidate.evaluation.chosen_contract is None
-        or final_action == "no_trade"
-    ):
+def _selected_strategy(contract: ContractScoreResult | None, final_action: str) -> str:
+    if contract is None or final_action == "no_trade":
         return "No trade"
-    return _title_strategy(candidate.evaluation.chosen_contract.strategy)
+    return _title_strategy(contract.strategy)
 
 
 def _title_strategy(strategy: str) -> str:
@@ -413,6 +420,8 @@ def _missing_data_fields(candidate: PipelineCandidate) -> list[str]:
     snapshot = candidate.context.market_snapshot
     if not candidate.context.identity_verified:
         missing.append("company_name")
+    if not candidate.context.verified_earnings_date:
+        missing.append("earnings_date")
     if candidate.record.market_cap is None and snapshot.market_cap is None:
         missing.append("market_cap")
     if candidate.record.current_price is None and snapshot.current_price is None:
@@ -424,6 +433,18 @@ def _missing_data_fields(candidate: PipelineCandidate) -> list[str]:
     if not candidate.news_bundle.articles:
         missing.append("news_articles")
     return missing
+
+
+def _heavy_model_used(outcome: PipelineOutcome) -> str | None:
+    return outcome.decision_trace.heavy_model_used
+
+
+def _light_model_used(outcome: PipelineOutcome, settings: Settings) -> str | None:
+    for candidate in outcome.candidates:
+        bundle = candidate.news_bundle
+        if bundle.used_llm_summary and bundle.articles:
+            return settings.lightweight_model
+    return None
 
 
 def _decimal(value: Decimal | None) -> str | None:

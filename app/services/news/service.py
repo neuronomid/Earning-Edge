@@ -137,6 +137,7 @@ class NewsService:
             search_response.all_results,
             limit=self.max_articles,
         )
+        used_llm_summary = False
 
         if not articles:
             brief = _empty_brief(search_response)
@@ -150,6 +151,7 @@ class NewsService:
                 articles=articles,
                 api_key=resolved_api_key,
             )
+            used_llm_summary = True
             brief = _apply_coverage_policy(
                 brief,
                 search_response=search_response,
@@ -164,6 +166,7 @@ class NewsService:
             articles=articles,
             brief=brief,
             used_ir_fallback=bool(search_response.fallback_results),
+            used_llm_summary=used_llm_summary,
         )
         if self.cache is not None:
             await self.cache.store(bundle)

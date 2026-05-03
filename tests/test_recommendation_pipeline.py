@@ -283,7 +283,7 @@ def _batch() -> CandidateBatch:
     )
     return CandidateBatch(
         candidates=records,
-        tradingview_status="success",
+        screener_status="success",
         fallback_used=False,
         warning_text=None,
     )

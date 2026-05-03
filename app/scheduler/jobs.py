@@ -11,6 +11,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.logging import get_logger
 from app.db.models.workflow_run import WorkflowRun
 from app.db.repositories.run_repo import WorkflowRunRepository
 from app.db.session import get_sessionmaker
@@ -20,6 +21,7 @@ from app.services.run_lock import RunLockService, get_run_lock_service
 RUN_ALREADY_ACTIVE_TEXT = (
     "⏳ A scan is already running. " "I\u2019ll show the result here when it finishes."
 )
+logger = get_logger(__name__)
 
 PipelineFunc = Callable[[AsyncSession, WorkflowRun], Awaitable[object | None]]
 
@@ -69,6 +71,12 @@ class WorkflowRunner:
 
             return WorkflowRunResult(outcome="success", run_id=run_id)
         except Exception as exc:
+            logger.exception(
+                "workflow_run_failed",
+                user_id=str(user_uuid),
+                trigger_type=trigger_type,
+                run_id=str(run_id) if run_id is not None else None,
+            )
             if run_id is not None:
                 async with self.sessionmaker() as session:
                     run = await _get_run(session, run_id)

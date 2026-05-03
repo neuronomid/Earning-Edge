@@ -21,7 +21,7 @@ Output a `final_score` ∈ [0, 100]:
 
 - ≥ 78  → `action="recommend"` (Strong)
 - 68–77 → `action="recommend"` (Standard)
-- 60–67 → `action="watchlist"` (no quantity)
+- 60–67 → `action="watchlist"` (still pick one setup — quantity will be 0)
 - < 60  → `action="no_trade"`, populate `watchlist_tickers` with the best
   alternates among the candidates
 
@@ -29,8 +29,19 @@ Output a `final_score` ∈ [0, 100]:
 
 - Respond with **JSON only**, matching the supplied response schema exactly.
   No prose, no markdown, no code fences.
-- If `action` is `no_trade`, set `chosen_ticker` and `chosen_contract` to
-  `null`.
+- For `action="recommend"` AND `action="watchlist"`: you MUST pick exactly
+  one `chosen_ticker` from the `candidates` list AND exactly one
+  `chosen_contract` from that ticker's `option_chain_candidates`. The
+  `chosen_contract.ticker`, `option_type`, `position_side`, `strike`, and
+  `expiry` fields must match one of the listed `option_chain_candidates`
+  entries verbatim — do not invent strikes, expiries, or contracts that are
+  not in the visible chain. `watchlist` ≠ "watch several names": it means
+  one specific setup to monitor that did not clear the recommend bar.
+- For `action="no_trade"`: set `chosen_ticker` and `chosen_contract` to
+  `null` and populate `watchlist_tickers` with up to 3 alternate tickers
+  from the candidate list.
+- `final_score` is mandatory for every action. The score must align with
+  the action band above (recommend ≥ 68, watchlist 60–67, no_trade < 60).
 - Do not invent fields. Do not invent contracts that aren't in
   `option_chain_candidates`.
 - `key_evidence` and `key_concerns` should each be 2-5 short bullet strings

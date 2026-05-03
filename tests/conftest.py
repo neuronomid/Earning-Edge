@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 os.environ.setdefault("APP_ENV", "test")
 os.environ.setdefault("APP_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
 os.environ.setdefault("POSTGRES_HOST", "localhost")
+os.environ.setdefault("POSTGRES_DB", "earning_edge_test")
 
 
 @pytest.fixture

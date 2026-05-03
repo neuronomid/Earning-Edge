@@ -15,6 +15,7 @@ from typing import Any
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.exceptions import TelegramConflictError
 from aiogram.fsm.storage.base import BaseStorage
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.storage.redis import RedisStorage
@@ -47,6 +48,10 @@ from app.telegram.handlers import (
 )
 
 
+class BotStartupError(RuntimeError):
+    """Raised when the bot cannot start cleanly in the current environment."""
+
+
 def build_storage(settings: Settings) -> BaseStorage:
     """Pick an FSM storage backend.
 
@@ -64,7 +69,7 @@ def build_storage(settings: Settings) -> BaseStorage:
 def build_bot(settings: Settings | None = None) -> Bot:
     settings = settings or get_settings()
     if not settings.telegram_bot_token:
-        raise RuntimeError(
+        raise BotStartupError(
             "TELEGRAM_BOT_TOKEN is not set. Create a bot via @BotFather and add the token to .env."
         )
     return Bot(
@@ -93,14 +98,29 @@ def build_dispatcher(storage: BaseStorage | None = None) -> Dispatcher:
     return dp
 
 
+async def ensure_polling_available(bot: Bot) -> None:
+    """Fail fast when another bot instance already owns getUpdates for this token."""
+    try:
+        await bot.get_updates(timeout=0, limit=1, allowed_updates=[])
+    except TelegramConflictError as exc:
+        raise BotStartupError(
+            "Another bot instance is already polling this TELEGRAM_BOT_TOKEN. "
+            "Stop the other poller or use a dedicated local token before running ./dev.sh."
+        ) from exc
+
+
 async def run_polling() -> None:
     configure_logging()
     settings = get_settings()
     bot = build_bot(settings)
-    dp = build_dispatcher()
-    logging.getLogger(__name__).info("starting telegram bot in long-polling mode")
-    await bot.delete_webhook(drop_pending_updates=False)
-    await dp.start_polling(bot, **{"workflow_data": _polling_workflow_data()})
+    try:
+        dp = build_dispatcher()
+        logging.getLogger(__name__).info("starting telegram bot in long-polling mode")
+        await bot.delete_webhook(drop_pending_updates=False)
+        await ensure_polling_available(bot)
+        await dp.start_polling(bot, **{"workflow_data": _polling_workflow_data()})
+    finally:
+        await bot.session.close()
 
 
 def _polling_workflow_data() -> dict[str, Any]:
@@ -108,7 +128,11 @@ def _polling_workflow_data() -> dict[str, Any]:
 
 
 def main() -> None:
-    asyncio.run(run_polling())
+    try:
+        asyncio.run(run_polling())
+    except BotStartupError as exc:
+        logging.getLogger(__name__).error("%s", exc)
+        raise SystemExit(1) from exc
 
 
 if __name__ == "__main__":

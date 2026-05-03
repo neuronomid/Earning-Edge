@@ -16,8 +16,7 @@ services:
       - .env.production
     environment:
       APP_ENV: production
-      TRADINGVIEW_HEADLESS: "true"
-      TRADINGVIEW_STORAGE_STATE_PATH: /app/var/tradingview/storage-state.json
+      FINVIZ_HEADLESS: "true"
     depends_on:
       postgres:
         condition: service_healthy
@@ -27,7 +26,6 @@ services:
       - "8000:8000"
     volumes:
       - ../var/runs:/app/var/runs
-      - ../var/tradingview:/app/var/tradingview
     logging:
       driver: json-file
       options:

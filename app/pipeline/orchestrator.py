@@ -25,10 +25,14 @@ from app.db.repositories.recommendation_repo import RecommendationRepository
 from app.db.repositories.user_repo import UserRepository
 from app.llm.types import LLMAuthenticationError
 from app.pipeline.steps.candidates import CandidateSelectionStep, CandidateStep
-from app.pipeline.steps.decide import DecisionStep, HeuristicDecisionStep
+from app.pipeline.steps.decide import (
+    DecisionStep,
+    get_default_decision_step,
+    resolve_selected_contract,
+)
 from app.pipeline.steps.market_data import MarketDataFetchStep, MarketDataStep
 from app.pipeline.steps.news import NewsBriefStep, NewsStep
-from app.pipeline.steps.options import NullOptionsStep, OptionsStep
+from app.pipeline.steps.options import OptionsFetchStep, OptionsStep
 from app.pipeline.steps.scoring import CandidateScoringStep, ScoringStep
 from app.pipeline.steps.sizing import PositionSizingStep, SizingStep
 from app.pipeline.types import PipelineCandidate, PipelineOutcome
@@ -113,13 +117,14 @@ class PipelineOrchestrator:
         logging_service: LoggingService | None = None,
         logger: Any | None = None,
     ) -> None:
+        settings = get_settings()
         self.candidate_step = candidate_step or CandidateSelectionStep()
         self.market_data_step = market_data_step or MarketDataFetchStep()
         self.news_step = news_step or NewsBriefStep()
-        self.options_step = options_step or NullOptionsStep()
+        self.options_step = options_step or OptionsFetchStep()
         self.scoring_step = scoring_step or CandidateScoringStep()
         self.sizing_step = sizing_step or PositionSizingStep()
-        self.decision_step = decision_step or HeuristicDecisionStep()
+        self.decision_step = decision_step or get_default_decision_step(settings=settings)
         self.notifier = notifier or AiogramNotifier()
         self.logger = logger or get_logger(__name__)
         self.logging_service = logging_service or get_logging_service()
@@ -147,16 +152,26 @@ class PipelineOrchestrator:
             for record in batch.candidates
         ]
 
-        decision = await self.decision_step.execute(candidates, user_context)
-        selected = _select_candidate(candidates, decision.chosen_ticker)
+        decision_result = await self.decision_step.execute(
+            candidates,
+            user_context,
+            openrouter_api_key=secrets.openrouter_api_key,
+        )
+        selected = _select_candidate(candidates, decision_result.decision.chosen_ticker)
+        selected_contract = _select_contract(
+            selected,
+            decision_result.decision.chosen_contract,
+        )
         outcome = PipelineOutcome(
             batch=batch,
-            decision=decision,
+            decision=decision_result.decision,
             candidates=tuple(candidates),
             selected=selected,
+            selected_contract=selected_contract,
+            decision_trace=decision_result.trace,
         )
 
-        recommendation = await self._persist(session, run, user, outcome)
+        recommendation = await self._persist(session, run, user, user_context, outcome)
         telegram_message = await self._notify_user(user, run.trigger_type, outcome, recommendation)
         self.logging_service.capture_run(
             run=run,
@@ -221,7 +236,7 @@ class PipelineOrchestrator:
             market_snapshot=market_snapshot,
             news_brief=news_bundle.brief,
             option_chain=option_chain,
-            verified_earnings_date=record.earnings_date is not None,
+            verified_earnings_date=record.earnings_date_verified,
             identity_verified=bool(
                 record.ticker and (record.company_name or market_snapshot.company_name)
             ),
@@ -245,17 +260,25 @@ class PipelineOrchestrator:
     ) -> SizingResult | None:
         if evaluation.chosen_contract is None:
             return None
+        return await self._size_contract(user_context, evaluation.chosen_contract.contract)
+
+    async def _size_contract(
+        self,
+        user_context: UserContext,
+        contract,
+    ) -> SizingResult | None:
         try:
-            return await self.sizing_step.execute(user_context, evaluation.chosen_contract.contract)
+            return await self.sizing_step.execute(user_context, contract)
         except (SizingError, SizingPermissionError) as exc:
-            self.logger.warning("pipeline_sizing_failed", ticker=evaluation.ticker, error=str(exc))
-            return _fallback_sizing(evaluation.chosen_contract.contract.position_side)
+            self.logger.warning("pipeline_sizing_failed", ticker=contract.ticker, error=str(exc))
+            return _fallback_sizing(contract.position_side)
 
     async def _persist(
         self,
         session: AsyncSession,
         run: WorkflowRun,
         user: User,
+        user_context: UserContext,
         outcome: PipelineOutcome,
     ) -> Recommendation | None:
         candidate_repo = CandidateRepository(session)
@@ -326,15 +349,23 @@ class PipelineOrchestrator:
             run.final_recommendation_id = None
             return None
 
-        chosen_contract = outcome.selected.evaluation.chosen_contract
+        chosen_contract = outcome.final_contract
         if chosen_contract is None:
             run.status = "no_trade"
             run.finished_at = datetime.now(UTC)
             run.final_recommendation_id = None
             return None
 
-        sizing = outcome.selected.sizing or _fallback_sizing(chosen_contract.contract.position_side)
+        sizing = outcome.selected.sizing
+        if sizing is None or outcome.selected.evaluation.chosen_contract != chosen_contract:
+            sizing = await self._size_contract(user_context, chosen_contract.contract)
+        sizing = sizing or _fallback_sizing(chosen_contract.contract.position_side)
         quantity = 0 if outcome.decision.action == "watchlist" else sizing.quantity
+        confidence_score = (
+            outcome.decision.final_score
+            if outcome.decision.final_score is not None
+            else outcome.selected.evaluation.final_score
+        )
         recommendation = await recommendation_repo.add(
             Recommendation(
                 user_id=user.id,
@@ -350,8 +381,8 @@ class PipelineOrchestrator:
                 suggested_quantity=quantity,
                 estimated_max_loss=sizing.max_loss_text,
                 account_risk_percent=sizing.account_risk_pct * Decimal("100"),
-                confidence_score=outcome.selected.evaluation.final_score,
-                risk_level=_risk_level(outcome.selected),
+                confidence_score=confidence_score,
+                risk_level=_risk_level(chosen_contract, confidence_score),
                 reasoning_summary=outcome.decision.reasoning,
                 key_evidence_json=outcome.decision.key_evidence,
                 key_concerns_json=outcome.decision.key_concerns,
@@ -490,6 +521,7 @@ def _fallback_news_bundle(record: CandidateRecord, *, error: str) -> NewsBundle:
             news_confidence=25,
         ),
         used_ir_fallback=False,
+        used_llm_summary=False,
     )
 
 
@@ -517,13 +549,19 @@ def _select_candidate(
     return None
 
 
-def _risk_level(candidate: PipelineCandidate) -> str:
-    contract = candidate.evaluation.chosen_contract
-    if contract is None:
-        return "Moderate"
+def _select_contract(
+    candidate: PipelineCandidate | None,
+    chosen_contract,
+):
+    if candidate is None:
+        return None
+    return resolve_selected_contract(candidate, chosen_contract)
+
+
+def _risk_level(contract, final_score: int) -> str:
     if contract.contract.position_side == "short":
         return "High"
-    if candidate.evaluation.final_score >= 78:
+    if final_score >= 78:
         return "High"
     return "Moderate"
 

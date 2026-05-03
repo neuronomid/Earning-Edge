@@ -2,8 +2,13 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from decimal import Decimal
-from typing import Protocol
+from functools import lru_cache
+from pathlib import Path
+from typing import Any, Protocol
 
+from app.core.config import Settings, get_settings
+from app.core.logging import get_logger
+from app.llm.router import LLMRouter
 from app.llm.schemas import (
     CandidateBundle,
     ChosenContract,
@@ -11,8 +16,20 @@ from app.llm.schemas import (
     OptionChainCandidate,
     StructuredDecision,
 )
-from app.pipeline.types import PipelineCandidate
+from app.llm.types import (
+    LLMAuthenticationError,
+    LLMError,
+    LLMRateLimitError,
+    LLMUnavailableError,
+    LLMValidationError,
+)
+from app.pipeline.types import (
+    DecisionStepResult,
+    DecisionTrace,
+    PipelineCandidate,
+)
 from app.scoring.types import (
+    ContractScoreResult,
     UserContext,
     breakeven_price,
     option_mid,
@@ -20,6 +37,7 @@ from app.scoring.types import (
 )
 
 ZERO = Decimal("0")
+PROMPT_PATH = Path(__file__).resolve().parents[2] / "llm" / "prompts" / "decide_recommendation.md"
 
 
 class DecisionStep(Protocol):
@@ -27,97 +45,143 @@ class DecisionStep(Protocol):
         self,
         candidates: Sequence[PipelineCandidate],
         user: UserContext,
-    ) -> StructuredDecision: ...
+        *,
+        openrouter_api_key: str,
+    ) -> DecisionStepResult: ...
 
 
 class HeuristicDecisionStep:
-    """Deterministic selector used until the LLM decision step is fully wired."""
+    """Deterministic selector used as the test default and runtime fallback."""
 
     async def execute(
         self,
         candidates: Sequence[PipelineCandidate],
         user: UserContext,
-    ) -> StructuredDecision:
-        if not candidates:
-            return StructuredDecision(
-                action="no_trade",
-                reasoning="No validated candidates were available for this scan.",
-                key_concerns=["The candidate list came back empty."],
-            )
+        *,
+        openrouter_api_key: str,
+    ) -> DecisionStepResult:
+        del user
+        del openrouter_api_key
+        return DecisionStepResult(
+            decision=_heuristic_decision(candidates),
+            trace=DecisionTrace(engine="heuristic"),
+        )
 
-        ranked = sorted(
+
+class LLMDecisionStep:
+    def __init__(
+        self,
+        *,
+        router: LLMRouter | None = None,
+        fallback: HeuristicDecisionStep | None = None,
+        system_prompt: str | None = None,
+        logger: Any | None = None,
+    ) -> None:
+        self.router = router or LLMRouter()
+        self.fallback = fallback or HeuristicDecisionStep()
+        self.system_prompt = system_prompt or _decision_prompt()
+        self.logger = logger or get_logger(__name__)
+
+    async def execute(
+        self,
+        candidates: Sequence[PipelineCandidate],
+        user: UserContext,
+        *,
+        openrouter_api_key: str,
+    ) -> DecisionStepResult:
+        fallback_result = await self.fallback.execute(
             candidates,
-            key=lambda item: (
-                item.evaluation.final_score,
-                item.evaluation.confidence.score,
-                item.record.market_cap or ZERO,
-            ),
-            reverse=True,
+            user,
+            openrouter_api_key=openrouter_api_key,
         )
-        best = ranked[0]
-        watchlist = [item.record.ticker for item in ranked[:3]]
+        if not candidates:
+            return fallback_result
 
-        if best.evaluation.action == "recommend" and best.evaluation.chosen_contract is not None:
-            chosen = best.evaluation.chosen_contract
-            return StructuredDecision(
-                action="recommend",
-                chosen_ticker=best.record.ticker,
-                chosen_contract=ChosenContract(
-                    ticker=best.record.ticker,
-                    option_type=chosen.contract.option_type,
-                    position_side=chosen.contract.position_side,
-                    strike=chosen.contract.strike,
-                    expiry=chosen.contract.expiry,
-                    rationale=(
-                        "Highest final score after the direction, contract, and confidence "
-                        "checks."
-                    ),
+        decision_input = build_decision_input(candidates, user)
+        try:
+            validated, retry_note = await self._decide_with_retry(
+                candidates,
+                decision_input,
+                openrouter_api_key=openrouter_api_key,
+            )
+            return DecisionStepResult(
+                decision=validated,
+                trace=DecisionTrace(
+                    engine="llm",
+                    heavy_model_used=self.router.heavy_model,
+                    notes=() if retry_note is None else (retry_note,),
                 ),
-                direction_score=best.evaluation.direction.score,
-                contract_score=chosen.score,
-                final_score=best.evaluation.final_score,
-                reasoning=_summarize_reasons(best),
-                key_evidence=_key_evidence(best),
-                key_concerns=_key_concerns(best),
-                watchlist_tickers=watchlist,
+            )
+        except LLMAuthenticationError as exc:
+            self.logger.warning("llm_decision_auth_failed", error=str(exc))
+            return DecisionStepResult(
+                decision=_llm_blocked_decision(str(exc)),
+                trace=DecisionTrace(
+                    engine="llm_blocked",
+                    notes=(str(exc),),
+                ),
+            )
+        except (
+            LLMRateLimitError,
+            LLMUnavailableError,
+            LLMValidationError,
+            LLMError,
+            ValueError,
+        ) as exc:
+            self.logger.warning(
+                "llm_decision_fallback",
+                error=str(exc),
+                raw_response=getattr(exc, "raw_response", None),
+            )
+            return DecisionStepResult(
+                decision=fallback_result.decision,
+                trace=DecisionTrace(
+                    engine="heuristic_fallback",
+                    notes=(f"Heavy-model decision failed: {exc}",),
+                ),
             )
 
-        if best.evaluation.action == "watchlist" and best.evaluation.chosen_contract is not None:
-            chosen = best.evaluation.chosen_contract
-            return StructuredDecision(
-                action="watchlist",
-                chosen_ticker=best.record.ticker,
-                chosen_contract=ChosenContract(
-                    ticker=best.record.ticker,
-                    option_type=chosen.contract.option_type,
-                    position_side=chosen.contract.position_side,
-                    strike=chosen.contract.strike,
-                    expiry=chosen.contract.expiry,
-                    rationale=(
-                        "The setup cleared the watchlist bar, but not the live-sizing "
-                        "threshold."
-                    ),
-                ),
-                direction_score=best.evaluation.direction.score,
-                contract_score=chosen.score,
-                final_score=best.evaluation.final_score,
-                reasoning=(
-                    "This setup is interesting enough to monitor, but it still needs a cleaner "
-                    "mix of pricing, liquidity, or confidence before it becomes a full "
-                    "recommendation."
-                ),
-                key_evidence=_key_evidence(best),
-                key_concerns=_key_concerns(best),
-                watchlist_tickers=watchlist,
-            )
-
-        return StructuredDecision(
-            action="no_trade",
-            reasoning=_no_trade_reason(best),
-            key_evidence=[],
-            key_concerns=_key_concerns(best),
-            watchlist_tickers=watchlist,
+    async def _decide_with_retry(
+        self,
+        candidates: Sequence[PipelineCandidate],
+        decision_input: DecisionInput,
+        *,
+        openrouter_api_key: str,
+    ) -> tuple[StructuredDecision, str | None]:
+        decision = await self.router.decide(
+            api_key=openrouter_api_key,
+            structured_input=decision_input,
+            response_schema=StructuredDecision,
+            system_prompt=self.system_prompt,
         )
+        try:
+            return validate_llm_decision(candidates, decision), None
+        except LLMValidationError as exc:
+            self.logger.warning(
+                "llm_decision_invalid_retrying",
+                error=str(exc),
+                raw_response=exc.raw_response,
+            )
+            corrective_prompt = _build_corrective_prompt(
+                base_prompt=self.system_prompt,
+                error_message=str(exc),
+                raw_response=exc.raw_response,
+            )
+            retry_decision = await self.router.decide(
+                api_key=openrouter_api_key,
+                structured_input=decision_input,
+                response_schema=StructuredDecision,
+                system_prompt=corrective_prompt,
+            )
+            validated = validate_llm_decision(candidates, retry_decision)
+            return validated, f"Heavy-model retry succeeded after: {exc}"
+
+
+def get_default_decision_step(*, settings: Settings | None = None) -> DecisionStep:
+    resolved = settings or get_settings()
+    if resolved.app_env == "test":
+        return HeuristicDecisionStep()
+    return LLMDecisionStep(router=LLMRouter(settings=resolved))
 
 
 def build_decision_input(
@@ -129,6 +193,164 @@ def build_decision_input(
         risk_profile=user.risk_profile,
         account_size=user.account_size,
         candidates=[_candidate_bundle(item) for item in candidates],
+    )
+
+
+def validate_llm_decision(
+    candidates: Sequence[PipelineCandidate],
+    decision: StructuredDecision,
+) -> StructuredDecision:
+    watchlist = _sanitize_watchlist(
+        candidates,
+        decision.watchlist_tickers,
+        exclude=decision.chosen_ticker,
+    )
+    raw_response = decision.model_dump_json()
+    _validate_action_thresholds(decision, raw_response=raw_response)
+
+    if decision.action == "no_trade":
+        if not watchlist:
+            watchlist = _default_watchlist(candidates, exclude=None)
+        return decision.model_copy(
+            update={
+                "chosen_ticker": None,
+                "chosen_contract": None,
+                "watchlist_tickers": watchlist,
+            }
+        )
+
+    if decision.chosen_ticker is None or decision.chosen_contract is None:
+        raise LLMValidationError(
+            "Heavy model returned an actionable decision without a ticker and contract.",
+            raw_response=raw_response,
+        )
+
+    if decision.chosen_contract.ticker != decision.chosen_ticker:
+        raise LLMValidationError(
+            "Heavy model returned mismatched ticker fields.",
+            raw_response=raw_response,
+        )
+
+    candidate = next(
+        (item for item in candidates if item.record.ticker == decision.chosen_ticker),
+        None,
+    )
+    if candidate is None:
+        raise LLMValidationError(
+            f"Heavy model selected unknown ticker {decision.chosen_ticker!r}.",
+            raw_response=raw_response,
+        )
+
+    matched_contract = resolve_selected_contract(
+        candidate,
+        decision.chosen_contract,
+        visible_only=True,
+    )
+    if matched_contract is None:
+        raise LLMValidationError(
+            "Heavy model selected a contract that was not present in option_chain_candidates.",
+            raw_response=raw_response,
+        )
+
+    return decision.model_copy(update={"watchlist_tickers": watchlist})
+
+
+def resolve_selected_contract(
+    candidate: PipelineCandidate,
+    chosen_contract: ChosenContract | None,
+    *,
+    visible_only: bool = False,
+) -> ContractScoreResult | None:
+    if chosen_contract is None:
+        return candidate.evaluation.chosen_contract if not visible_only else None
+
+    contracts = candidate.evaluation.considered_contracts[:3] if visible_only else (
+        candidate.evaluation.considered_contracts
+    )
+    for contract in contracts:
+        if _contract_matches(contract, chosen_contract):
+            return contract
+
+    if visible_only:
+        return None
+    if (
+        candidate.evaluation.chosen_contract is not None
+        and _contract_matches(candidate.evaluation.chosen_contract, chosen_contract)
+    ):
+        return candidate.evaluation.chosen_contract
+    return None
+
+
+def _heuristic_decision(candidates: Sequence[PipelineCandidate]) -> StructuredDecision:
+    if not candidates:
+        return StructuredDecision(
+            action="no_trade",
+            reasoning="No validated candidates were available for this scan.",
+            key_concerns=["The candidate list came back empty."],
+        )
+
+    ranked = _rank_candidates(candidates)
+    best = ranked[0]
+    watchlist = [item.record.ticker for item in ranked[:3]]
+
+    if best.evaluation.action == "recommend" and best.evaluation.chosen_contract is not None:
+        chosen = best.evaluation.chosen_contract
+        return StructuredDecision(
+            action="recommend",
+            chosen_ticker=best.record.ticker,
+            chosen_contract=ChosenContract(
+                ticker=best.record.ticker,
+                option_type=chosen.contract.option_type,
+                position_side=chosen.contract.position_side,
+                strike=chosen.contract.strike,
+                expiry=chosen.contract.expiry,
+                rationale=(
+                    "Highest final score after the direction, contract, and confidence checks."
+                ),
+            ),
+            direction_score=best.evaluation.direction.score,
+            contract_score=chosen.score,
+            final_score=best.evaluation.final_score,
+            reasoning=_summarize_reasons(best),
+            key_evidence=_key_evidence(best),
+            key_concerns=_key_concerns(best),
+            watchlist_tickers=watchlist,
+        )
+
+    if best.evaluation.action == "watchlist" and best.evaluation.chosen_contract is not None:
+        chosen = best.evaluation.chosen_contract
+        return StructuredDecision(
+            action="watchlist",
+            chosen_ticker=best.record.ticker,
+            chosen_contract=ChosenContract(
+                ticker=best.record.ticker,
+                option_type=chosen.contract.option_type,
+                position_side=chosen.contract.position_side,
+                strike=chosen.contract.strike,
+                expiry=chosen.contract.expiry,
+                rationale=(
+                    "The setup cleared the watchlist bar, but not the live-sizing threshold."
+                ),
+            ),
+            direction_score=best.evaluation.direction.score,
+            contract_score=chosen.score,
+            final_score=best.evaluation.final_score,
+            reasoning=(
+                "This setup is interesting enough to monitor, but it still needs a cleaner "
+                "mix of pricing, liquidity, or confidence before it becomes a full "
+                "recommendation."
+            ),
+            key_evidence=_key_evidence(best),
+            key_concerns=_key_concerns(best),
+            watchlist_tickers=watchlist,
+        )
+
+    return StructuredDecision(
+        action="no_trade",
+        reasoning=_no_trade_reason(best),
+        key_evidence=[],
+        key_concerns=_key_concerns(best),
+        watchlist_tickers=watchlist,
     )
 
 
@@ -173,7 +395,7 @@ def _candidate_bundle(candidate: PipelineCandidate) -> CandidateBundle:
     )
 
 
-def _option_chain_candidate(contract) -> OptionChainCandidate:
+def _option_chain_candidate(contract: ContractScoreResult) -> OptionChainCandidate:
     spread = spread_percent(contract.contract)
     return OptionChainCandidate(
         option_type=contract.contract.option_type,
@@ -263,3 +485,117 @@ def _no_trade_reason(candidate: PipelineCandidate) -> str:
         "direction, pricing, liquidity, or data confidence than I want for an "
         "earnings hold."
     )
+
+
+def _validate_action_thresholds(
+    decision: StructuredDecision,
+    *,
+    raw_response: str | None = None,
+) -> None:
+    score = decision.final_score
+    if decision.action == "recommend":
+        if score is None or score < 68:
+            raise LLMValidationError(
+                "Heavy model returned recommend with final_score below 68.",
+                raw_response=raw_response,
+            )
+        return
+    if decision.action == "watchlist":
+        if score is None or not 60 <= score <= 67:
+            raise LLMValidationError(
+                "Heavy model returned watchlist with final_score outside 60-67.",
+                raw_response=raw_response,
+            )
+        return
+    if score is not None and score >= 60:
+        raise LLMValidationError(
+            "Heavy model returned no_trade with final_score 60 or higher.",
+            raw_response=raw_response,
+        )
+
+
+def _build_corrective_prompt(
+    *,
+    base_prompt: str,
+    error_message: str,
+    raw_response: str | None,
+) -> str:
+    response_block = (
+        "(no parsed JSON available)" if not raw_response else raw_response
+    )
+    return (
+        f"{base_prompt}\n\n"
+        "## Retry context\n\n"
+        "Your previous response was rejected by the validator. Re-read the\n"
+        "Hard Rules above carefully and produce a corrected JSON response\n"
+        "that satisfies them — do not repeat the same mistake.\n\n"
+        f"Validator error: {error_message}\n\n"
+        f"Previous response (rejected):\n{response_block}"
+    )
+
+
+def _sanitize_watchlist(
+    candidates: Sequence[PipelineCandidate],
+    requested: Sequence[str],
+    *,
+    exclude: str | None,
+) -> list[str]:
+    allowed = {item.record.ticker for item in candidates}
+    ordered: list[str] = []
+    for ticker in requested:
+        if ticker not in allowed or ticker == exclude or ticker in ordered:
+            continue
+        ordered.append(ticker)
+    return ordered[:3]
+
+
+def _default_watchlist(
+    candidates: Sequence[PipelineCandidate],
+    *,
+    exclude: str | None,
+) -> list[str]:
+    ranked = _rank_candidates(candidates)
+    return [
+        item.record.ticker
+        for item in ranked
+        if item.record.ticker != exclude
+    ][:3]
+
+
+def _rank_candidates(candidates: Sequence[PipelineCandidate]) -> list[PipelineCandidate]:
+    return sorted(
+        candidates,
+        key=lambda item: (
+            item.evaluation.final_score,
+            item.evaluation.confidence.score,
+            item.record.market_cap or ZERO,
+        ),
+        reverse=True,
+    )
+
+
+def _contract_matches(contract: ContractScoreResult, chosen_contract: ChosenContract) -> bool:
+    return (
+        contract.contract.ticker == chosen_contract.ticker
+        and contract.contract.option_type == chosen_contract.option_type
+        and contract.contract.position_side == chosen_contract.position_side
+        and contract.contract.strike == chosen_contract.strike
+        and contract.contract.expiry == chosen_contract.expiry
+    )
+
+
+def _llm_blocked_decision(error: str) -> StructuredDecision:
+    return StructuredDecision(
+        action="no_trade",
+        reasoning=(
+            "I could not run the final Opus decision step because the OpenRouter key is "
+            "missing or invalid. Update the OpenRouter key in Telegram settings and rerun "
+            "the scan."
+        ),
+        key_concerns=[error],
+    )
+
+
+@lru_cache(maxsize=1)
+def _decision_prompt() -> str:
+    return PROMPT_PATH.read_text(encoding="utf-8")

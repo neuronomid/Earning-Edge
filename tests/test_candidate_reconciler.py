@@ -12,7 +12,7 @@ from app.services.earnings_calendar.reconciler import (
 )
 
 
-def test_reconciler_prefers_tradingview_ranking_but_fills_missing_fields() -> None:
+def test_reconciler_prefers_finviz_ranking_but_fills_missing_fields() -> None:
     primary = CandidateRecord(
         ticker="AAPL",
         company_name="Apple Inc.",
@@ -22,7 +22,7 @@ def test_reconciler_prefers_tradingview_ranking_but_fills_missing_fields() -> No
         daily_change_percent=Decimal("4.61"),
         volume=48870000,
         sector=None,
-        sources=("tradingview",),
+        sources=("finviz",),
     )
     yfinance = CandidateRecord(
         ticker="AAPL",
@@ -48,7 +48,7 @@ def test_reconciler_prefers_tradingview_ranking_but_fills_missing_fields() -> No
     assert reconciled.current_price == Decimal("283.86")
     assert reconciled.earnings_date == date(2026, 5, 8)
     assert reconciled.sector == "Electronic technology"
-    assert reconciled.sources == ("tradingview", "yfinance", "finnhub")
+    assert reconciled.sources == ("finviz", "yfinance", "finnhub")
     assert "market cap differs across sources" in reconciled.validation_notes[0]
 
 
@@ -59,7 +59,7 @@ def test_reconciler_rejects_unverified_conflicting_earnings_dates() -> None:
         market_cap=Decimal("3080000000000"),
         earnings_date=date(2026, 5, 8),
         current_price=Decimal("414.30"),
-        sources=("tradingview",),
+        sources=("finviz",),
     )
     backup = CandidateRecord(
         ticker="MSFT",

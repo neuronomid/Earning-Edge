@@ -21,11 +21,8 @@ Phase 0 — Project Foundation (FastAPI skeleton + Docker dev env).
 ```bash
 cp .env.example .env
 
-# bring up app + postgres + redis
-docker compose up -d
-
-# health check
-curl localhost:8000/health   # -> {"status":"ok"}
+# one-command local dev startup
+./dev.sh
 
 # run tests inside the container
 docker compose exec app pytest -q
@@ -35,6 +32,10 @@ uv sync
 uv run pre-commit install
 uv run pre-commit run --all-files
 ```
+
+`./dev.sh` syncs the host virtualenv, starts Postgres + Redis, applies
+migrations before the app boots, waits for the API health check, and then starts
+the Telegram bot with localhost database/redis overrides.
 
 The `playwright` service is defined under the `browser` profile and only starts
 when explicitly requested (`docker compose --profile browser up playwright`).

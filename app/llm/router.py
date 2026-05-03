@@ -137,16 +137,23 @@ class LLMRouter:
             max_tokens=max_tokens,
             temperature=temperature,
             response_format={"type": "json_object"},
+            reasoning=self._heavy_reasoning_param(),
         )
         text = _extract_text(payload)
         try:
             parsed = json.loads(text)
         except json.JSONDecodeError as exc:
-            raise LLMValidationError(f"Heavy model returned non-JSON: {exc}") from exc
+            raise LLMValidationError(
+                f"Heavy model returned non-JSON: {exc}",
+                raw_response=text,
+            ) from exc
         try:
             return response_schema.model_validate(parsed)
         except ValidationError as exc:
-            raise LLMValidationError(f"Heavy model output failed schema validation: {exc}") from exc
+            raise LLMValidationError(
+                f"Heavy model output failed schema validation: {exc}",
+                raw_response=text,
+            ) from exc
 
     # ---------- internals ----------
 
@@ -156,6 +163,15 @@ class LLMRouter:
                 "decide() cannot run against the lightweight model "
                 f"(PRD §7.4). model={model!r} matches LIGHTWEIGHT_MODEL."
             )
+
+    def _heavy_reasoning_param(self) -> dict[str, Any] | None:
+        # PRD §7.2: heavy reasoning runs Claude Opus 4.7 in thinking mode.
+        # OpenRouter does not accept a "-thinking" model suffix; thinking is
+        # opted into via the unified `reasoning` parameter.
+        effort = getattr(self.settings, "market_analysis_reasoning_effort", "medium")
+        if effort == "off":
+            return None
+        return {"effort": effort, "exclude": True}
 
     async def _call_completion(
         self,
@@ -167,6 +183,7 @@ class LLMRouter:
         max_tokens: int,
         temperature: float,
         response_format: dict[str, Any] | None,
+        reasoning: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if not api_key or not api_key.strip():
             raise LLMAuthenticationError("OpenRouter API key is empty.")
@@ -180,6 +197,8 @@ class LLMRouter:
         }
         if response_format is not None:
             body["response_format"] = response_format
+        if reasoning is not None:
+            body["reasoning"] = reasoning
 
         headers = {
             "Authorization": f"Bearer {api_key.strip()}",

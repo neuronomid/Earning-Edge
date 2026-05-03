@@ -15,6 +15,8 @@ class CandidateRecord:
     market_cap: Decimal | None
     earnings_date: date | None
     current_price: Decimal | None
+    earnings_date_verified: bool = True
+    screener_rank: int | None = None
     daily_change_percent: Decimal | None = None
     volume: int | None = None
     sector: str | None = None
