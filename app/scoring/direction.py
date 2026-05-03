@@ -70,7 +70,7 @@ def score_direction(
                 name=name,
                 score=_factor_points(signal, _DIRECTION_WEIGHTS[name], polarity),
                 weight=_DIRECTION_WEIGHTS[name],
-                detail=_factor_detail(name, signal),
+                detail=_factor_detail(name, signal, polarity),
             )
             for name, signal in signals.items()
         ),
@@ -122,12 +122,13 @@ def _confidence_factor_points(score: int) -> int:
     return 0
 
 
-def _factor_detail(name: str, signal: Decimal | None) -> str:
+def _factor_detail(name: str, signal: Decimal | None, polarity: int) -> str:
     if signal is None:
         return f"{name} was only partially available"
-    if signal >= Decimal("0.35"):
+    aligned = signal * Decimal(polarity)
+    if aligned >= Decimal("0.35"):
         return f"{name} was clearly supportive"
-    if signal <= Decimal("-0.35"):
+    if aligned <= Decimal("-0.35"):
         return f"{name} argued against the trade thesis"
     return f"{name} was mixed rather than decisive"
 

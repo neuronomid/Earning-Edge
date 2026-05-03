@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:openrouter.ai)",
+      "Bash(curl -s 'https://openrouter.ai/api/v1/models')",
+      "Bash(python3 -c \"import json,sys; data=json.load\\(sys.stdin\\); models=[m['id'] for m in data['data']]; print\\('\\\\n'.join\\([m for m in models if 'opus' in m.lower\\(\\) or 'claude-4' in m.lower\\(\\) or 'gemini-3' in m.lower\\(\\) or 'gemini-flash' in m.lower\\(\\)]\\)\\)\")",
+      "Bash(python3 -c \"import json,sys; data=json.load\\(sys.stdin\\); [print\\(m['id'], '|', m.get\\('supported_parameters',[]\\)\\) for m in data['data'] if m['id']=='anthropic/claude-opus-4.7']\")",
+      "Bash(.venv/bin/python -c \"from app.core.config import Settings; s = Settings\\(\\); print\\('heavy:', s.market_analysis_model\\); print\\('light:', s.lightweight_model\\); print\\('reasoning:', s.market_analysis_reasoning_effort\\)\")",
+      "Bash(.venv/bin/python -c \"from app.llm.router import LLMRouter; r = LLMRouter\\(\\); print\\('heavy:', r.heavy_model\\); print\\('reasoning:', r._heavy_reasoning_param\\(\\)\\)\")",
+      "Bash(.venv/bin/python -m pytest tests/test_llm_router.py tests/test_decision_step.py -q)",
+      "Bash(.venv/bin/python -m pytest tests/test_decision_step.py -x -q)",
+      "Bash(.venv/bin/python -m pytest tests/ -x -q --ignore=tests/e2e --ignore=tests/test_candidate_service_live_browser.py)",
+      "Bash(.venv/bin/python -m pytest tests/ -q --ignore=tests/e2e --ignore=tests/test_candidate_service_live_browser.py --deselect tests/test_crypto.py::test_missing_key_raises)",
+      "Bash(.venv/bin/python -m pytest tests/test_logging_service.py -x -q)",
+      "Bash(.venv/bin/python -m pytest tests/test_logging_service.py tests/test_decision_step.py -q)",
+      "Bash(.venv/bin/python -m pytest tests/ -q --ignore=tests/e2e --ignore=tests/test_candidate_service_live_browser.py -k \"news or fetcher or summarizer or pipeline_recommendation\")",
+      "Bash(.venv/bin/python -m pytest tests/ -q --ignore=tests/e2e --ignore=tests/test_candidate_service_live_browser.py)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(.venv/bin/python -m pytest tests/test_scoring_engine.py tests/test_decision_step.py -x -q)",
+      "Bash(.venv/bin/python -c ' *)"
+    ]
+  }
+}
