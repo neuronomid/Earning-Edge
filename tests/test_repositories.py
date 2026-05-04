@@ -181,3 +181,67 @@ async def test_run_candidate_contract_recommendation_feedback_chain(
     feedback = await feedback_repo.list_for_recommendation(rec.id)
     assert len(feedback) == 1
     assert feedback[0].user_action == "bought"
+
+
+async def test_recommendation_parent_chain_lists_latest_first(
+    db_session: AsyncSession,
+) -> None:
+    user = await _make_user(db_session, telegram_chat_id="tg-alt-chain")
+    run = await WorkflowRunRepository(db_session).add(
+        WorkflowRun(user_id=user.id, trigger_type="manual", status="success")
+    )
+    parent = await RecommendationRepository(db_session).add(
+        Recommendation(
+            user_id=user.id,
+            run_id=run.id,
+            ticker="AMD",
+            company_name="AMD Corp.",
+            strategy="long_call",
+            option_type="call",
+            position_side="long",
+            strike=Decimal("104.00"),
+            expiry=date(2026, 5, 16),
+            suggested_entry=Decimal("1.25"),
+            suggested_quantity=2,
+            estimated_max_loss="$125",
+            account_risk_percent=Decimal("2.5000"),
+            confidence_score=82,
+            risk_level="moderate",
+            reasoning_summary="Parent recommendation.",
+            key_evidence_json=[],
+            key_concerns_json=[],
+        )
+    )
+    child = await RecommendationRepository(db_session).add(
+        Recommendation(
+            user_id=user.id,
+            run_id=run.id,
+            parent_recommendation_id=parent.id,
+            ticker="AAPL",
+            company_name="Apple Inc.",
+            strategy="long_call",
+            option_type="call",
+            position_side="long",
+            strike=Decimal("195.00"),
+            expiry=date(2026, 5, 16),
+            suggested_entry=Decimal("1.35"),
+            suggested_quantity=1,
+            estimated_max_loss="$135",
+            account_risk_percent=Decimal("2.0000"),
+            confidence_score=76,
+            risk_level="moderate",
+            reasoning_summary="Alternative recommendation.",
+            key_evidence_json=[],
+            key_concerns_json=[],
+        )
+    )
+    await db_session.commit()
+
+    repo = RecommendationRepository(db_session)
+    recent = await repo.list_recent_for_user(user.id)
+    chained = await repo.get_child_for_parent(parent.id)
+
+    assert recent[0].id == child.id
+    assert recent[1].id == parent.id
+    assert chained is not None
+    assert chained.id == child.id

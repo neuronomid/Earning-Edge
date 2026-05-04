@@ -109,42 +109,59 @@ def api_keys_keyboard(
 
 
 class RecCB(CallbackData, prefix="rec"):
-    action: str  # why, risk, alts, save_note, bought, skipped
+    action: str  # why, risk, save_note, bought, skipped
     rec_id: str
 
 
-def recommendation_keyboard(rec_id: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="🔍 Why this?",
-                    callback_data=RecCB(action="why", rec_id=rec_id).pack(),
-                ),
-                InlineKeyboardButton(
-                    text="⚖️ Risk / Sizing",
-                    callback_data=RecCB(action="risk", rec_id=rec_id).pack(),
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="📈 Alternatives",
-                    callback_data=RecCB(action="alts", rec_id=rec_id).pack(),
-                ),
-                InlineKeyboardButton(
-                    text="📘 Save Note",
-                    callback_data=RecCB(action="save_note", rec_id=rec_id).pack(),
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="✅ I bought it",
-                    callback_data=RecCB(action="bought", rec_id=rec_id).pack(),
-                ),
-                InlineKeyboardButton(
-                    text="❌ I skipped it",
-                    callback_data=RecCB(action="skipped", rec_id=rec_id).pack(),
-                ),
-            ],
+class AltRecCB(CallbackData, prefix="alt"):
+    cursor_rec_id: str
+
+
+def recommendation_keyboard(
+    rec_id: str,
+    *,
+    alternative_cursor_id: str | None = None,
+    include_alternative: bool = True,
+) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = [
+        [
+            InlineKeyboardButton(
+                text="🔍 Why this?",
+                callback_data=RecCB(action="why", rec_id=rec_id).pack(),
+            ),
+            InlineKeyboardButton(
+                text="⚖️ Risk / Sizing",
+                callback_data=RecCB(action="risk", rec_id=rec_id).pack(),
+            ),
+        ]
+    ]
+    action_row: list[InlineKeyboardButton] = []
+    if include_alternative:
+        action_row.append(
+            InlineKeyboardButton(
+                text="📈 Alternatives",
+                callback_data=AltRecCB(
+                    cursor_rec_id=alternative_cursor_id or rec_id
+                ).pack(),
+            )
+        )
+    action_row.append(
+        InlineKeyboardButton(
+            text="📘 Save Note",
+            callback_data=RecCB(action="save_note", rec_id=rec_id).pack(),
+        )
+    )
+    rows.append(action_row)
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="✅ I bought it",
+                callback_data=RecCB(action="bought", rec_id=rec_id).pack(),
+            ),
+            InlineKeyboardButton(
+                text="❌ I skipped it",
+                callback_data=RecCB(action="skipped", rec_id=rec_id).pack(),
+            ),
         ]
     )
+    return InlineKeyboardMarkup(inline_keyboard=rows)

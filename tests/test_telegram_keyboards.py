@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from app.telegram.keyboards.main_menu import ALL_MAIN_MENU_BUTTONS, main_menu_keyboard
 from app.telegram.keyboards.settings import (
+    AltRecCB,
     api_keys_keyboard,
     recommendation_keyboard,
     settings_keyboard,
@@ -63,3 +64,25 @@ def test_recommendation_keyboard_includes_feedback_buttons() -> None:
         "✅ I bought it",
         "❌ I skipped it",
     ]
+
+
+def test_recommendation_keyboard_hides_alternative_when_requested() -> None:
+    labels = _flatten_inline_labels(
+        recommendation_keyboard("rec-123", include_alternative=False)
+    )
+    assert labels == [
+        "🔍 Why this?",
+        "⚖️ Risk / Sizing",
+        "📘 Save Note",
+        "✅ I bought it",
+        "❌ I skipped it",
+    ]
+
+
+def test_recommendation_keyboard_uses_dedicated_alternative_cursor() -> None:
+    markup = recommendation_keyboard("rec-123", alternative_cursor_id="rec-456")
+    alt_button = markup.inline_keyboard[1][0]
+    parsed = AltRecCB.unpack(alt_button.callback_data)
+
+    assert alt_button.text == "📈 Alternatives"
+    assert parsed.cursor_rec_id == "rec-456"

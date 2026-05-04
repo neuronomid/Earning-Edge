@@ -12,9 +12,11 @@ from app.core import crypto
 from app.db.models.user import User
 from app.db.models.workflow_run import WorkflowRun
 from app.db.repositories.candidate_repo import CandidateRepository
+from app.db.repositories.contract_repo import OptionContractRepository
 from app.db.repositories.recommendation_repo import RecommendationRepository
 from app.db.repositories.run_repo import WorkflowRunRepository
 from app.db.repositories.user_repo import UserRepository
+from app.llm.schemas import ChosenContract, StructuredDecision
 from app.pipeline.orchestrator import PipelineOrchestrator
 from app.scoring.types import (
     CandidateEvaluation,
@@ -26,6 +28,7 @@ from app.scoring.types import (
     StrategySelection,
     UserContext,
 )
+from app.services.recommendation_alternatives import AlternativeRecommendationService
 from app.services.candidate_models import CandidateBatch, CandidateRecord
 from app.services.logging_service import LoggingService
 from app.services.market_data.types import MarketSnapshot, ReturnMetrics
@@ -228,6 +231,30 @@ class FakeSizingStep:
         )
 
 
+@dataclass(slots=True)
+class SpyDecisionStep:
+    decision: StructuredDecision
+    calls: list[tuple[str, ...]]
+
+    async def execute(
+        self,
+        candidates,
+        user: UserContext,
+        *,
+        openrouter_api_key: str,
+    ):
+        del user, openrouter_api_key
+        self.calls.append(tuple(candidate.record.ticker for candidate in candidates))
+        return SimpleNamespace(
+            decision=self.decision,
+            trace=SimpleNamespace(
+                engine="llm",
+                heavy_model_used="anthropic/claude-opus-4.7",
+                notes=(),
+            ),
+        )
+
+
 async def _make_user(session: AsyncSession, telegram_chat_id: str = "12345") -> User:
     crypto.reset_cache()
     user = await UserRepository(session).add(
@@ -260,6 +287,12 @@ async def _make_run(
     )
     await session.flush()
     return run
+
+
+async def _contract_count(session: AsyncSession, run_id) -> int:
+    candidates = await CandidateRepository(session).list_for_run(run_id)
+    repo = OptionContractRepository(session)
+    return sum(len(await repo.list_for_candidate(candidate.id)) for candidate in candidates)
 
 
 def _batch() -> CandidateBatch:
@@ -556,6 +589,335 @@ async def test_pipeline_no_trade_path_marks_run_no_trade(
     assert "1. AMD" in notifier.calls[2].text
 
 
+@pytest.mark.asyncio
+async def test_alternative_service_reuses_candidate_universe_and_persists_watchlist(
+    db_session: AsyncSession,
+) -> None:
+    batch = _batch()
+    primary_orchestrator = PipelineOrchestrator(
+        candidate_step=FakeCandidateStep(batch),
+        market_data_step=FakeMarketDataStep(
+            {record.ticker: _snapshot(record) for record in batch.candidates}
+        ),
+        news_step=FakeNewsStep({record.ticker: _bundle(record) for record in batch.candidates}),
+        options_step=FakeOptionsStep(
+            {
+                "AMD": (_long_call("AMD", strike="104"),),
+                "AAPL": (_long_call("AAPL", strike="195"),),
+                "MSFT": (_long_call("MSFT", strike="425"),),
+            }
+        ),
+        scoring_step=FakeScoringStep(
+            {
+                "AMD": ScoringPlan("recommend", 82, "bullish", 80, 84),
+                "AAPL": ScoringPlan("watchlist", 64, "bullish", 70, 67),
+                "MSFT": ScoringPlan("watchlist", 61, "bullish", 66, 63),
+                "NFLX": ScoringPlan("no_trade", 54, "neutral", 52),
+                "JPM": ScoringPlan("no_trade", 49, "neutral", 47),
+            }
+        ),
+        sizing_step=FakeSizingStep(),
+        notifier=FakeNotifier(),
+    )
+    user = await _make_user(db_session, telegram_chat_id="52345")
+    run = await _make_run(db_session, user)
+    await primary_orchestrator.run(db_session, run)
+    await db_session.commit()
+
+    original = (await RecommendationRepository(db_session).list_recent_for_user(user.id))[0]
+    candidate_count_before = len(await CandidateRepository(db_session).list_for_run(run.id))
+    contract_count_before = await _contract_count(db_session, run.id)
+    run_count_before = len(await WorkflowRunRepository(db_session).list_recent_for_user(user.id))
+
+    decision_step = SpyDecisionStep(
+        decision=StructuredDecision(
+            action="watchlist",
+            chosen_ticker="AAPL",
+            chosen_contract=ChosenContract(
+                ticker="AAPL",
+                option_type="call",
+                position_side="long",
+                strike=Decimal("195"),
+                expiry=date(2026, 5, 16),
+                rationale="AAPL became the strongest remaining setup.",
+            ),
+            direction_score=70,
+            contract_score=67,
+            final_score=64,
+            reasoning="AAPL was the best remaining setup, but only at watchlist strength.",
+            key_evidence=["AAPL still had the cleanest remaining profile."],
+            key_concerns=["It stayed just below the full recommendation bar."],
+            watchlist_tickers=["AAPL", "MSFT", "NFLX"],
+        ),
+        calls=[],
+    )
+    alternative_orchestrator = PipelineOrchestrator(
+        market_data_step=FakeMarketDataStep(
+            {record.ticker: _snapshot(record) for record in batch.candidates}
+        ),
+        news_step=FakeNewsStep({record.ticker: _bundle(record) for record in batch.candidates}),
+        options_step=FakeOptionsStep(
+            {
+                "AAPL": (_long_call("AAPL", strike="195"),),
+                "MSFT": (_long_call("MSFT", strike="425"),),
+            }
+        ),
+        scoring_step=FakeScoringStep(
+            {
+                "AAPL": ScoringPlan("watchlist", 64, "bullish", 70, 67),
+                "MSFT": ScoringPlan("watchlist", 61, "bullish", 66, 63),
+                "NFLX": ScoringPlan("no_trade", 54, "neutral", 52),
+                "JPM": ScoringPlan("no_trade", 49, "neutral", 47),
+            }
+        ),
+        sizing_step=FakeSizingStep(),
+        decision_step=decision_step,
+        notifier=FakeNotifier(),
+    )
+    service = AlternativeRecommendationService(
+        db_session,
+        orchestrator=alternative_orchestrator,
+    )
+
+    result = await service.get_next_alternative(cursor=original, user=user)
+    await db_session.commit()
+
+    assert result.status == "recommendation"
+    assert result.recommendation is not None
+    assert result.recommendation.parent_recommendation_id == original.id
+    assert result.recommendation.ticker == "AAPL"
+    assert result.recommendation.suggested_quantity == 0
+    assert decision_step.calls == [("AAPL", "MSFT", "NFLX", "JPM")]
+    assert len(await WorkflowRunRepository(db_session).list_recent_for_user(user.id)) == run_count_before
+    assert len(await CandidateRepository(db_session).list_for_run(run.id)) == candidate_count_before
+    assert await _contract_count(db_session, run.id) == contract_count_before
+
+
+@pytest.mark.asyncio
+async def test_alternative_service_second_click_returns_third_best_option(
+    db_session: AsyncSession,
+) -> None:
+    batch = _batch()
+    primary_orchestrator = PipelineOrchestrator(
+        candidate_step=FakeCandidateStep(batch),
+        market_data_step=FakeMarketDataStep(
+            {record.ticker: _snapshot(record) for record in batch.candidates}
+        ),
+        news_step=FakeNewsStep({record.ticker: _bundle(record) for record in batch.candidates}),
+        options_step=FakeOptionsStep(
+            {
+                "AMD": (_long_call("AMD", strike="104"),),
+                "AAPL": (_long_call("AAPL", strike="195"),),
+                "MSFT": (_long_call("MSFT", strike="425"),),
+            }
+        ),
+        scoring_step=FakeScoringStep(
+            {
+                "AMD": ScoringPlan("recommend", 82, "bullish", 80, 84),
+                "AAPL": ScoringPlan("watchlist", 64, "bullish", 70, 67),
+                "MSFT": ScoringPlan("watchlist", 62, "bullish", 68, 65),
+                "NFLX": ScoringPlan("no_trade", 54, "neutral", 52),
+                "JPM": ScoringPlan("no_trade", 49, "neutral", 47),
+            }
+        ),
+        sizing_step=FakeSizingStep(),
+        notifier=FakeNotifier(),
+    )
+    user = await _make_user(db_session, telegram_chat_id="62345")
+    run = await _make_run(db_session, user)
+    await primary_orchestrator.run(db_session, run)
+    await db_session.commit()
+
+    parent = (await RecommendationRepository(db_session).list_recent_for_user(user.id))[0]
+
+    first_decision = SpyDecisionStep(
+        decision=StructuredDecision(
+            action="watchlist",
+            chosen_ticker="AAPL",
+            chosen_contract=ChosenContract(
+                ticker="AAPL",
+                option_type="call",
+                position_side="long",
+                strike=Decimal("195"),
+                expiry=date(2026, 5, 16),
+                rationale="AAPL was the strongest remaining setup.",
+            ),
+            direction_score=70,
+            contract_score=67,
+            final_score=64,
+            reasoning="AAPL was the next best setup.",
+            key_evidence=["AAPL still held up best."],
+            key_concerns=["It stayed in watchlist territory."],
+            watchlist_tickers=["AAPL", "MSFT"],
+        ),
+        calls=[],
+    )
+    first_service = AlternativeRecommendationService(
+        db_session,
+        orchestrator=PipelineOrchestrator(
+            market_data_step=FakeMarketDataStep(
+                {record.ticker: _snapshot(record) for record in batch.candidates}
+            ),
+            news_step=FakeNewsStep(
+                {record.ticker: _bundle(record) for record in batch.candidates}
+            ),
+            options_step=FakeOptionsStep(
+                {
+                    "AAPL": (_long_call("AAPL", strike="195"),),
+                    "MSFT": (_long_call("MSFT", strike="425"),),
+                }
+            ),
+            scoring_step=FakeScoringStep(
+                {
+                    "AAPL": ScoringPlan("watchlist", 64, "bullish", 70, 67),
+                    "MSFT": ScoringPlan("watchlist", 62, "bullish", 68, 65),
+                    "NFLX": ScoringPlan("no_trade", 54, "neutral", 52),
+                    "JPM": ScoringPlan("no_trade", 49, "neutral", 47),
+                }
+            ),
+            sizing_step=FakeSizingStep(),
+            decision_step=first_decision,
+            notifier=FakeNotifier(),
+        ),
+    )
+    first_result = await first_service.get_next_alternative(cursor=parent, user=user)
+    await db_session.commit()
+    assert first_result.recommendation is not None
+
+    second_decision = SpyDecisionStep(
+        decision=StructuredDecision(
+            action="watchlist",
+            chosen_ticker="MSFT",
+            chosen_contract=ChosenContract(
+                ticker="MSFT",
+                option_type="call",
+                position_side="long",
+                strike=Decimal("425"),
+                expiry=date(2026, 5, 16),
+                rationale="MSFT was the strongest remaining setup after AAPL was removed.",
+            ),
+            direction_score=68,
+            contract_score=65,
+            final_score=62,
+            reasoning="MSFT became the third-best setup once AMD and AAPL were excluded.",
+            key_evidence=["MSFT held up best among the names left."],
+            key_concerns=["It remained a watchlist setup only."],
+            watchlist_tickers=["MSFT", "NFLX"],
+        ),
+        calls=[],
+    )
+    second_service = AlternativeRecommendationService(
+        db_session,
+        orchestrator=PipelineOrchestrator(
+            market_data_step=FakeMarketDataStep(
+                {record.ticker: _snapshot(record) for record in batch.candidates}
+            ),
+            news_step=FakeNewsStep(
+                {record.ticker: _bundle(record) for record in batch.candidates}
+            ),
+            options_step=FakeOptionsStep({"MSFT": (_long_call("MSFT", strike="425"),)}),
+            scoring_step=FakeScoringStep(
+                {
+                    "MSFT": ScoringPlan("watchlist", 62, "bullish", 68, 65),
+                    "NFLX": ScoringPlan("no_trade", 54, "neutral", 52),
+                    "JPM": ScoringPlan("no_trade", 49, "neutral", 47),
+                }
+            ),
+            sizing_step=FakeSizingStep(),
+            decision_step=second_decision,
+            notifier=FakeNotifier(),
+        ),
+    )
+    second_result = await second_service.get_next_alternative(
+        cursor=first_result.recommendation,
+        user=user,
+    )
+    await db_session.commit()
+
+    assert second_result.status == "recommendation"
+    assert second_result.recommendation is not None
+    assert second_result.recommendation.ticker == "MSFT"
+    assert second_result.recommendation.parent_recommendation_id == first_result.recommendation.id
+    assert second_decision.calls == [("MSFT", "NFLX", "JPM")]
+
+
+@pytest.mark.asyncio
+async def test_alternative_service_no_trade_does_not_persist_recommendation(
+    db_session: AsyncSession,
+) -> None:
+    batch = _batch()
+    primary_orchestrator = PipelineOrchestrator(
+        candidate_step=FakeCandidateStep(batch),
+        market_data_step=FakeMarketDataStep(
+            {record.ticker: _snapshot(record) for record in batch.candidates}
+        ),
+        news_step=FakeNewsStep({record.ticker: _bundle(record) for record in batch.candidates}),
+        options_step=FakeOptionsStep({"AMD": (_long_call("AMD", strike="104"),)}),
+        scoring_step=FakeScoringStep(
+            {
+                "AMD": ScoringPlan("recommend", 82, "bullish", 80, 84),
+                "AAPL": ScoringPlan("no_trade", 57, "neutral", 55),
+                "MSFT": ScoringPlan("no_trade", 56, "neutral", 54),
+                "NFLX": ScoringPlan("no_trade", 54, "neutral", 52),
+                "JPM": ScoringPlan("no_trade", 49, "neutral", 47),
+            }
+        ),
+        sizing_step=FakeSizingStep(),
+        notifier=FakeNotifier(),
+    )
+    user = await _make_user(db_session, telegram_chat_id="72345")
+    run = await _make_run(db_session, user)
+    await primary_orchestrator.run(db_session, run)
+    await db_session.commit()
+
+    parent = (await RecommendationRepository(db_session).list_recent_for_user(user.id))[0]
+    rec_count_before = len(await RecommendationRepository(db_session).list_recent_for_user(user.id))
+
+    no_trade_decision = SpyDecisionStep(
+        decision=StructuredDecision(
+            action="no_trade",
+            chosen_ticker=None,
+            chosen_contract=None,
+            final_score=58,
+            reasoning="Nothing else cleared the alternative trade bar.",
+            key_evidence=[],
+            key_concerns=["The remaining setups were too weak."],
+            watchlist_tickers=["AAPL", "MSFT"],
+        ),
+        calls=[],
+    )
+    service = AlternativeRecommendationService(
+        db_session,
+        orchestrator=PipelineOrchestrator(
+            market_data_step=FakeMarketDataStep(
+                {record.ticker: _snapshot(record) for record in batch.candidates}
+            ),
+            news_step=FakeNewsStep(
+                {record.ticker: _bundle(record) for record in batch.candidates}
+            ),
+            options_step=FakeOptionsStep({}),
+            scoring_step=FakeScoringStep(
+                {
+                    "AAPL": ScoringPlan("no_trade", 57, "neutral", 55),
+                    "MSFT": ScoringPlan("no_trade", 56, "neutral", 54),
+                    "NFLX": ScoringPlan("no_trade", 54, "neutral", 52),
+                    "JPM": ScoringPlan("no_trade", 49, "neutral", 47),
+                }
+            ),
+            sizing_step=FakeSizingStep(),
+            decision_step=no_trade_decision,
+            notifier=FakeNotifier(),
+        ),
+    )
+
+    result = await service.get_next_alternative(cursor=parent, user=user)
+    await db_session.commit()
+
+    assert result.status == "no_trade"
+    assert result.recommendation is None
+    assert len(await RecommendationRepository(db_session).list_recent_for_user(user.id)) == rec_count_before
+
+
 def test_main_recommendation_template_matches_prd_structure() -> None:
     recommendation = SimpleNamespace(
         ticker="AMD",
@@ -597,6 +959,30 @@ def test_main_recommendation_template_matches_prd_structure() -> None:
 
     indexes = [text.index(label) for label in ordered_labels]
     assert indexes == sorted(indexes)
+
+
+def test_main_recommendation_template_supports_alternative_label() -> None:
+    recommendation = SimpleNamespace(
+        ticker="AAPL",
+        company_name="Apple Inc.",
+        option_type="call",
+        position_side="long",
+        strike=Decimal("195"),
+        expiry=date(2026, 5, 16),
+        earnings_date=date(2026, 5, 8),
+        suggested_entry=Decimal("1.35"),
+        suggested_quantity=1,
+        estimated_max_loss="$135.00 max loss per contract",
+        account_risk_percent=Decimal("2.00"),
+        confidence_score=76,
+        risk_level="Moderate",
+        reasoning_summary="AAPL became the strongest remaining setup.",
+        key_concerns_json=["IV crush is still a real risk."],
+    )
+
+    text = render_main_recommendation(recommendation, setup_label="Next best setup")
+
+    assert "<b>Next best setup:</b> AAPL" in text
 
 
 def test_short_option_template_uses_margin_warning() -> None:

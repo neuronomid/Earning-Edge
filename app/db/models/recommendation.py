@@ -3,9 +3,11 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
+from uuid import UUID
 
 from sqlalchemy import Date, ForeignKey, Index, Integer, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -29,6 +31,11 @@ class Recommendation(Base):
     id: Mapped[UuidPK]
     user_id: Mapped[UuidFK] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     run_id: Mapped[UuidFK] = mapped_column(ForeignKey("workflow_runs.id", ondelete="CASCADE"))
+    parent_recommendation_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("recommendations.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     ticker: Mapped[str] = mapped_column(String(16))
     company_name: Mapped[str] = mapped_column(String(255))

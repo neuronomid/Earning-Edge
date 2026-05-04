@@ -44,7 +44,7 @@ from app.scoring.types import (
     option_premium,
     spread_percent,
 )
-from app.services.candidate_models import CandidateRecord
+from app.services.candidate_models import CandidateBatch, CandidateRecord
 from app.services.logging_service import LoggingService, get_logging_service
 from app.services.market_data.types import ConfidenceNote, MarketSnapshot, ReturnMetrics
 from app.services.news.types import NewsBrief, NewsBundle
@@ -134,24 +134,38 @@ class PipelineOrchestrator:
         if user is None:
             raise LookupError(f"Workflow user {run.user_id} was not found")
 
-        secrets = _decrypt_user_secrets(user)
-        user_context = _build_user_context(
-            user,
-            has_valid_openrouter_api_key=bool(secrets.openrouter_api_key),
-        )
-
         if run.trigger_type == "manual":
             await self.notifier.send_text(user.telegram_chat_id, render_scan_started())
 
         batch = await self.candidate_step.execute()
         run.screener_status = batch.screener_status
         run.selected_candidate_count = len(batch.candidates)
+        outcome = await self.evaluate_batch(batch, user)
+        recommendation = await self._persist(session, run, user, outcome)
+        telegram_message = await self._notify_user(user, run.trigger_type, outcome, recommendation)
+        self.logging_service.capture_run(
+            run=run,
+            user=user,
+            outcome=outcome,
+            recommendation=recommendation,
+            telegram_message=telegram_message,
+        )
+        return outcome
 
+    async def evaluate_batch(
+        self,
+        batch: CandidateBatch,
+        user: User,
+    ) -> PipelineOutcome:
+        secrets = _decrypt_user_secrets(user)
+        user_context = _build_user_context(
+            user,
+            has_valid_openrouter_api_key=bool(secrets.openrouter_api_key),
+        )
         candidates = [
             await self._analyze_candidate(record, user, user_context, secrets)
             for record in batch.candidates
         ]
-
         decision_result = await self.decision_step.execute(
             candidates,
             user_context,
@@ -162,7 +176,7 @@ class PipelineOrchestrator:
             selected,
             decision_result.decision.chosen_contract,
         )
-        outcome = PipelineOutcome(
+        return PipelineOutcome(
             batch=batch,
             decision=decision_result.decision,
             candidates=tuple(candidates),
@@ -170,17 +184,6 @@ class PipelineOrchestrator:
             selected_contract=selected_contract,
             decision_trace=decision_result.trace,
         )
-
-        recommendation = await self._persist(session, run, user, user_context, outcome)
-        telegram_message = await self._notify_user(user, run.trigger_type, outcome, recommendation)
-        self.logging_service.capture_run(
-            run=run,
-            user=user,
-            outcome=outcome,
-            recommendation=recommendation,
-            telegram_message=telegram_message,
-        )
-        return outcome
 
     async def _analyze_candidate(
         self,
@@ -278,12 +281,10 @@ class PipelineOrchestrator:
         session: AsyncSession,
         run: WorkflowRun,
         user: User,
-        user_context: UserContext,
         outcome: PipelineOutcome,
     ) -> Recommendation | None:
         candidate_repo = CandidateRepository(session)
         contract_repo = OptionContractRepository(session)
-        recommendation_repo = RecommendationRepository(session)
         selected_ticker = outcome.selected.record.ticker if outcome.selected is not None else None
 
         for item in outcome.candidates:
@@ -343,19 +344,47 @@ class PipelineOrchestrator:
                     )
                 )
 
-        if outcome.decision.action == "no_trade" or outcome.selected is None:
-            run.status = "no_trade"
+        recommendation = await self.persist_recommendation(
+            session,
+            run,
+            user,
+            outcome,
+            update_run=True,
+        )
+        if recommendation is None and run.finished_at is None:
             run.finished_at = datetime.now(UTC)
-            run.final_recommendation_id = None
+        return recommendation
+
+    async def persist_recommendation(
+        self,
+        session: AsyncSession,
+        run: WorkflowRun,
+        user: User,
+        outcome: PipelineOutcome,
+        *,
+        parent_recommendation_id=None,
+        update_run: bool,
+    ) -> Recommendation | None:
+        recommendation_repo = RecommendationRepository(session)
+        if outcome.decision.action == "no_trade" or outcome.selected is None:
+            if update_run:
+                run.status = "no_trade"
+                run.finished_at = datetime.now(UTC)
+                run.final_recommendation_id = None
             return None
 
         chosen_contract = outcome.final_contract
         if chosen_contract is None:
-            run.status = "no_trade"
-            run.finished_at = datetime.now(UTC)
-            run.final_recommendation_id = None
+            if update_run:
+                run.status = "no_trade"
+                run.finished_at = datetime.now(UTC)
+                run.final_recommendation_id = None
             return None
 
+        user_context = _build_user_context(
+            user,
+            has_valid_openrouter_api_key=bool(_decrypt_user_secrets(user).openrouter_api_key),
+        )
         sizing = outcome.selected.sizing
         if sizing is None or outcome.selected.evaluation.chosen_contract != chosen_contract:
             sizing = await self._size_contract(user_context, chosen_contract.contract)
@@ -370,6 +399,7 @@ class PipelineOrchestrator:
             Recommendation(
                 user_id=user.id,
                 run_id=run.id,
+                parent_recommendation_id=parent_recommendation_id,
                 ticker=outcome.selected.record.ticker,
                 company_name=outcome.selected.context.company_name,
                 strategy=chosen_contract.strategy,
@@ -388,9 +418,11 @@ class PipelineOrchestrator:
                 key_concerns_json=outcome.decision.key_concerns,
             )
         )
-        run.status = "success"
-        run.finished_at = datetime.now(UTC)
-        run.final_recommendation_id = recommendation.id
+        recommendation.earnings_date = outcome.selected.context.earnings_date
+        if update_run:
+            run.status = "success"
+            run.finished_at = datetime.now(UTC)
+            run.final_recommendation_id = recommendation.id
         return recommendation
 
     async def _notify_user(

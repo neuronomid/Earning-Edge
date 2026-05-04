@@ -29,6 +29,7 @@ def render_main_recommendation(
     *,
     warning_text: str | None = None,
     watchlist_only: bool = False,
+    setup_label: str = "Best setup",
 ) -> str:
     lines: list[str] = []
     if warning_text:
@@ -38,7 +39,7 @@ def render_main_recommendation(
         [
             "<b>Weekly Earnings Options Signal</b>",
             "",
-            f"<b>Best setup:</b> {recommendation.ticker}",
+            f"<b>{setup_label}:</b> {recommendation.ticker}",
             f"<b>Direction:</b> {_direction_label(recommendation)}",
             f"<b>Contract:</b> {contract_label(recommendation)}",
             f"<b>Strike:</b> ${_money(recommendation.strike)}",
