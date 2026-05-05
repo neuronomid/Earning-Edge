@@ -16,12 +16,7 @@ from app.services.finviz.strategies import (
 def test_to_url_includes_canonical_finviz_path() -> None:
     query = FinvizQuery(filters=("a", "b"), sort="-x")
     url = query.to_url()
-    assert url.startswith("https://finviz.com/screener?")
-    assert "v=111" in url
-    assert "ft=4" in url
-    assert "o=-x" in url
-    # f= param contains the comma-joined filters; encoded with urlencode.
-    assert "f=a%2Cb" in url
+    assert url == "https://finviz.com/screener?v=111&f=a,b&o=-x"
 
 
 def test_with_filter_replaced_swaps_existing_value() -> None:
@@ -59,12 +54,10 @@ def test_stable_hash_differs_when_sort_changes() -> None:
 
 def test_strategy_a_url_contains_doc_filters() -> None:
     url = STRATEGY_A_BASE.to_url()
-    for required in (
-        "earningsdate_nextweek",
-        "geo_usa",
-    ):
-        assert required in url, f"Strategy A URL missing {required}"
-    assert "o=-marketcap" in url
+    assert (
+        url
+        == "https://finviz.com/screener?v=111&f=earningsdate_nextweek,geo_usa&o=-marketcap"
+    )
 
 
 def test_strategy_b_url_contains_doc_filters() -> None:

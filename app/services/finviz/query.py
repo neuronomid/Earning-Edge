@@ -36,10 +36,9 @@ class FinvizQuery:
         params = (
             ("v", self.view),
             ("f", ",".join(self.filters)),
-            ("ft", "4"),
             ("o", self.sort),
         )
-        return f"{FINVIZ_SCREENER_BASE_URL}?{urlencode(params)}"
+        return f"{FINVIZ_SCREENER_BASE_URL}?{urlencode(params, safe=',')}"
 
     def stable_hash(self) -> str:
         canonical = ",".join(sorted(self.filters)) + f"|{self.sort}|{self.view}"

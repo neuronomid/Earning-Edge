@@ -19,6 +19,8 @@ from aiogram.exceptions import TelegramConflictError
 from aiogram.fsm.storage.base import BaseStorage
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.storage.redis import RedisStorage
+from redis.asyncio import Redis
+from redis.exceptions import RedisError
 
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
@@ -55,15 +57,54 @@ class BotStartupError(RuntimeError):
 def build_storage(settings: Settings) -> BaseStorage:
     """Pick an FSM storage backend.
 
-    Redis when reachable so onboarding state survives restarts; in-memory
-    otherwise (tests, local dev without redis).
+    Redis is the default outside tests so onboarding state survives restarts.
+    The polling entry point uses build_runtime_storage() to verify reachability
+    before wiring this into the dispatcher.
     """
     if settings.app_env == "test":
+        return MemoryStorage()
+    return RedisStorage.from_url(settings.redis_url)
+
+
+async def build_runtime_storage(
+    settings: Settings,
+    *,
+    logger: logging.Logger | None = None,
+) -> BaseStorage:
+    """Build FSM storage for a live bot process.
+
+    RedisStorage.from_url() does not connect immediately, so a bad local
+    hostname otherwise surfaces later while handling an update.
+    """
+    if settings.app_env == "test":
+        return MemoryStorage()
+    redis_error = await _redis_ping_error(settings.redis_url)
+    if redis_error is not None:
+        if settings.app_env == "production":
+            raise BotStartupError(
+                "Redis is not reachable for Telegram FSM storage: "
+                f"{redis_error}"
+            )
+        (logger or logging.getLogger(__name__)).warning(
+            "telegram_fsm_redis_unavailable; falling back to memory storage: %s",
+            redis_error,
+        )
         return MemoryStorage()
     try:
         return RedisStorage.from_url(settings.redis_url)
     except Exception:
         return MemoryStorage()
+
+
+async def _redis_ping_error(redis_url: str) -> str | None:
+    client = Redis.from_url(redis_url, decode_responses=True)
+    try:
+        await client.ping()
+    except (OSError, RedisError, ValueError) as exc:
+        return str(exc)
+    finally:
+        await client.aclose()
+    return None
 
 
 def build_bot(settings: Settings | None = None) -> Bot:
@@ -114,8 +155,10 @@ async def run_polling() -> None:
     settings = get_settings()
     bot = build_bot(settings)
     try:
-        dp = build_dispatcher()
-        logging.getLogger(__name__).info("starting telegram bot in long-polling mode")
+        logger = logging.getLogger(__name__)
+        storage = await build_runtime_storage(settings, logger=logger)
+        dp = build_dispatcher(storage=storage)
+        logger.info("starting telegram bot in long-polling mode")
         await bot.delete_webhook(drop_pending_updates=False)
         await ensure_polling_available(bot)
         await dp.start_polling(bot, **{"workflow_data": _polling_workflow_data()})
