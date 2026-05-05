@@ -60,6 +60,7 @@ async def recommendation_action(callback: CallbackQuery, callback_data: RecCB) -
                 callback.message,
                 render_main_recommendation(
                     result.recommendation,
+                    rank_position=result.rank_position or 2,
                     watchlist_only=result.watchlist_only,
                 ),
                 reply_markup=recommendation_keyboard(str(result.recommendation.id)),

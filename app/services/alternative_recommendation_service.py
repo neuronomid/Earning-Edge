@@ -54,6 +54,7 @@ FINALIST_LIMIT = 4
 class AlternativeRecommendationResult:
     recommendation: Recommendation | None
     watchlist_only: bool = False
+    rank_position: int | None = None
     message: str | None = None
     terminal: bool = False
 
@@ -89,6 +90,7 @@ class AlternativeRecommendationService:
                 current_recommendation.run_id
             )
         }
+        next_rank_position = len(shown) + 1
         ranked = sorted(
             await self.candidates.list_for_run(current_recommendation.run_id),
             key=lambda candidate: (
@@ -110,6 +112,7 @@ class AlternativeRecommendationService:
                 user=user,
                 current_recommendation=current_recommendation,
                 candidate=pipeline_candidate,
+                rank_position=next_rank_position,
             )
             if result.recommendation is not None or result.terminal:
                 return result
@@ -194,6 +197,7 @@ class AlternativeRecommendationService:
         user: User,
         current_recommendation: Recommendation,
         candidate: PipelineCandidate,
+        rank_position: int,
     ) -> AlternativeRecommendationResult:
         user_context = _user_context(user)
         decision_result = await self.decision_step.execute(
@@ -255,6 +259,7 @@ class AlternativeRecommendationService:
         return AlternativeRecommendationResult(
             recommendation=recommendation,
             watchlist_only=decision.action == "watchlist",
+            rank_position=rank_position,
         )
 
 

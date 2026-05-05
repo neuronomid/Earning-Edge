@@ -190,7 +190,7 @@ async def test_alternative_button_sends_next_full_recommendation(
     )
 
     assert "<b>Weekly Earnings Options Signal</b>" in send_recorder.calls[-1].text
-    assert "<b>Best setup:</b> AAPL" in send_recorder.calls[-1].text
+    assert "<b>2nd best setup:</b> 🥈 AAPL" in send_recorder.calls[-1].text
     assert send_recorder.calls[-1].kwargs["reply_markup"] is not None
 
     recommendations = await RecommendationRepository(db_session).list_for_run(
