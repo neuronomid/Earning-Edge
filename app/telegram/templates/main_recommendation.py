@@ -27,6 +27,7 @@ class RecommendationLike(Protocol):
 def render_main_recommendation(
     recommendation: RecommendationLike,
     *,
+    rank_position: int = 1,
     warning_text: str | None = None,
     watchlist_only: bool = False,
     setup_label: str = "Best setup",
@@ -35,11 +36,15 @@ def render_main_recommendation(
     if warning_text:
         lines.extend([warning_text, ""])
 
+    setup_text = (
+        f"<b>{_setup_label(rank_position)}:</b> "
+        f"{_rank_medal(rank_position)} {recommendation.ticker}"
+    )
     lines.extend(
         [
             "<b>Weekly Earnings Options Signal</b>",
             "",
-            f"<b>{setup_label}:</b> {recommendation.ticker}",
+            setup_text,
             f"<b>Direction:</b> {_direction_label(recommendation)}",
             f"<b>Contract:</b> {contract_label(recommendation)}",
             f"<b>Strike:</b> ${_money(recommendation.strike)}",
@@ -70,6 +75,24 @@ def render_main_recommendation(
         ]
     )
     return "\n".join(lines)
+
+
+def _setup_label(rank_position: int) -> str:
+    if rank_position == 2:
+        return "2nd best setup"
+    if rank_position == 3:
+        return "3rd best setup"
+    if rank_position > 3:
+        return f"Alternative setup #{rank_position}"
+    return "Best setup"
+
+
+def _rank_medal(rank_position: int) -> str:
+    return {
+        1: "🥇",
+        2: "🥈",
+        3: "🥉",
+    }.get(rank_position, "•")
 
 
 def _direction_label(recommendation: RecommendationLike) -> str:

@@ -3,49 +3,82 @@ from __future__ import annotations
 from uuid import UUID
 
 from aiogram import Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import CallbackQuery
 
+from app.core.logging import get_logger
 from app.db.models.feedback_event import FeedbackEvent
 from app.db.repositories.feedback_repo import FeedbackEventRepository
 from app.db.repositories.recommendation_repo import RecommendationRepository
-from app.services.recommendation_alternatives import AlternativeRecommendationService
+from app.services.alternative_recommendation_service import AlternativeRecommendationService
 from app.services.user_service import UserService
 from app.telegram.deps import session_scope
 from app.telegram.handlers._common import send_text
-from app.telegram.keyboards.settings import AltRecCB, RecCB, recommendation_keyboard
+from app.telegram.keyboards.settings import RecCB, recommendation_keyboard
 from app.telegram.templates.main_recommendation import render_main_recommendation
-from app.telegram.templates.no_trade import render_no_trade
 
 router = Router(name="recommendation")
+logger = get_logger(__name__)
 
 
 @router.callback_query(RecCB.filter())
 async def recommendation_action(callback: CallbackQuery, callback_data: RecCB) -> None:
     if callback.message is None:
-        await callback.answer()
+        await _answer_callback(callback, action=callback_data.action)
         return
 
     async with session_scope() as session:
         user = await UserService(session).get_by_chat_id(str(callback.from_user.id))
         if user is None:
-            await callback.answer("Finish setup first.")
+            await _answer_callback(
+                callback,
+                action=callback_data.action,
+                text="Finish setup first.",
+            )
             return
 
         recommendation = await RecommendationRepository(session).get(UUID(callback_data.rec_id))
         if recommendation is None or recommendation.user_id != user.id:
-            await callback.answer("That recommendation is unavailable.")
+            await _answer_callback(
+                callback,
+                action=callback_data.action,
+                text="That recommendation is unavailable.",
+            )
             return
 
         if callback_data.action == "why":
-            await callback.answer()
+            await _answer_callback(callback, action=callback_data.action)
             await send_text(callback.message, _render_why(recommendation))
             return
         if callback_data.action == "risk":
-            await callback.answer()
+            await _answer_callback(callback, action=callback_data.action)
             await send_text(callback.message, _render_risk(recommendation))
             return
+        if callback_data.action == "alts":
+            await _answer_callback(callback, action=callback_data.action)
+            result = await AlternativeRecommendationService(session).build_next(
+                user=user,
+                current_recommendation=recommendation,
+            )
+            if result.recommendation is None:
+                await send_text(
+                    callback.message,
+                    result.message
+                    or "No additional qualified alternatives are available for this run.",
+                )
+                return
+            await send_text(
+                callback.message,
+                render_main_recommendation(
+                    result.recommendation,
+                    rank_position=result.rank_position or 2,
+                    watchlist_only=result.watchlist_only,
+                ),
+                reply_markup=recommendation_keyboard(str(result.recommendation.id)),
+            )
+            return
         if callback_data.action == "save_note":
-            await callback.answer()
+            await _answer_callback(callback, action=callback_data.action)
             await send_text(callback.message, _render_note(recommendation))
             return
         if callback_data.action in {"bought", "skipped"}:
@@ -56,14 +89,14 @@ async def recommendation_action(callback: CallbackQuery, callback_data: RecCB) -
                     user_action="bought" if callback_data.action == "bought" else "skipped",
                 )
             )
-            await callback.answer("Saved")
+            await _answer_callback(callback, action=callback_data.action, text="Saved")
             await send_text(
                 callback.message,
                 "✅ Feedback saved. I'll keep that attached to this recommendation.",
             )
             return
 
-    await callback.answer()
+    await _answer_callback(callback, action=callback_data.action)
 
 
 @router.callback_query(AltRecCB.filter())
@@ -194,47 +227,29 @@ def _normalize_string_list(value) -> list[str]:
     return []
 
 
-async def _edit_alternative_cursor(
+async def _answer_callback(
     callback: CallbackQuery,
     *,
-    displayed_recommendation_id: str,
-    next_cursor_id: str | None,
+    action: str,
+    text: str | None = None,
 ) -> None:
-    if callback.message is None or not hasattr(callback.message, "edit_reply_markup"):
-        return
-    await callback.message.edit_reply_markup(
-        reply_markup=recommendation_keyboard(
-            displayed_recommendation_id,
-            alternative_cursor_id=next_cursor_id,
-            include_alternative=next_cursor_id is not None,
-        )
-    )
-
-
-def _warning_text(run) -> str | None:
-    if run is None or not isinstance(run.run_summary_json, dict):
-        return None
-    value = run.run_summary_json.get("warning_text")
-    return None if value is None else str(value)
-
-
-def _displayed_recommendation_id(callback: CallbackQuery) -> str | None:
-    if callback.message is None:
-        return None
-    markup = getattr(callback.message, "reply_markup", None)
-    rows = getattr(markup, "inline_keyboard", None)
-    if not isinstance(rows, list):
-        return None
-    for row in rows:
-        if not isinstance(row, list):
-            continue
-        for button in row:
-            packed = getattr(button, "callback_data", None)
-            if not isinstance(packed, str):
-                continue
-            try:
-                parsed = RecCB.unpack(packed)
-            except (TypeError, ValueError):
-                continue
-            return parsed.rec_id
-    return None
+    try:
+        if text is None:
+            await callback.answer()
+        else:
+            await callback.answer(text)
+    except TelegramBadRequest as exc:
+        error_text = str(exc).lower()
+        if (
+            "query is too old" in error_text
+            or "response timeout expired" in error_text
+            or "query id is invalid" in error_text
+        ):
+            logger.warning(
+                "telegram_callback_answer_expired",
+                action=action,
+                user_id=str(callback.from_user.id),
+                error=str(exc),
+            )
+            return
+        raise

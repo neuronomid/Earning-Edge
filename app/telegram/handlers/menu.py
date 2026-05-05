@@ -86,6 +86,15 @@ async def last_recommendation(message: Message) -> None:
             user.id,
             limit=1,
         )
+        rank_position = 1
+        if recommendations:
+            run_recommendations = await RecommendationRepository(session).list_for_run(
+                recommendations[0].run_id
+            )
+            rank_position = _recommendation_rank(
+                run_recommendations,
+                recommendation_id=recommendations[0].id,
+            )
     if not recommendations:
         await send_text(
             message,
@@ -98,6 +107,7 @@ async def last_recommendation(message: Message) -> None:
         message,
         render_main_recommendation(
             recommendation,
+            rank_position=rank_position,
             watchlist_only=recommendation.suggested_quantity == 0,
         ),
         reply_markup=recommendation_keyboard(str(recommendation.id)),
@@ -106,3 +116,10 @@ async def last_recommendation(message: Message) -> None:
 # BTN_MANAGE_SCHEDULE is handled by app/telegram/handlers/schedule.py.
 # BTN_API_KEYS and BTN_SETTINGS are handled by app/telegram/handlers/settings.py.
 # Those routers are registered before this one so their handlers win.
+
+
+def _recommendation_rank(recommendations, *, recommendation_id) -> int:
+    for index, recommendation in enumerate(recommendations, start=1):
+        if recommendation.id == recommendation_id:
+            return index
+    return 1

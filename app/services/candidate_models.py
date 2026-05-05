@@ -5,7 +5,9 @@ from datetime import date
 from decimal import Decimal
 from typing import Literal
 
-ScreenerStatus = Literal["success", "failed"]
+ScreenerStatus = Literal["success", "partial", "failed"]
+StrategySource = Literal["catalyst_confluence", "coiled_setup"]
+StrategyRunStatus = Literal["success", "empty", "failed", "fallback"]
 
 
 @dataclass(slots=True, frozen=True)
@@ -22,6 +24,26 @@ class CandidateRecord:
     sector: str | None = None
     sources: tuple[str, ...] = ("finviz",)
     validation_notes: tuple[str, ...] = ()
+    strategy_source: StrategySource | None = None
+
+
+@dataclass(slots=True, frozen=True)
+class StrategyRunReport:
+    strategy_source: StrategySource
+    strategy_label: str
+    provider: str
+    status: StrategyRunStatus
+    raw_row_count: int
+    candidate_count: int
+    finviz_candidate_count: int = 0
+    backup_candidate_count: int = 0
+    fallback_used: bool = False
+    query_urls: tuple[str, ...] = ()
+    filter_codes: tuple[str, ...] = ()
+    criteria_summary: str | None = None
+    sort_summary: str | None = None
+    warning_text: str | None = None
+    error: str | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -30,3 +52,4 @@ class CandidateBatch:
     screener_status: ScreenerStatus
     fallback_used: bool
     warning_text: str | None = None
+    strategy_reports: tuple[StrategyRunReport, ...] = ()

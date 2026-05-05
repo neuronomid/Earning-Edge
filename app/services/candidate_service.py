@@ -19,19 +19,28 @@ from app.services.earnings_calendar.reconciler import (
 )
 from app.services.earnings_calendar.yfinance_source import YFinanceEarningsSource
 from app.services.finviz.browser import FinvizBrowserClient
-from app.services.finviz.extractor import FinvizExtractor
+from app.services.finviz.runner import FinvizQueryRunner
+from app.services.finviz.strategies import (
+    STRATEGY_A_BASE,
+    STRATEGY_A_EARNINGS_PREFIX,
+    STRATEGY_A_EARNINGS_VALUES,
+)
+from app.services.strategy_catalog import build_strategy_report
+
+CATALYST_STRATEGY_SOURCE = "catalyst_confluence"
 
 FINVIZ_FALLBACK_WARNING = (
     "⚠️ Finviz did not load correctly, so I used backup earnings data for this scan."
 )
-FINVIZ_INFERRED_DATE_NOTE = "earnings date inferred from Finviz next-week screener"
+FINVIZ_INFERRED_DATE_NOTE = "earnings date inferred from Finviz catalyst-window screener"
 FINVIZ_CONFLICT_NOTE = (
-    "backup earnings date conflicted with Finviz next-week screener; kept visible screener row"
+    "backup earnings date conflicted with Finviz catalyst-window screener; "
+    "kept visible screener row"
 )
 
 
 class CandidateSelectionError(RuntimeError):
-    """Raised when phase-4 candidate selection cannot yield five usable rows."""
+    """Raised when phase-4 candidate selection cannot yield usable rows."""
 
 
 class CandidateDataSource(Protocol):
@@ -53,14 +62,14 @@ class CandidateDataSource(Protocol):
 class CandidateService:
     def __init__(
         self,
-        extractor: FinvizExtractor,
+        runner: FinvizQueryRunner,
         *,
         sources: Sequence[CandidateDataSource],
         reconciler: CandidateReconciler | None = None,
         today_provider: Callable[[], date] | None = None,
         logger=None,
     ) -> None:
-        self.extractor = extractor
+        self.runner = runner
         self.sources = tuple(sources)
         self.reconciler = reconciler or CandidateReconciler()
         self.today_provider = today_provider or date.today
@@ -70,7 +79,17 @@ class CandidateService:
         window = next_week_window(self.today_provider())
 
         try:
-            extracted = await self.extractor.get_top_five(limit=5)
+            extracted = await self.runner.run_with_swap(
+                STRATEGY_A_BASE,
+                swap_prefix=STRATEGY_A_EARNINGS_PREFIX,
+                swap_values=STRATEGY_A_EARNINGS_VALUES,
+                limit=5,
+                strategy_source=CATALYST_STRATEGY_SOURCE,
+            )
+            if not extracted:
+                raise CandidateSelectionError(
+                    "Strategy A returned no rows from Finviz"
+                )
             self.logger.info(
                 "candidate_service_finviz_rows_extracted",
                 window_start=window[0].isoformat(),
@@ -79,31 +98,41 @@ class CandidateService:
             )
         except Exception as exc:
             backup_rows = await self._load_backup_candidates(window=window, limit=5)
-            if len(backup_rows) < 5:
-                raise CandidateSelectionError(
-                    "Finviz extraction failed and backup earnings candidates were not enough"
-                ) from exc
             validated = await self._validate_rows(backup_rows, window=window, limit=5)
-            if len(validated) < 5:
-                raise CandidateSelectionError(
-                    "Backup earnings sources did not produce five validated candidates"
-                ) from exc
             self.logger.warning(
                 "candidate_service_finviz_failed",
                 error=str(exc),
                 backup_tickers=[row.ticker for row in validated[:5]],
             )
+            final_rows = tuple(
+                replace(row, strategy_source=CATALYST_STRATEGY_SOURCE)
+                for row in validated[:5]
+            )
+            warning_text = FINVIZ_FALLBACK_WARNING if final_rows else None
             return CandidateBatch(
-                candidates=tuple(validated[:5]),
+                candidates=final_rows,
                 screener_status="failed",
-                fallback_used=True,
-                warning_text=FINVIZ_FALLBACK_WARNING,
+                fallback_used=bool(final_rows),
+                warning_text=warning_text,
+                strategy_reports=(
+                    build_strategy_report(
+                        CATALYST_STRATEGY_SOURCE,
+                        status="fallback" if final_rows else "failed",
+                        raw_row_count=0,
+                        candidate_count=len(final_rows),
+                        finviz_candidate_count=_finviz_candidate_count(final_rows),
+                        backup_candidate_count=_backup_candidate_count(final_rows),
+                        fallback_used=bool(final_rows),
+                        warning_text=warning_text,
+                        error=str(exc),
+                    ),
+                ),
             )
 
         validated = await self._validate_rows(extracted, window=window, limit=5)
-        if len(validated) < 5:
+        if not validated:
             raise CandidateSelectionError(
-                "Finviz produced fewer than five validated candidates"
+                "Finviz produced no validated candidates"
             )
         self.logger.info(
             "candidate_service_candidates_selected",
@@ -112,13 +141,29 @@ class CandidateService:
             inferred_tickers=[
                 row.ticker for row in validated[:5] if not row.earnings_date_verified
             ],
-            fallback_used=False,
+            fallback_used=any("finviz" not in row.sources for row in validated[:5]),
         )
+        final_rows = tuple(
+            replace(row, strategy_source=CATALYST_STRATEGY_SOURCE)
+            for row in validated[:5]
+        )
+        fallback_used = any("finviz" not in row.sources for row in final_rows)
         return CandidateBatch(
-            candidates=tuple(validated[:5]),
-            screener_status="success",
-            fallback_used=False,
+            candidates=final_rows,
+            screener_status="success" if len(final_rows) >= 5 else "partial",
+            fallback_used=fallback_used,
             warning_text=None,
+            strategy_reports=(
+                build_strategy_report(
+                    CATALYST_STRATEGY_SOURCE,
+                    status="success",
+                    raw_row_count=len(extracted),
+                    candidate_count=len(final_rows),
+                    finviz_candidate_count=_finviz_candidate_count(final_rows),
+                    backup_candidate_count=_backup_candidate_count(final_rows),
+                    fallback_used=fallback_used,
+                ),
+            ),
         )
 
     async def _validate_rows(
@@ -142,7 +187,15 @@ class CandidateService:
             if len(validated) >= limit:
                 return validated[:limit]
 
-        supplemental = await self._load_backup_candidates(window=window, limit=limit * 2)
+        remaining = max(limit - len(validated), 0)
+        if remaining == 0:
+            return validated[:limit]
+
+        supplemental_limit = max(remaining * 2, remaining + 2)
+        supplemental = await self._load_backup_candidates(
+            window=window,
+            limit=supplemental_limit,
+        )
         for row in supplemental:
             ticker = row.ticker.upper()
             if ticker in seen:
@@ -161,11 +214,14 @@ class CandidateService:
         *,
         window: tuple[date, date],
     ) -> CandidateRecord | None:
+        source_tasks = []
+        for source in self.sources:
+            source_name = getattr(source, "name", None)
+            if source_name is not None and source_name in row.sources:
+                continue
+            source_tasks.append(source.get_candidate_details(row.ticker, window=window))
         details = await asyncio.gather(
-            *[
-                source.get_candidate_details(row.ticker, window=window)
-                for source in self.sources
-            ],
+            *source_tasks,
             return_exceptions=True,
         )
         candidates = [item for item in details if isinstance(item, CandidateRecord)]
@@ -229,6 +285,14 @@ class CandidateService:
         return merged[:limit]
 
 
+def _finviz_candidate_count(rows: tuple[CandidateRecord, ...]) -> int:
+    return sum(1 for row in rows if "finviz" in row.sources)
+
+
+def _backup_candidate_count(rows: tuple[CandidateRecord, ...]) -> int:
+    return sum(1 for row in rows if "finviz" not in row.sources)
+
+
 def next_week_window(today: date) -> tuple[date, date]:
     days_until_monday = 7 - today.weekday()
     if days_until_monday <= 0:
@@ -249,9 +313,9 @@ def get_candidate_service() -> CandidateService:
         headless=settings.finviz_headless,
         timeout_ms=settings.finviz_timeout_ms,
     )
-    extractor = FinvizExtractor(browser)
+    runner = FinvizQueryRunner(browser)
     return CandidateService(
-        extractor,
+        runner,
         sources=(
             YFinanceEarningsSource(),
             FinnhubEarningsSource(api_key=settings.finnhub_api_key),

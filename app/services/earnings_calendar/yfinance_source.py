@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 import asyncio
+import io
+import logging
 from collections.abc import Callable
+from contextlib import redirect_stderr, redirect_stdout
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from app.services.candidate_models import CandidateRecord
 from app.services.parsing import parse_date_value
+
+logging.getLogger("yfinance").disabled = True
 
 
 class YFinanceEarningsSource:
@@ -37,21 +42,22 @@ class YFinanceEarningsSource:
     def _get_candidate_details_sync(self, ticker: str) -> CandidateRecord | None:
         import yfinance as yf  # type: ignore[import-untyped]
 
-        ticker_client = yf.Ticker(ticker)
-        fast_info = _coerce_mapping(getattr(ticker_client, "fast_info", None))
-        info = _coerce_mapping(getattr(ticker_client, "info", None))
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            ticker_client = yf.Ticker(ticker)
+            fast_info = _coerce_mapping(getattr(ticker_client, "fast_info", None))
+            info = _coerce_mapping(getattr(ticker_client, "info", None))
 
-        current_price = _to_decimal(
-            fast_info.get("lastPrice")
-            or fast_info.get("regularMarketPrice")
-            or info.get("currentPrice")
-            or info.get("regularMarketPrice")
-        )
-        market_cap = _to_decimal(fast_info.get("marketCap") or info.get("marketCap"))
-        volume = _to_int(fast_info.get("lastVolume") or info.get("volume"))
-        sector = _to_text(info.get("sector"))
-        company_name = _to_text(info.get("shortName") or info.get("longName"))
-        earnings_date = _extract_earnings_date(ticker_client, today=self.today_provider())
+            current_price = _to_decimal(
+                fast_info.get("lastPrice")
+                or fast_info.get("regularMarketPrice")
+                or info.get("currentPrice")
+                or info.get("regularMarketPrice")
+            )
+            market_cap = _to_decimal(fast_info.get("marketCap") or info.get("marketCap"))
+            volume = _to_int(fast_info.get("lastVolume") or info.get("volume"))
+            sector = _to_text(info.get("sector"))
+            company_name = _to_text(info.get("shortName") or info.get("longName"))
+            earnings_date = _extract_earnings_date(ticker_client, today=self.today_provider())
 
         if company_name is None and market_cap is None and current_price is None:
             return None

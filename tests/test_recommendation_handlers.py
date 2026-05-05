@@ -4,20 +4,22 @@ from contextlib import asynccontextmanager
 from datetime import date
 from decimal import Decimal
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
 
 import pytest
 import pytest_asyncio
+from aiogram.exceptions import TelegramBadRequest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import crypto
 from app.db.models.candidate import Candidate
+from app.db.models.option_contract import OptionContract
 from app.db.models.recommendation import Recommendation
 from app.db.models.user import User
 from app.db.models.workflow_run import WorkflowRun
 from app.db.repositories.feedback_repo import FeedbackEventRepository
+from app.db.repositories.recommendation_repo import RecommendationRepository
 from app.db.repositories.user_repo import UserRepository
-from app.services.recommendation_alternatives import AlternativeRecommendationResult
+from app.services.alternative_recommendation_service import AlternativeRecommendationResult
 from app.telegram.handlers import recommendation as recommendation_handlers
 from app.telegram.keyboards.settings import AltRecCB, RecCB, recommendation_keyboard
 from tests.telegram_testkit import SendRecorder, make_callback, make_message
@@ -91,21 +93,45 @@ async def seeded_recommendation(db_session: AsyncSession) -> Recommendation:
         key_concerns_json=["IV crush is still a risk."],
     )
     db_session.add(recommendation)
+    aapl = Candidate(
+        run_id=run.id,
+        ticker="AAPL",
+        company_name="Apple Inc.",
+        market_cap=Decimal("850"),
+        earnings_date=date(2026, 5, 8),
+        earnings_timing="AMC",
+        current_price=Decimal("190"),
+        direction_classification="bullish",
+        candidate_direction_score=76,
+        best_strategy="long_call",
+        final_opportunity_score=72,
+        data_confidence_score=84,
+        selected_for_final=False,
+        strategy_source="catalyst_confluence",
+    )
+    db_session.add(aapl)
+    await db_session.flush()
     db_session.add(
-        Candidate(
-            run_id=run.id,
+        OptionContract(
+            candidate_id=aapl.id,
             ticker="AAPL",
-            company_name="Apple Inc.",
-            market_cap=Decimal("850"),
-            earnings_date=date(2026, 5, 8),
-            earnings_timing="AMC",
-            current_price=Decimal("190"),
-            direction_classification="bullish",
-            candidate_direction_score=70,
-            best_strategy="long_call",
-            final_opportunity_score=66,
-            data_confidence_score=84,
-            selected_for_final=False,
+            option_type="call",
+            position_side="long",
+            strike=Decimal("195.00"),
+            expiry=date(2026, 5, 16),
+            bid=Decimal("1.10"),
+            ask=Decimal("1.25"),
+            mid=Decimal("1.175"),
+            volume=120,
+            open_interest=300,
+            implied_volatility=Decimal("0.44"),
+            delta=Decimal("0.52"),
+            breakeven=Decimal("196.25"),
+            spread_percent=Decimal("12.7600"),
+            liquidity_score=82,
+            contract_opportunity_score=74,
+            passed_hard_filters=True,
+            rejection_reason=None,
         )
     )
     await db_session.flush()
@@ -203,151 +229,120 @@ async def test_bought_button_persists_feedback_event(
     )
 
 
-async def test_alternative_button_sends_full_report_and_advances_cursor(
+async def test_alternative_button_sends_next_full_recommendation(
     db_session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
     send_recorder: SendRecorder,
     patch_session_scope: None,
     seeded_recommendation: Recommendation,
 ) -> None:
-    cursor = await _make_recommendation(
-        db_session,
-        seeded_recommendation,
-        ticker="AAPL",
-        parent_recommendation_id=seeded_recommendation.id,
-    )
-    next_recommendation = await _make_recommendation(
-        db_session,
-        seeded_recommendation,
-        ticker="MSFT",
-        parent_recommendation_id=cursor.id,
-        suggested_quantity=0,
-    )
-    await db_session.commit()
+    callback = make_callback(chat_id=12345, message=make_message(chat_id=12345))
 
-    class FakeAlternativeService:
-        def __init__(self, session: AsyncSession) -> None:
-            del session
-
-        async def get_next_alternative(self, *, cursor: Recommendation, user) -> AlternativeRecommendationResult:
-            del user
-            assert cursor.id == cursor_id
-            return AlternativeRecommendationResult(
-                status="recommendation",
-                recommendation=next_recommendation,
-                run=SimpleNamespace(run_summary_json={"warning_text": "⚠️ Fixture warning"}),
-            )
-
-    cursor_id = cursor.id
-    monkeypatch.setattr(
-        recommendation_handlers,
-        "AlternativeRecommendationService",
-        FakeAlternativeService,
-    )
-    message = _editable_message(
-        displayed_rec_id=str(seeded_recommendation.id),
-        cursor_rec_id=str(cursor.id),
-    )
-    callback = make_callback(chat_id=12345, message=message)
-
-    await recommendation_handlers.recommendation_alternative(
+    await recommendation_handlers.recommendation_action(
         callback,
-        AltRecCB(cursor_rec_id=str(cursor.id)),
+        RecCB(action="alts", rec_id=str(seeded_recommendation.id)),
     )
 
-    callback.answer.assert_awaited_once_with("Assessing the next setup...")
     assert "<b>Weekly Earnings Options Signal</b>" in send_recorder.calls[-1].text
-    assert "<b>Next best setup:</b> MSFT" in send_recorder.calls[-1].text
-    assert "Watchlist only" in send_recorder.calls[-1].text
+    assert "<b>2nd best setup:</b> 🥈 AAPL" in send_recorder.calls[-1].text
+    assert send_recorder.calls[-1].kwargs["reply_markup"] is not None
+    assert callback.answer.await_count == 1
 
-    sent_markup = send_recorder.calls[-1].kwargs["reply_markup"]
-    sent_alt = AltRecCB.unpack(sent_markup.inline_keyboard[1][0].callback_data)
-    assert sent_alt.cursor_rec_id == str(next_recommendation.id)
-
-    message.edit_reply_markup.assert_awaited_once()
-    edited_markup = message.edit_reply_markup.await_args.kwargs["reply_markup"]
-    why_button = edited_markup.inline_keyboard[0][0]
-    alt_button = edited_markup.inline_keyboard[1][0]
-    assert RecCB.unpack(why_button.callback_data).rec_id == str(seeded_recommendation.id)
-    assert AltRecCB.unpack(alt_button.callback_data).cursor_rec_id == str(next_recommendation.id)
+    recommendations = await RecommendationRepository(db_session).list_for_run(
+        seeded_recommendation.run_id
+    )
+    assert [recommendation.ticker for recommendation in recommendations] == ["AMD", "AAPL"]
 
 
-async def test_alternative_button_no_trade_removes_alternative_button(
+async def test_alternative_button_answers_callback_before_building_result(
     monkeypatch: pytest.MonkeyPatch,
     send_recorder: SendRecorder,
     patch_session_scope: None,
     seeded_recommendation: Recommendation,
 ) -> None:
-    class FakeAlternativeService:
-        def __init__(self, session: AsyncSession) -> None:
-            del session
+    callback = make_callback(chat_id=12345, message=make_message(chat_id=12345))
+    events: list[str] = []
 
-        async def get_next_alternative(self, *, cursor: Recommendation, user) -> AlternativeRecommendationResult:
-            del cursor, user
+    async def answer_side_effect(*args, **kwargs) -> None:
+        del args, kwargs
+        events.append("answered")
+
+    callback.answer.side_effect = answer_side_effect
+
+    class StubAlternativeRecommendationService:
+        def __init__(self, session) -> None:
+            self.session = session
+
+        async def build_next(
+            self,
+            *,
+            user,
+            current_recommendation,
+        ) -> AlternativeRecommendationResult:
+            del user, current_recommendation
+            events.append("build")
             return AlternativeRecommendationResult(
-                status="no_trade",
-                outcome=SimpleNamespace(
-                    decision=SimpleNamespace(
-                        reasoning="Nothing else cleared the bar.",
-                        watchlist_tickers=["AAPL", "MSFT"],
-                    )
-                ),
-                run=SimpleNamespace(run_summary_json={"warning_text": "⚠️ Fixture warning"}),
+                recommendation=None,
+                message="No additional qualified alternatives are available for this run.",
             )
 
     monkeypatch.setattr(
         recommendation_handlers,
         "AlternativeRecommendationService",
-        FakeAlternativeService,
+        StubAlternativeRecommendationService,
     )
-    message = _editable_message(
-        displayed_rec_id=str(seeded_recommendation.id),
-        cursor_rec_id=str(seeded_recommendation.id),
-    )
-    callback = make_callback(chat_id=12345, message=message)
 
-    await recommendation_handlers.recommendation_alternative(
+    await recommendation_handlers.recommendation_action(
         callback,
-        AltRecCB(cursor_rec_id=str(seeded_recommendation.id)),
+        RecCB(action="alts", rec_id=str(seeded_recommendation.id)),
     )
 
-    assert "<b>Result:</b> No trade recommended." in send_recorder.calls[-1].text
-    edited_markup = message.edit_reply_markup.await_args.kwargs["reply_markup"]
-    labels = [button.text for row in edited_markup.inline_keyboard for button in row]
-    assert "📈 Alternatives" not in labels
+    assert events[:2] == ["answered", "build"]
+    assert (
+        send_recorder.calls[-1].text
+        == "No additional qualified alternatives are available for this run."
+    )
 
 
-async def test_alternative_button_exhausted_shows_notice_and_removes_button(
+async def test_alternative_button_still_sends_message_when_callback_query_has_expired(
     monkeypatch: pytest.MonkeyPatch,
     send_recorder: SendRecorder,
     patch_session_scope: None,
     seeded_recommendation: Recommendation,
 ) -> None:
-    class FakeAlternativeService:
-        def __init__(self, session: AsyncSession) -> None:
-            del session
+    callback = make_callback(chat_id=12345, message=make_message(chat_id=12345))
+    callback.answer.side_effect = TelegramBadRequest(
+        method=SimpleNamespace(),
+        message="query is too old and response timeout expired or query ID is invalid",
+    )
 
-        async def get_next_alternative(self, *, cursor: Recommendation, user) -> AlternativeRecommendationResult:
-            del cursor, user
-            return AlternativeRecommendationResult(status="exhausted")
+    class StubAlternativeRecommendationService:
+        def __init__(self, session) -> None:
+            self.session = session
+
+        async def build_next(
+            self,
+            *,
+            user,
+            current_recommendation,
+        ) -> AlternativeRecommendationResult:
+            del user, current_recommendation
+            return AlternativeRecommendationResult(
+                recommendation=None,
+                message="No additional qualified alternatives are available for this run.",
+            )
 
     monkeypatch.setattr(
         recommendation_handlers,
         "AlternativeRecommendationService",
-        FakeAlternativeService,
+        StubAlternativeRecommendationService,
     )
-    message = _editable_message(
-        displayed_rec_id=str(seeded_recommendation.id),
-        cursor_rec_id=str(seeded_recommendation.id),
-    )
-    callback = make_callback(chat_id=12345, message=message)
 
-    await recommendation_handlers.recommendation_alternative(
+    await recommendation_handlers.recommendation_action(
         callback,
-        AltRecCB(cursor_rec_id=str(seeded_recommendation.id)),
+        RecCB(action="alts", rec_id=str(seeded_recommendation.id)),
     )
 
-    assert send_recorder.calls[-1].text == "📈 No additional stored alternatives remain for this scan."
-    edited_markup = message.edit_reply_markup.await_args.kwargs["reply_markup"]
-    labels = [button.text for row in edited_markup.inline_keyboard for button in row]
-    assert "📈 Alternatives" not in labels
+    assert (
+        send_recorder.calls[-1].text
+        == "No additional qualified alternatives are available for this run."
+    )

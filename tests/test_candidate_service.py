@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Sequence
+from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 
@@ -8,21 +9,37 @@ import pytest
 
 from app.services.candidate_models import CandidateRecord
 from app.services.candidate_service import (
+    CATALYST_STRATEGY_SOURCE,
     FINVIZ_CONFLICT_NOTE,
     FINVIZ_FALLBACK_WARNING,
     CandidateService,
 )
+from app.services.finviz.query import FinvizQuery
 
 pytestmark = pytest.mark.asyncio
 
 
 @dataclass
-class FakeExtractor:
+class FakeRunner:
     rows: list[CandidateRecord] | None = None
     error: Exception | None = None
+    last_kwargs: dict | None = field(default=None)
 
-    async def get_top_five(self, *, limit: int = 5) -> list[CandidateRecord]:
-        del limit
+    async def run_with_swap(
+        self,
+        base: FinvizQuery,
+        *,
+        swap_prefix: str,
+        swap_values: Sequence[str],
+        limit: int,
+        strategy_source: str,
+    ) -> list[CandidateRecord]:
+        self.last_kwargs = {
+            "swap_prefix": swap_prefix,
+            "swap_values": tuple(swap_values),
+            "limit": limit,
+            "strategy_source": strategy_source,
+        }
         if self.error is not None:
             raise self.error
         assert self.rows is not None
@@ -33,6 +50,7 @@ class FakeExtractor:
 class FakeSource:
     details: dict[str, CandidateRecord]
     upcoming: list[CandidateRecord]
+    requested_limits: list[int] = field(default_factory=list)
 
     async def get_candidate_details(
         self,
@@ -50,6 +68,7 @@ class FakeSource:
         limit: int,
     ) -> list[CandidateRecord]:
         del window
+        self.requested_limits.append(limit)
         return self.upcoming[:limit]
 
 
@@ -130,7 +149,7 @@ async def test_candidate_service_validates_finviz_rows() -> None:
         upcoming=[],
     )
     service = CandidateService(
-        FakeExtractor(rows=finviz_rows),
+        FakeRunner(rows=finviz_rows),
         sources=(source,),
         today_provider=lambda: date(2026, 5, 1),
     )
@@ -146,6 +165,10 @@ async def test_candidate_service_validates_finviz_rows() -> None:
         "DDD",
         "EEE",
     ]
+    assert all(
+        candidate.strategy_source == CATALYST_STRATEGY_SOURCE
+        for candidate in batch.candidates
+    )
     assert all(candidate.earnings_date == date(2026, 5, 8) for candidate in batch.candidates)
 
 
@@ -192,7 +215,7 @@ async def test_candidate_service_falls_back_when_finviz_fails() -> None:
         upcoming=backup_rows,
     )
     service = CandidateService(
-        FakeExtractor(error=RuntimeError("Finviz down")),
+        FakeRunner(error=RuntimeError("Finviz down")),
         sources=(source,),
         today_provider=lambda: date(2026, 5, 1),
     )
@@ -209,6 +232,10 @@ async def test_candidate_service_falls_back_when_finviz_fails() -> None:
         "DDD",
         "EEE",
     ]
+    assert all(
+        candidate.strategy_source == CATALYST_STRATEGY_SOURCE
+        for candidate in batch.candidates
+    )
 
 
 async def test_candidate_service_keeps_finviz_top_five_when_backup_date_conflicts() -> None:
@@ -269,7 +296,7 @@ async def test_candidate_service_keeps_finviz_top_five_when_backup_date_conflict
         upcoming=[],
     )
     service = CandidateService(
-        FakeExtractor(rows=finviz_rows),
+        FakeRunner(rows=finviz_rows),
         sources=(source,),
         today_provider=lambda: date(2026, 5, 1),
     )
@@ -287,3 +314,83 @@ async def test_candidate_service_keeps_finviz_top_five_when_backup_date_conflict
     assert batch.candidates[0].earnings_date_verified is False
     assert FINVIZ_CONFLICT_NOTE in batch.candidates[0].validation_notes
     assert all(candidate.earnings_date is not None for candidate in batch.candidates)
+
+
+async def test_candidate_service_marks_partial_backup_usage_when_finviz_needs_supplemental_rows(
+) -> None:
+    finviz_rows = [
+        _candidate(
+            "AAA",
+            "900",
+            earnings_date=None,
+            current_price="100.00",
+            sources=("finviz",),
+        ),
+        _candidate(
+            "BBB",
+            "800",
+            earnings_date=None,
+            current_price="90.00",
+            sources=("finviz",),
+        ),
+    ]
+    source = FakeSource(
+        details={
+            "AAA": _candidate(
+                "AAA",
+                "901",
+                earnings_date=date(2026, 5, 8),
+                current_price="100.10",
+                sources=("yfinance",),
+            ),
+            "BBB": _candidate(
+                "BBB",
+                "801",
+                earnings_date=date(2026, 5, 8),
+                current_price="90.10",
+                sources=("yfinance",),
+            ),
+        },
+        upcoming=[
+            _candidate(
+                "CCC",
+                "700",
+                earnings_date=date(2026, 5, 8),
+                current_price="80.00",
+                sources=("finnhub",),
+            ),
+            _candidate(
+                "DDD",
+                "600",
+                earnings_date=date(2026, 5, 8),
+                current_price="70.00",
+                sources=("finnhub",),
+            ),
+            _candidate(
+                "EEE",
+                "500",
+                earnings_date=date(2026, 5, 8),
+                current_price="60.00",
+                sources=("finnhub",),
+            ),
+        ],
+    )
+    service = CandidateService(
+        FakeRunner(rows=finviz_rows),
+        sources=(source,),
+        today_provider=lambda: date(2026, 5, 1),
+    )
+
+    batch = await service.get_top_five()
+
+    assert batch.screener_status == "success"
+    assert batch.fallback_used is True
+    assert batch.warning_text is None
+    assert [candidate.ticker for candidate in batch.candidates] == [
+        "AAA",
+        "BBB",
+        "CCC",
+        "DDD",
+        "EEE",
+    ]
+    assert source.requested_limits == [6]

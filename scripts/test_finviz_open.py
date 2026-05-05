@@ -7,12 +7,13 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.services.finviz.browser import FinvizBrowserClient
 from app.services.finviz.extractor import FinvizExtractor
+from app.services.finviz.strategies import STRATEGY_A_BASE
 
 
 async def main() -> None:
     browser = FinvizBrowserClient(headless=True, timeout_ms=30000)
     extractor = FinvizExtractor(browser)
-    records = await extractor.get_top_five()
+    records = await extractor.get_top_five(STRATEGY_A_BASE)
 
     print(f"Got {len(records)} candidates:\n")
     for i, r in enumerate(records, 1):

@@ -22,11 +22,10 @@ class RecommendationRepository(BaseRepository[Recommendation]):
         )
         return list(result.scalars().all())
 
-    async def get_child_for_parent(self, parent_recommendation_id: UUID) -> Recommendation | None:
+    async def list_for_run(self, run_id: UUID) -> list[Recommendation]:
         result = await self.session.execute(
             select(Recommendation)
-            .where(Recommendation.parent_recommendation_id == parent_recommendation_id)
-            .order_by(Recommendation.created_at.desc())
-            .limit(1)
+            .where(Recommendation.run_id == run_id)
+            .order_by(Recommendation.created_at.asc(), Recommendation.id.asc())
         )
-        return result.scalar_one_or_none()
+        return list(result.scalars().all())

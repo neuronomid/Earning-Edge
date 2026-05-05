@@ -1,28 +1,15 @@
-# PRD: Earnings Options Recommendation Agent
+# PRD: Setup-Driven Options Recommendation Agent
 
 **Version:** V1.2  
-**Update:** Rebased on the implemented architecture in `app/`. The retired
-TradingView phase-4 provider is no longer part of the product. Finviz is the
-primary visible screener, the workflow runs through `WorkflowRunner` and
-`PipelineOrchestrator`, and the current system persists full run artifacts in
-PostgreSQL plus optional filesystem archives.
+**Update:** Replaced single TradingView screener with two complementary Finviz strategies (Strategy A — Catalyst Confluence, Strategy B — Coiled Setup). Each strategy returns up to 5 candidates; both feed the existing scoring system. `strategy_source` field added to candidates for V2 feedback attribution. Redis cache added (600 s TTL). Alpaca Options Snapshots API remains primary option-chain source; Yahoo Finance / yfinance remains fallback; Alpha Vantage remains optional supporting data.
 
 ## 1. Product Summary
 
-The Earnings Options Recommendation Agent is a multi-user Telegram bot that
-scans US companies reporting earnings next week, evaluates options setups, and
-sends one best setup, a watchlist-only setup, or a no-trade result to the user.
+The Setup-Driven Options Recommendation Agent is a Telegram-based agent that runs two complementary Finviz screening strategies, merges up to 10 candidates, scores them with the existing pipeline, and sends a friendly Telegram recommendation to the user. Strategy A ("Catalyst Confluence") targets stocks with earnings catalysts and confirmed multi-timeframe uptrends. Strategy B ("Coiled Setup") targets stocks in established uptrends with compressed volatility — no earnings dependency required. Together they surface tradeable candidates even in slow earnings weeks.
 
 The current architecture is built around:
 
-- aiogram for Telegram interaction
-- FastAPI for app lifecycle and health
-- APScheduler for cron delivery
-- Redis for FSM state, caches, and per-user run locks
-- PostgreSQL for users, runs, contracts, recommendations, and feedback
-- Finviz for visible candidate selection
-- yfinance, Finnhub, Alpha Vantage, and Alpaca as supporting data sources
-- OpenRouter for light and heavy LLM routes
+**Every Monday at 10:30 AM Montreal, Quebec local time**∆
 
 The system does not place trades. It produces structured recommendations and
 logged evidence so the user can review the setup manually in their broker.
@@ -33,9 +20,7 @@ logged evidence so the user can review the setup manually in their broker.
 
 The product should answer one practical question:
 
-> "Among the top visible US companies reporting earnings next week, which
-> options setup is strongest after market-data checks, news review, options
-> scoring, sizing, and final decision review?"
+> “Across catalyst-driven and structure-driven setups, which option contract has the best opportunity based on trend, earnings setup, market context, option chain quality, pricing, and expected move?”
 
 The output should give the user:
 
@@ -65,27 +50,25 @@ Monday 10:30 AM America/Toronto
 Current runtime flow:
 
 ```text
-Cron Trigger or Manual Trigger
-   |
-Acquire per-user Redis run lock
-   |
-Create workflow_runs row with status=running
-   |
-Load top five candidates from Finviz
-   |
-Validate/supplement candidates with yfinance + Finnhub
-   |
-For each candidate:
-  market data -> news brief -> option chain -> scoring -> sizing
-   |
-Final decision step:
-  LLM heavy route when available, heuristic fallback when needed
-   |
-Persist candidates, option contracts, recommendation, and run artifacts
-   |
-Send Telegram status + final message
-   |
-Mark workflow run success or no_trade
+Cron Trigger
+   ↓
+Run Strategy A (Finviz Catalyst Confluence — earningsdate_thisweek + earningsdate_nextweek, dedupe)
+   ↓
+Run Strategy B (Finviz Coiled Setup — channelup2 + triangleascending, dedupe)
+   ↓  ↓ (both run concurrently)
+Merge results, dedupe by ticker (Strategy A wins ties)
+   ↓
+Up to 10 candidates → existing scoring pipeline
+   ↓
+Analyze each stock direction
+   ↓
+Analyze long and short option opportunities
+   ↓
+Select one best contract or return “No trade”
+   ↓
+Send recommendation through Telegram
+   ↓
+Store recommendation card and evidence logs (with strategy_source per candidate)
 ```
 
 ### 3.2 Manual Workflow
@@ -105,22 +88,19 @@ does not yet include a separate "analyze specific ticker" path.
 
 ### 4.1 The Agent Must
 
-1. Use Finviz as the primary visible screener.
-2. Open the Finviz screener URL with the next-week earnings filter already
-   encoded.
-3. Work from the top five visible rows exactly as the screener presents them.
-4. Keep browser automation stateless and retry-safe.
-5. Validate or supplement Finviz candidates with backup earnings sources.
-6. Fetch market data, news context, and option chains through service modules
-   that can fail independently without crashing the whole run.
-7. Use deterministic per-candidate scoring before the final cross-candidate
-   decision step.
-8. Use the OpenRouter heavy route only for the final structured decision step.
-9. Enforce a per-user run lock so overlapping scans do not execute together.
-10. Persist recommendation artifacts, candidate cards, option-contract logs,
-    and Telegram output snapshots.
-11. Send either one recommendation, one watchlist-only setup, or a no-trade
-    message.
+1. Use Finviz Screener through browser automation for both Strategy A and Strategy B.
+2. Run Strategy A twice (earningsdate_thisweek, earningsdate_nextweek) and dedupe results.
+3. Run Strategy B twice (ta_pattern_channelup2, ta_pattern_triangleascending) and dedupe results.
+4. Merge both strategy results, dedupe by ticker (Strategy A wins ticker ties), yielding up to 10 candidates.
+5. Gather additional market, option, chart, earnings, and news data for each candidate.
+6. Analyze bullish and bearish scenarios.
+7. Evaluate both long and short options.
+8. Choose only one direction per stock: bullish, bearish, neutral, or avoid.
+9. Never recommend both a call and a put for the same stock in the same run.
+10. Select the best overall opportunity across all merged candidates.
+11. Send a clear Telegram recommendation.
+12. Store a compact evidence-based log card for each recommendation, including strategy_source per candidate.
+13. Allow user-configurable account size, risk profile, timezone, API keys, and cron schedules.
 
 ### 4.2 The Agent Must Not
 
@@ -133,54 +113,90 @@ does not yet include a separate "analyze specific ticker" path.
 
 ---
 
-## 5. Finviz Screener Integration
+## 5. Finviz Dual-Strategy Screener Integration
 
 ### 5.1 Purpose
 
-Finviz is the primary visible screener for selecting the top five candidate
-companies reporting earnings next week.
+Finviz Screener is used as the primary candidate source via two complementary strategies. Finviz's URL-parameter system allows full filter configuration without clicking through UI — the agent constructs the URL directly and calls `page.goto(url)`, then parses the server-rendered HTML table. No hidden APIs are used; all filters are free-tier accessible.
 
-### 5.2 Required URL and Selection Rule
+**Strategy A — Catalyst Confluence** targets stocks with an earnings catalyst inside the option window, confirmed multi-timeframe uptrend, EPS/revenue beat history, and institutional positioning. Sort: Relative Volume descending.
 
-Use this screener URL:
+**Strategy B — Coiled Setup** targets stocks in established long-term uptrends currently consolidating in bullish chart patterns with compressed volatility. No earnings dependency. Sort: Performance (Half Year) descending.
+
+### 5.2 Strategy A URL Template
+
+Run twice per scan — once with `earningsdate_thisweek`, once with `earningsdate_nextweek` — and dedupe results. Finviz's earnings filter is single-value only.
 
 ```text
-https://finviz.com/screener?v=111&f=earningsdate_nextweek,geo_usa&o=-marketcap
+https://finviz.com/screener.ashx?v=111&f=cap_midover,
+earningsdate_thisweek,exch_nasd,exch_nyse,fa_epsqoq_pos,
+fa_epssurprise_pos,fa_revenuesurprise_pos,fa_salesqoq_pos,
+geo_usa,sh_avgvol_o1000,sh_opt_option,sh_price_o20,
+sh_relvol_o1.5,an_recom_buybetter,targetprice_above,
+ta_sma20_pa,ta_sma50_pa,ta_sma200_pa,
+ta_perf_qup,ta_rsi_50to70&ft=4&o=-relativevolume
 ```
 
-The URL already encodes:
+### 5.3 Strategy B URL Template
 
-- US equities only
-- earnings date = next week
-- descending market-cap ordering
+Run twice per scan — once with `ta_pattern_channelup2`, once with `ta_pattern_triangleascending` — and dedupe results.
 
-The workflow should take the first five visible rows as they appear. It should
-not layer on extra stateful browser setup or login assumptions.
-
-### 5.3 Extraction Rule
-
-The system should rely only on visible browser content.
-
-Allowed methods:
-
-1. Visible DOM/table extraction
-2. Accessibility extraction
-3. Screenshot-assisted troubleshooting if needed
-
-The system should not use hidden Finviz APIs.
+```text
+https://finviz.com/screener.ashx?v=111&f=cap_midover,exch_nasd,exch_nyse,
+geo_usa,sh_avgvol_o2000,sh_opt_option,sh_price_o20,sh_short_u20,
+sh_insidertrans_pos,ta_sma200_pa,ta_sma50_pa,ta_highlow52w_b10h,
+ta_perf_yup,ta_perf2_hup,ta_rsi_40to60,ta_volatility_wo4,
+ta_pattern_channelup2,ta_beta_o1,sh_relvol_o1
+&ft=4&o=-perfhalf
+```
 
 ### 5.4 Required Extracted Fields
 
-| Field | Current Status |
+For each row returned by either strategy, extract:
+
+| Field | Required | Strategy |
+|---|---:|---|
+| Ticker | Yes | Both |
+| Company name | Yes | Both |
+| Market cap | Yes | Both |
+| Upcoming earnings date | Yes (Strategy A only) | A |
+| Current price | Preferred | Both |
+| EPS Surprise | Preferred | A |
+| Revenue Surprise | Preferred | A |
+| Analyst Recom. | Preferred | A |
+| Target Price | Preferred | A |
+| RSI (14) | Preferred | Both |
+| Pattern | Preferred | B |
+| Volatility (Week) | Preferred | B |
+| Float Short | Preferred | B |
+| Insider Transactions | Preferred | B |
+| Relative Volume | Preferred | Both |
+| Sector/industry | Preferred | Both |
+
+If Finviz does not expose all preferred fields, the agent should fill missing fields from backup data sources. Strategy B candidates do not have an earnings date from Finviz — leave `earnings_date` null unless confirmed by a backup source.
+
+### 5.5 Allowed Automation Method
+
+The agent uses:
+
+- Playwright `page.goto(url)` — Finviz URL contains all filter parameters
+- HTML table parsing from accessibility tree or raw HTML
+- Screenshot + vision model extraction as fallback
+- Redis cache (600 s TTL) to avoid hammering Finviz between strategy runs
+
+The system must not use undocumented Finviz APIs.
+
+### 5.6 Screener Status Reporting
+
+After each scan the system records a `screener_status` value:
+
+| Value | Meaning |
 |---|---|
-| Ticker | Required |
-| Company name | Required |
-| Market cap | Required when visible; supplement if missing |
-| Earnings date | Usually inferred from the next-week screener window, then validated |
-| Current price | Preferred |
-| Daily change % | Preferred |
-| Volume | Preferred |
-| Sector | Preferred |
+| `success` | Both Strategy A and Strategy B returned candidates |
+| `partial` | Only one strategy returned candidates |
+| `failed` | Both strategies returned no candidates (Finnhub/yfinance backup used) |
+
+The `partial` status triggers a warning text in the Telegram message explaining which strategy was unavailable.
 
 ---
 
@@ -190,14 +206,17 @@ The system should not use hidden Finviz APIs.
 
 | Data Need | Primary Source | Backup / Supporting Source |
 |---|---|---|
-| Top-five earnings candidates | Finviz visible screener | yfinance + Finnhub candidate list |
-| Earnings date verification | yfinance earnings source | Finnhub earnings source |
-| Market snapshot | yfinance | Alpha Vantage supplement and cross-check |
-| SPY / QQQ / sector ETF context | yfinance | none |
-| Option chains | Alpaca when user credentials exist | yfinance |
-| News discovery | search service + fetched articles | company IR fallback results |
-| News summarization | OpenRouter lightweight model | structured empty/thin-coverage brief |
-| Final decision | OpenRouter heavy model | heuristic decision fallback |
+| Screener candidates (up to 10) | Finviz dual-strategy browser automation (Strategy A + B) | Finnhub / yfinance earnings calendar |
+| Earnings date verification | Finviz (Strategy A) + backup API | Yahoo Finance / Finnhub / Alpha Vantage |
+| Market cap | Finviz | Yahoo Finance / yfinance |
+| Historical OHLCV | Yahoo Finance / yfinance | Alpha Vantage |
+| Option chains | Alpaca Options Snapshots API | Yahoo Finance / yfinance |
+| Option Greeks | Alpaca Options Snapshots API | calculated/estimated when unavailable |
+| Option bid/ask/quote data | Alpaca indicative options feed | Yahoo Finance / yfinance |
+| News and catalysts | Web search | company investor relations pages |
+| Market context | SPY, QQQ, VIX proxy | Yahoo Finance |
+| Sector context | sector ETFs | Yahoo Finance |
+| LLM reasoning | OpenRouter | user-provided OpenRouter API key |
 
 ### 6.2 Alpaca Options Data Role
 
@@ -642,8 +661,17 @@ Short-option recommendations must clearly identify:
 
 ### 14.1 Candidate Universe
 
-The candidate universe starts from the Finviz next-week screener URL in Section
-5.2. The system should use the first five visible rows.
+The candidate universe starts from two concurrent Finviz screens.
+
+**Strategy A — Catalyst Confluence** (run twice, dedupe):
+- earningsdate_thisweek variant → up to 5 results
+- earningsdate_nextweek variant → merged with above, dedupe by ticker
+
+**Strategy B — Coiled Setup** (run twice, dedupe):
+- ta_pattern_channelup2 variant → up to 5 results
+- ta_pattern_triangleascending variant → merged with above, dedupe by ticker
+
+After both strategies complete, the results are merged and deduped by ticker (Strategy A wins ticker ties). The pipeline receives up to 10 candidates.
 
 ### 14.2 Candidate Validation
 
@@ -1151,19 +1179,39 @@ Current fields:
 
 Current fields:
 
-- `id`
-- `user_id`
-- `day_of_week`
-- `local_time`
-- `timezone_label`
-- `timezone_iana`
-- `is_active`
-- `created_at`
-- `updated_at`
+| Field | Type |
+|---|---|
+| id | UUID |
+| user_id | UUID |
+| trigger_type | cron/manual |
+| status | running/success/failed/no_trade |
+| started_at | timestamp |
+| finished_at | timestamp |
+| screener_status | success/partial/failed |
+| selected_candidate_count | integer |
+| final_recommendation_id | UUID/null |
+| error_message | text/null |
 
 ### 24.3 `workflow_runs`
 
-Current fields:
+| Field | Type |
+|---|---|
+| id | UUID |
+| run_id | UUID |
+| ticker | string |
+| company_name | string |
+| market_cap | decimal |
+| earnings_date | date |
+| earnings_timing | string/null |
+| current_price | decimal |
+| strategy_source | catalyst_confluence/coiled_setup |
+| direction_classification | string |
+| candidate_direction_score | integer |
+| best_strategy | string/null |
+| final_opportunity_score | integer |
+| data_confidence_score | integer |
+| selected_for_final | boolean |
+| created_at | timestamp |
 
 - `id`
 - `user_id`
@@ -1293,38 +1341,38 @@ Current fields:
 
 | Component | Module |
 |---|---|
-| FastAPI app | `app/main.py` |
-| Telegram bootstrap | `app/telegram/bot.py` |
-| Scheduler service | `app/scheduler/scheduler.py` |
-| Workflow runner | `app/scheduler/jobs.py` |
-| Pipeline orchestrator | `app/pipeline/orchestrator.py` |
-| Candidate service | `app/services/candidate_service.py` |
-| Finviz browser/extractor | `app/services/finviz/` |
-| Market data service | `app/services/market_data/service.py` |
-| News service | `app/services/news/service.py` |
-| Options service | `app/services/options/service.py` |
-| Scoring engine | `app/scoring/` |
-| LLM router | `app/llm/router.py` |
-| Logging service | `app/services/logging_service.py` |
-| User/settings service | `app/services/user_service.py` |
+| Telegram Bot Service | User interaction |
+| Schedule Service | Cron management |
+| Finviz Browser Service | Dual-strategy screener (Strategy A + B) with Redis cache |
+| Candidate Service | Candidate extraction, validation, and multi-strategy merge |
+| Market Data Service | OHLCV, market cap, sector data |
+| News Service | Web/news gathering |
+| Options Service | Option chain retrieval from Alpaca first, yfinance fallback |
+| Scoring Service | Direction and contract scoring |
+| Risk/Sizing Service | Quantity and exposure calculation |
+| LLM Router | Routes tasks to Opus or Gemini |
+| Recommendation Service | Final trade/no-trade decision |
+| Logging Service | Stores evidence cards |
+| Feedback Stub | Stores simple user feedback for V2 |
 
 ---
 
 ## 26. Error Handling
 
-### 26.1 Finviz Failure
+### 26.1 Finviz Screener Failure
 
-Required Finviz fallback behavior:
+If Finviz cannot be accessed for one or both strategies:
 
-1. retry safely
-2. retry with a clean browser context
-3. fall back to backup earnings sources
-4. continue only if five validated candidates can still be produced
+1. Retry browser session with a clean browser context.
+2. If Strategy A fails but Strategy B succeeds, continue with partial results (`screener_status = "partial"`).
+3. If Strategy B fails but Strategy A succeeds, continue with partial results (`screener_status = "partial"`).
+4. If both fail, try backup earnings calendar (Finnhub/yfinance). Set `screener_status = "failed"`.
+5. Notify user via Telegram if screener was degraded.
 
 If backup candidates are used, surface this warning:
 
 ```text
-⚠️ Finviz did not load correctly, so I used backup earnings data for this scan.
+⚠️ Finviz Strategy A did not load, so I used structure-driven setups only for this scan.
 ```
 
 ### 26.2 Option Chain Failure
@@ -1386,8 +1434,22 @@ support a recommendation.
 
 ### 27.4 Critical Field Override
 
-A candidate should still be blocked even if its numeric score looks usable when
-any critical blocker remains unresolved.
+Even if the data confidence score is numerically above 40, the system must block the recommendation if any critical field is missing.
+
+Critical blocking fields:
+
+- ticker
+- strategy_source (which Finviz strategy surfaced this candidate — required for V2 feedback attribution)
+- verified earnings date (Strategy A candidates only; Strategy B candidates may have no earnings date)
+- current price
+- contract type
+- position side
+- strike
+- expiry
+- usable bid/ask or mid
+- user account size
+- risk profile
+- valid OpenRouter API key
 
 ### 27.5 Missing Greeks Rule
 
@@ -1422,14 +1484,17 @@ trade decision.
 
 The workflow passes if:
 
-- scheduled scans fire in the correct user timezone
-- manual scans run from Telegram
-- Finviz or backup candidate selection yields five validated rows
-- market data, news, and option services can fail independently without
-  inventing output
-- one recommendation, one watchlist setup, or one no-trade result is produced
-- the user receives Telegram output
-- run artifacts are stored
+- the scheduled scan runs at the correct user timezone
+- manual scan can be triggered from Telegram
+- Finviz Strategy A screener opens and runs (both earningsdate variants)
+- Finviz Strategy B screener opens and runs (both pattern variants)
+- results from both strategies are merged and deduped
+- screener_status is recorded (success / partial / failed)
+- up to 10 candidates are passed to the scoring pipeline
+- option chains are retrieved or failure is logged
+- one recommendation or no-trade result is produced
+- Telegram message is delivered (with partial/failed warning if applicable)
+- recommendation card is stored with strategy_source per candidate
 
 ### 28.2 Recommendation Acceptance Criteria
 
@@ -1470,16 +1535,28 @@ Every completed run must store:
 
 ### 29.1 V1 Must Include
 
-- Telegram onboarding
-- encrypted API-key storage
-- Finviz top-five candidate scan
-- yfinance and Finnhub candidate validation
-- market-data service
-- options-data service
-- news service
-- deterministic scoring
-- OpenRouter heavy and light routing
-- cron management
+- Telegram bot onboarding
+- user settings
+- OpenRouter API key storage
+- Alpaca API key and secret storage
+- optional Alpha Vantage key storage
+- Finviz browser automation (Strategy A + Strategy B)
+- Strategy A: earnings catalyst filter, relative volume sort
+- Strategy B: coiled pattern filter, half-year performance sort
+- multi-strategy merge with up to 10 candidates and strategy_source tagging
+- Redis cache for Finviz queries (600 s TTL)
+- market data retrieval
+- option chain retrieval
+- web/news gathering
+- Claude Opus 4.7 Thinking for heavy reasoning
+- Gemini 3.1 Flash for lighter tasks
+- long call support
+- long put support
+- short put support
+- short call support
+- scoring system
+- position sizing
+- cron job management
 - manual run button
 - recommendation/no-trade output
 - structured run logging
@@ -1520,10 +1597,91 @@ versus original thesis.
 The detailed phase plan now lives in [`Plan1.md`](./Plan1.md). From the
 perspective of the current architecture, the major milestones are:
 
-1. foundation, persistence, onboarding, and scheduling
-2. Finviz candidate selection and backup earnings validation
-3. market, options, news, scoring, LLM decision, and logging
-4. remaining hardening, UX refinement, and future V2 feedback work
+Build:
+
+- Telegram bot
+- onboarding
+- settings screens
+- API key storage
+- timezone selection
+- risk profile selection
+- strategy permission setting
+- cron job UI
+
+### Phase 2: Finviz Dual-Strategy Candidate Extraction
+
+Build:
+
+- Playwright browser automation
+- Finviz Strategy A screener (earningsdate_thisweek + earningsdate_nextweek variants, dedupe)
+- Finviz Strategy B screener (channelup2 + triangleascending variants, dedupe)
+- concurrent execution via asyncio.gather, Semaphore(2) rate limiter
+- Redis cache (FinvizScreenerCache, 600 s TTL, key: screener:{strategy_source}:{hash}:{date})
+- multi-strategy merge and ticker-level deduplication (A wins ties)
+- strategy_source tagging on every CandidateRecord
+- screener_status reporting (success / partial / failed)
+- fallback to Finnhub/yfinance earnings calendar if both strategies fail
+
+### Phase 3: Market and Options Data
+
+Build:
+
+- market data service
+- Alpaca option chain service
+- yfinance fallback option chain service
+- fallback data logic
+- data confidence scoring
+- candidate validation
+
+### Phase 4: Scoring and Recommendation
+
+Build:
+
+- Direction Score
+- Contract Opportunity Score
+- Final Opportunity Score
+- long/short strategy selection
+- position sizing
+- no-trade logic
+
+### Phase 5: LLM Integration
+
+Build:
+
+- OpenRouter integration
+- Claude Opus 4.7 Thinking route
+- Gemini 3.1 Flash route
+- structured prompts
+- structured outputs
+- final recommendation generation
+
+### Phase 6: Logging
+
+Build:
+
+- recommendation cards
+- candidate logs
+- contract logs
+- run summaries
+- Telegram message archive
+
+### Phase 7: Testing
+
+Test:
+
+- manual scan
+- Monday scheduled scan
+- timezone behavior
+- multiple cron jobs
+- bad OpenRouter API key
+- bad Alpaca API key/secret
+- TradingView failure
+- missing option chain
+- no-trade result
+- long call recommendation
+- long put recommendation
+- short put recommendation
+- short call recommendation
 
 ---
 
@@ -1574,11 +1732,14 @@ direction, poor option pricing, or not enough data confidence.
 
 Current priorities:
 
-1. keep Finviz candidate selection reliable and stateless
-2. preserve high-signal contract filtering and no-fabrication rules
-3. keep deterministic scoring explainable
-4. keep LLM routing constrained to the right decision boundary
-5. keep run artifacts complete enough for review and future feedback work
+1. Finviz dual-strategy extraction (Strategy A + B, merge, dedupe)
+2. option-chain retrieval
+3. expiry logic around earnings date
+4. long vs short option selection
+5. scoring system
+6. data confidence scoring
+7. Telegram UX
+8. logging system
 
 Lower priorities:
 
@@ -1592,14 +1753,17 @@ Lower priorities:
 
 V1 is done when:
 
-- a user can onboard entirely from Telegram
-- settings and API keys are stored encrypted
-- cron jobs can be managed from Telegram
-- manual runs and scheduled runs both execute through the same workflow
-- Finviz top-five candidate selection works with backup earnings fallback
-- market, news, and options data are fetched through the current service layer
-- the system can return a recommendation, a watchlist setup, or a no-trade
-  result without inventing data
-- the user receives clear Telegram output
-- the database stores the run, candidates, option contracts, recommendation
-  data, and artifact snapshots
+- a user can onboard from Telegram
+- a user can set account size, timezone, risk profile, and API key
+- a user can manage cron jobs from Telegram buttons
+- the default Monday 10:30 AM Montreal schedule works
+- the user can manually run the workflow
+- the agent runs Finviz Strategy A (both earnings date variants) and Strategy B (both pattern variants)
+- the agent merges up to 10 candidates with strategy_source tagging
+- the agent retrieves option-chain data from Alpaca first, with yfinance fallback
+- the agent uses Gemini 3.1 Flash for light research
+- the agent uses Claude Opus 4.7 Thinking for final analysis
+- the agent supports long calls, long puts, short puts, and short calls
+- the agent sends one recommendation or no-trade message
+- the recommendation includes contract details and reasoning
+- the system stores a complete recommendation card and evidence log

@@ -28,6 +28,7 @@ from app.pipeline.types import (
     DecisionTrace,
     PipelineCandidate,
 )
+from app.scoring.final import combine_scores
 from app.scoring.types import (
     ContractScoreResult,
     UserContext,
@@ -200,15 +201,15 @@ def validate_llm_decision(
     candidates: Sequence[PipelineCandidate],
     decision: StructuredDecision,
 ) -> StructuredDecision:
-    watchlist = _sanitize_watchlist(
-        candidates,
-        decision.watchlist_tickers,
-        exclude=decision.chosen_ticker,
-    )
     raw_response = decision.model_dump_json()
-    _validate_action_thresholds(decision, raw_response=raw_response)
 
     if decision.action == "no_trade":
+        _validate_action_thresholds(decision, raw_response=raw_response)
+        watchlist = _sanitize_watchlist(
+            candidates,
+            decision.watchlist_tickers,
+            exclude=decision.chosen_ticker,
+        )
         if not watchlist:
             watchlist = _default_watchlist(candidates, exclude=None)
         return decision.model_copy(
@@ -252,7 +253,35 @@ def validate_llm_decision(
             raw_response=raw_response,
         )
 
-    return decision.model_copy(update={"watchlist_tickers": watchlist})
+    _validate_action_thresholds(decision, raw_response=raw_response)
+    structural_final_score = combine_scores(
+        candidate.evaluation.direction.score,
+        matched_contract.score,
+    )
+    normalized_final_score = (
+        structural_final_score
+        if decision.final_score is None
+        else min(decision.final_score, structural_final_score)
+    )
+    normalized = decision.model_copy(
+        update={
+            "direction_score": candidate.evaluation.direction.score,
+            "contract_score": matched_contract.score,
+            "final_score": normalized_final_score,
+        }
+    )
+    _validate_action_not_more_aggressive(
+        candidate,
+        matched_contract,
+        normalized,
+        raw_response=raw_response,
+    )
+    watchlist = _sanitize_watchlist(
+        candidates,
+        normalized.watchlist_tickers,
+        exclude=normalized.chosen_ticker,
+    )
+    return normalized.model_copy(update={"watchlist_tickers": watchlist})
 
 
 def resolve_selected_contract(
@@ -269,6 +298,8 @@ def resolve_selected_contract(
     )
     for contract in contracts:
         if _contract_matches(contract, chosen_contract):
+            if visible_only and not contract.is_viable:
+                return None
             return contract
 
     if visible_only:
@@ -356,6 +387,9 @@ def _heuristic_decision(candidates: Sequence[PipelineCandidate]) -> StructuredDe
 
 def _candidate_bundle(candidate: PipelineCandidate) -> CandidateBundle:
     snapshot = candidate.context.market_snapshot
+    viable_contracts = [
+        contract for contract in candidate.evaluation.considered_contracts if contract.is_viable
+    ]
     return CandidateBundle(
         ticker=candidate.record.ticker,
         company_name=candidate.record.company_name or candidate.context.company_name,
@@ -386,7 +420,7 @@ def _candidate_bundle(candidate: PipelineCandidate) -> CandidateBundle:
         news_summary=_news_summary(candidate),
         option_chain_candidates=[
             _option_chain_candidate(contract)
-            for contract in candidate.evaluation.considered_contracts[:3]
+            for contract in viable_contracts[:3]
         ],
         expected_move=candidate.context.expected_move_percent,
         previous_earnings_move=candidate.context.previous_earnings_move_percent,
@@ -462,6 +496,49 @@ def _key_concerns(candidate: PipelineCandidate) -> list[str]:
     concerns = list(candidate.evaluation.confidence.blockers)
     concerns.extend(candidate.evaluation.confidence.notes)
     return concerns[:4]
+
+
+def _validate_action_not_more_aggressive(
+    candidate: PipelineCandidate,
+    contract: ContractScoreResult,
+    decision: StructuredDecision,
+    *,
+    raw_response: str | None = None,
+) -> None:
+    allowed = _maximum_allowed_action(candidate, contract)
+    if _action_rank(decision.action) > _action_rank(allowed):
+        raise LLMValidationError(
+            (
+                "Heavy model selected an action that is more aggressive than the "
+                "scoring engine allows for the chosen contract."
+            ),
+            raw_response=raw_response,
+        )
+
+
+def _maximum_allowed_action(
+    candidate: PipelineCandidate,
+    contract: ContractScoreResult,
+) -> str:
+    confidence = candidate.evaluation.confidence
+    final_score = combine_scores(candidate.evaluation.direction.score, contract.score)
+    if not contract.is_viable or confidence.blockers or confidence.score < 40:
+        return "no_trade"
+    if confidence.score < 55:
+        return "watchlist" if final_score >= 60 else "no_trade"
+    if final_score >= 68:
+        return "recommend"
+    if final_score >= 60:
+        return "watchlist"
+    return "no_trade"
+
+
+def _action_rank(action: str) -> int:
+    if action == "recommend":
+        return 2
+    if action == "watchlist":
+        return 1
+    return 0
 
 
 def _no_trade_reason(candidate: PipelineCandidate) -> str:

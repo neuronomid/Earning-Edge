@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from app.services.candidate_models import CandidateRecord
+from app.services.finviz.query import FinvizQuery
 from app.services.parsing import parse_compact_decimal, parse_compact_int, parse_percent
 
 if TYPE_CHECKING:
@@ -14,7 +15,6 @@ class FinvizBrowserError(RuntimeError):
 
 
 class FinvizBrowserClient:
-    URL = "https://finviz.com/screener?v=111&f=earningsdate_nextweek,geo_usa&o=-marketcap"
     _USER_AGENT = (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
@@ -29,32 +29,81 @@ class FinvizBrowserClient:
         self.headless = headless
         self.timeout_ms = timeout_ms
 
-    async def capture_snapshot(self, *, limit: int = 5) -> list[CandidateRecord]:
+    async def capture_snapshot(
+        self,
+        query: FinvizQuery,
+        *,
+        limit: int = 5,
+    ) -> list[CandidateRecord]:
         from playwright.async_api import async_playwright
 
+        url = query.to_url()
         async with async_playwright() as playwright:
             browser = await playwright.chromium.launch(headless=self.headless)
-            context = await browser.new_context(
-                user_agent=self._USER_AGENT,
-                viewport={"width": 1600, "height": 900},
-            )
-            page = await context.new_page()
-            page.set_default_timeout(self.timeout_ms)
             try:
-                await self._load_screener(page)
-                return await self._extract_rows(page, limit=limit)
+                try:
+                    return await self._capture_with_context(
+                        browser,
+                        url=url,
+                        limit=limit,
+                        retry_page_once=True,
+                    )
+                except FinvizBrowserError:
+                    return await self._capture_with_context(
+                        browser,
+                        url=url,
+                        limit=limit,
+                        retry_page_once=False,
+                    )
             finally:
-                await context.close()
                 await browser.close()
 
-    async def _load_screener(self, page: Page) -> None:
-        await page.goto(self.URL, wait_until="domcontentloaded")
-        table = page.locator("table.styled-table-new")
+    async def _capture_with_context(
+        self,
+        browser,
+        *,
+        url: str,
+        limit: int,
+        retry_page_once: bool,
+    ) -> list[CandidateRecord]:
+        context = await browser.new_context(
+            user_agent=self._USER_AGENT,
+            viewport={"width": 1600, "height": 900},
+        )
+        page = await context.new_page()
+        page.set_default_timeout(self.timeout_ms)
         try:
-            await table.wait_for(state="visible", timeout=self.timeout_ms)
+            if retry_page_once:
+                await self._load_screener_with_retry(page, url=url)
+            else:
+                await self._load_screener(page, url=url)
+            return await self._extract_rows(page, limit=limit)
+        finally:
+            await context.close()
+
+    async def _load_screener_with_retry(self, page: Page, *, url: str) -> None:
+        try:
+            await self._load_screener(page, url=url)
+        except FinvizBrowserError:
+            await self._load_screener(page, url=url)
+
+    async def _load_screener(self, page: Page, *, url: str) -> None:
+        await page.goto(url, wait_until="domcontentloaded")
+        try:
+            await page.wait_for_function(
+                """() => {
+                    const bodyText = document.body?.innerText || "";
+                    return Boolean(
+                        document.querySelector("table.styled-table-new") ||
+                        document.querySelector("#js-screener-body-empty") ||
+                        /\\b0\\s+Total\\b/.test(bodyText)
+                    );
+                }""",
+                timeout=self.timeout_ms,
+            )
         except Exception as exc:
             raise FinvizBrowserError(
-                "Finviz screener table never became visible"
+                "Finviz screener result state never became visible"
             ) from exc
         await page.wait_for_timeout(500)
 

@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     market_analysis_reasoning_effort: Literal["off", "low", "medium", "high"] = "medium"
     finviz_headless: bool = True
     finviz_timeout_ms: int = 30000
+    finviz_query_cache_ttl_seconds: int = 600
     finnhub_api_key: str = Field(default="")
 
     @property

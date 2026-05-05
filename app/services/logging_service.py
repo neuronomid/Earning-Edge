@@ -16,6 +16,7 @@ from app.db.models.user import User
 from app.db.models.workflow_run import WorkflowRun
 from app.pipeline.types import PipelineCandidate, PipelineOutcome
 from app.scoring.types import ContractScoreResult
+from app.services.results_export_service import ResultsExportService
 
 ZERO = Decimal("0")
 
@@ -34,6 +35,7 @@ class LoggingService:
         self,
         *,
         archive_root: Path | str | None = None,
+        results_root: Path | str | None = None,
         settings: Settings | None = None,
         logger: Any | None = None,
     ) -> None:
@@ -41,7 +43,13 @@ class LoggingService:
         if archive_root is None and self.settings.app_env != "test":
             archive_root = Path("var/runs")
         self.archive_root = None if archive_root is None else Path(archive_root)
+        if results_root is None and self.archive_root is not None and self.archive_root != Path("var/runs"):
+            results_root = self.archive_root.parent / "results"
         self.logger = logger or get_logger(__name__)
+        self.results_exporter = ResultsExportService(
+            results_root=results_root,
+            settings=self.settings,
+        )
 
     def capture_run(
         self,
@@ -65,6 +73,7 @@ class LoggingService:
         run.recommendation_card_json = artifacts.recommendation_card
         run.telegram_message_text = artifacts.telegram_message
         self._archive(run.id, artifacts)
+        self._export_results(run=run, user=user, outcome=outcome, recommendation=recommendation)
         self.logger.info(
             "run_artifacts_captured",
             run_id=str(run.id),
@@ -92,6 +101,7 @@ class LoggingService:
             _candidate_card(
                 candidate=item,
                 selected_ticker=selected_ticker,
+                selected_contract=selected_contract_score if selected_ticker == item.record.ticker else None,
                 top_candidate_ticker=None if top_candidate is None else top_candidate.record.ticker,
                 final_action=outcome.decision.action,
                 final_reasoning=outcome.decision.reasoning,
@@ -178,10 +188,14 @@ class LoggingService:
             "decision_engine_notes": list(outcome.decision_trace.notes),
             "model_used_heavy": _heavy_model_used(outcome),
             "model_used_light": _light_model_used(outcome, self.settings),
+            "llm_triggered": outcome.decision_trace.engine == "llm",
             "decision_action": outcome.decision.action,
             "decision_reasoning": outcome.decision.reasoning,
             "watchlist_tickers": list(outcome.decision.watchlist_tickers),
             "warning_text": outcome.batch.warning_text,
+            "strategy_reports": [
+                _strategy_report_card(report) for report in outcome.batch.strategy_reports
+            ],
             "telegram_message": telegram_message,
             "telegram_message_id": (
                 None if recommendation is None else recommendation.telegram_message_id
@@ -209,10 +223,14 @@ class LoggingService:
             "decision_engine_notes": list(outcome.decision_trace.notes),
             "model_used_heavy": _heavy_model_used(outcome),
             "model_used_light": _light_model_used(outcome, self.settings),
+            "llm_triggered": outcome.decision_trace.engine == "llm",
             "contracts_considered_count": len(option_contracts),
             "rejected_contract_count": sum(
                 1 for contract in option_contracts if not contract["passed_hard_filters"]
             ),
+            "strategy_reports": [
+                _strategy_report_card(report) for report in outcome.batch.strategy_reports
+            ],
             "error_message": run.error_message,
         }
         return RunArtifacts(
@@ -239,6 +257,31 @@ class LoggingService:
             )
         except OSError as exc:
             self.logger.warning("run_artifact_archive_failed", run_id=str(run_id), error=str(exc))
+
+    def _export_results(
+        self,
+        *,
+        run: WorkflowRun,
+        user: User,
+        outcome: PipelineOutcome,
+        recommendation: Recommendation | None,
+    ) -> None:
+        try:
+            files = self.results_exporter.export_run(
+                run=run,
+                user=user,
+                outcome=outcome,
+                recommendation=recommendation,
+            )
+            self.logger.info(
+                "run_results_exported",
+                run_id=str(run.id),
+                strategy_a=str(files.strategy_a),
+                strategy_b=str(files.strategy_b),
+                combined=str(files.combined),
+            )
+        except OSError as exc:
+            self.logger.warning("run_results_export_failed", run_id=str(run.id), error=str(exc))
 
 
 @lru_cache(maxsize=1)
@@ -268,6 +311,7 @@ def _candidate_card(
     *,
     candidate: PipelineCandidate,
     selected_ticker: str | None,
+    selected_contract: ContractScoreResult | None,
     top_candidate_ticker: str | None,
     final_action: str,
     final_reasoning: str,
@@ -277,18 +321,32 @@ def _candidate_card(
         "ticker": candidate.record.ticker,
         "screener_rank": candidate.record.screener_rank,
         "company_name": candidate.context.company_name,
+        "current_price": _decimal(
+            candidate.context.market_snapshot.current_price or candidate.record.current_price
+        ),
+        "sector": candidate.context.market_snapshot.sector or candidate.record.sector,
         "market_cap": _decimal(
             candidate.record.market_cap or candidate.context.market_snapshot.market_cap
         ),
         "earnings_date": _date(candidate.context.earnings_date),
         "earnings_date_verified": candidate.context.verified_earnings_date,
+        "data_confidence_score": candidate.evaluation.confidence.score,
         "direction_classification": candidate.evaluation.direction.classification,
         "candidate_direction_score": candidate.evaluation.direction.score,
         "best_contract_score": None if best_contract is None else best_contract.score,
         "final_opportunity_score": candidate.evaluation.final_score,
         "best_strategy": None if best_contract is None else best_contract.strategy,
+        "strategy_source": candidate.record.strategy_source,
+        "candidate_sources": list(candidate.record.sources),
+        "candidate_origin": "finviz_row" if "finviz" in candidate.record.sources else "backup_source",
         "best_contract": (
             None if best_contract is None else _selected_contract_fields(best_contract)
+        ),
+        "selected_contract": (
+            None if selected_contract is None else _selected_contract_fields(selected_contract)
+        ),
+        "selected_contract_matches_best_scored": (
+            selected_contract is None or _contracts_match(selected_contract, best_contract)
         ),
         "reason_selected_or_rejected": _reason_selected_or_rejected(
             candidate=candidate,
@@ -395,6 +453,26 @@ def _title_strategy(strategy: str) -> str:
     return strategy.replace("_", " ").capitalize()
 
 
+def _strategy_report_card(report) -> dict[str, Any]:
+    return {
+        "strategy_source": report.strategy_source,
+        "strategy_label": report.strategy_label,
+        "provider": report.provider,
+        "status": report.status,
+        "raw_row_count": report.raw_row_count,
+        "candidate_count": report.candidate_count,
+        "finviz_candidate_count": report.finviz_candidate_count,
+        "backup_candidate_count": report.backup_candidate_count,
+        "fallback_used": report.fallback_used,
+        "query_urls": list(report.query_urls),
+        "filter_codes": list(report.filter_codes),
+        "criteria_summary": report.criteria_summary,
+        "sort_summary": report.sort_summary,
+        "warning_text": report.warning_text,
+        "error": report.error,
+    }
+
+
 def _data_sources(candidate: PipelineCandidate) -> list[str]:
     ordered: list[str] = []
     for value in candidate.record.sources:
@@ -461,3 +539,20 @@ def _dt(value: datetime | None) -> str | None:
 
 def _write_json(path: Path, payload: dict[str, Any] | list[dict[str, Any]]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def _contracts_match(
+    left: ContractScoreResult | None,
+    right: ContractScoreResult | None,
+) -> bool:
+    if left is None and right is None:
+        return True
+    if left is None or right is None:
+        return False
+    return (
+        left.contract.ticker == right.contract.ticker
+        and left.contract.option_type == right.contract.option_type
+        and left.contract.position_side == right.contract.position_side
+        and left.contract.strike == right.contract.strike
+        and left.contract.expiry == right.contract.expiry
+    )

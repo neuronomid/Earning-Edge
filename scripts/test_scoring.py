@@ -263,8 +263,9 @@ def _bar(label: str, score: int, width: int = 28) -> str:
 
 async def main() -> None:
     print("Fetching Finviz top-5 candidates...")
+    from app.services.finviz.strategies import STRATEGY_A_BASE
     extractor = FinvizExtractor(FinvizBrowserClient(headless=True, timeout_ms=30000))
-    candidates = await extractor.get_top_five()
+    candidates = await extractor.get_top_five(STRATEGY_A_BASE)
     print(f"Got: {[c.ticker for c in candidates]}\n")
 
     for rec in candidates:

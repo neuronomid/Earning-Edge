@@ -940,7 +940,7 @@ def test_main_recommendation_template_matches_prd_structure() -> None:
     text = render_main_recommendation(recommendation)
     ordered_labels = [
         "<b>Weekly Earnings Options Signal</b>",
-        "<b>Best setup:</b> AMD",
+        "<b>Best setup:</b> 🥇 AMD",
         "<b>Direction:</b> Bullish",
         "<b>Contract:</b> AMD Call",
         "<b>Strike:</b> $104.00",
@@ -961,28 +961,28 @@ def test_main_recommendation_template_matches_prd_structure() -> None:
     assert indexes == sorted(indexes)
 
 
-def test_main_recommendation_template_supports_alternative_label() -> None:
+def test_ranked_recommendation_template_uses_bronze_for_third_setup() -> None:
     recommendation = SimpleNamespace(
-        ticker="AAPL",
-        company_name="Apple Inc.",
+        ticker="NVDA",
+        company_name="Nvidia Corp.",
         option_type="call",
         position_side="long",
-        strike=Decimal("195"),
+        strike=Decimal("900"),
         expiry=date(2026, 5, 16),
         earnings_date=date(2026, 5, 8),
-        suggested_entry=Decimal("1.35"),
+        suggested_entry=Decimal("4.50"),
         suggested_quantity=1,
-        estimated_max_loss="$135.00 max loss per contract",
+        estimated_max_loss="$450.00 max loss per contract",
         account_risk_percent=Decimal("2.00"),
-        confidence_score=76,
-        risk_level="Moderate",
-        reasoning_summary="AAPL became the strongest remaining setup.",
-        key_concerns_json=["IV crush is still a real risk."],
+        confidence_score=78,
+        risk_level="High",
+        reasoning_summary="NVDA was the third qualified setup.",
+        key_concerns_json=[],
     )
 
-    text = render_main_recommendation(recommendation, setup_label="Next best setup")
+    text = render_main_recommendation(recommendation, rank_position=3)
 
-    assert "<b>Next best setup:</b> AAPL" in text
+    assert "<b>3rd best setup:</b> 🥉 NVDA" in text
 
 
 def test_short_option_template_uses_margin_warning() -> None:
