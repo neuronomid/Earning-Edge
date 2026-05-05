@@ -1,19 +1,31 @@
 # PRD: Earnings Options Recommendation Agent
 
-**Version:** V1.1  
-**Update:** Alpaca Options Snapshots API added as the primary option-chain source; Yahoo Finance / yfinance moved to fallback; Alpha Vantage remains optional supporting data.
+**Version:** V1.2  
+**Update:** Rebased on the implemented architecture in `app/`. The retired
+TradingView phase-4 provider is no longer part of the product. Finviz is the
+primary visible screener, the workflow runs through `WorkflowRunner` and
+`PipelineOrchestrator`, and the current system persists full run artifacts in
+PostgreSQL plus optional filesystem archives.
 
 ## 1. Product Summary
 
-The Earnings Options Recommendation Agent is a Telegram-based agent that scans upcoming earnings, selects the top five companies by market capitalization, analyzes their likely earnings-related price movement, evaluates available options contracts, and sends a friendly Telegram recommendation to the user.
+The Earnings Options Recommendation Agent is a multi-user Telegram bot that
+scans US companies reporting earnings next week, evaluates options setups, and
+sends one best setup, a watchlist-only setup, or a no-trade result to the user.
 
-The agent runs automatically based on user-defined cron jobs. The default cron job is:
+The current architecture is built around:
 
-**Every Monday at 10:30 AM Montreal, Quebec local time**
+- aiogram for Telegram interaction
+- FastAPI for app lifecycle and health
+- APScheduler for cron delivery
+- Redis for FSM state, caches, and per-user run locks
+- PostgreSQL for users, runs, contracts, recommendations, and feedback
+- Finviz for visible candidate selection
+- yfinance, Finnhub, Alpha Vantage, and Alpaca as supporting data sources
+- OpenRouter for light and heavy LLM routes
 
-The user can also manually trigger the workflow anytime from Telegram.
-
-The agent does not place trades. It only provides structured recommendations and reasoning so the user can manually review and execute the trade in their preferred broker.
+The system does not place trades. It produces structured recommendations and
+logged evidence so the user can review the setup manually in their broker.
 
 ---
 
@@ -21,21 +33,22 @@ The agent does not place trades. It only provides structured recommendations and
 
 The product should answer one practical question:
 
-> “Among the largest companies reporting earnings next week, which option contract has the best opportunity based on trend, earnings setup, market context, option chain quality, pricing, and expected move?”
+> "Among the top visible US companies reporting earnings next week, which
+> options setup is strongest after market-data checks, news review, options
+> scoring, sizing, and final decision review?"
 
-The output should be a simple Telegram message with:
+The output should give the user:
 
 - the chosen ticker
-- the trade direction
-- the option type
-- strike
-- expiry
-- suggested entry/premium
-- suggested quantity
-- short reasoning
+- direction
+- strategy and contract
+- strike and expiry
+- suggested entry
+- suggested quantity or watchlist-only status
+- estimated max loss or broker-margin warning
 - confidence score
-- key evidence
-- why the agent chose that contract over alternatives
+- concise reasoning
+- key evidence and concerns
 
 ---
 
@@ -46,46 +59,45 @@ The output should be a simple Telegram message with:
 Default run:
 
 ```text
-Monday 10:30 AM Montreal, Quebec local time
+Monday 10:30 AM America/Toronto
 ```
 
-Workflow:
+Current runtime flow:
 
 ```text
-Cron Trigger
-   ↓
-Open TradingView Screener
-   ↓
-Filter: Upcoming earnings date = Next week
-   ↓
-Select top 5 companies
-   ↓
-Gather market data, chart data, option chain data, earnings context, and news
-   ↓
-Analyze each stock direction
-   ↓
-Analyze long and short option opportunities
-   ↓
-Select one best contract or return “No trade”
-   ↓
-Send recommendation through Telegram
-   ↓
-Store recommendation card and evidence logs
+Cron Trigger or Manual Trigger
+   |
+Acquire per-user Redis run lock
+   |
+Create workflow_runs row with status=running
+   |
+Load top five candidates from Finviz
+   |
+Validate/supplement candidates with yfinance + Finnhub
+   |
+For each candidate:
+  market data -> news brief -> option chain -> scoring -> sizing
+   |
+Final decision step:
+  LLM heavy route when available, heuristic fallback when needed
+   |
+Persist candidates, option contracts, recommendation, and run artifacts
+   |
+Send Telegram status + final message
+   |
+Mark workflow run success or no_trade
 ```
 
 ### 3.2 Manual Workflow
 
-The user can start the workflow anytime from Telegram.
+The current manual entry point is the Telegram main-menu button:
 
-Manual trigger options:
+```text
+🚀 Run Scan Now
+```
 
-- **Run Scan Now**
-- **Run Earnings Scan**
-- **Refresh Last Scan**
-- **Analyze Specific Ticker**
-- **Show Last Recommendation**
-
-Manual runs should follow the same pipeline as the scheduled run unless the user specifically chooses a custom ticker.
+Manual runs use the same pipeline as scheduled runs. The current architecture
+does not yet include a separate "analyze specific ticker" path.
 
 ---
 
@@ -93,191 +105,161 @@ Manual runs should follow the same pipeline as the scheduled run unless the user
 
 ### 4.1 The Agent Must
 
-1. Use TradingView Screener through browser automation.
-2. Filter for stocks with earnings next week.
-3. Sort the TradingView table by market capitalization descending.
-4. Select the top five stocks.
-5. Gather additional market, option, chart, earnings, and news data.
-6. Analyze bullish and bearish scenarios.
-7. Evaluate both long and short options.
-8. Choose only one direction per stock: bullish, bearish, neutral, or avoid.
-9. Never recommend both a call and a put for the same stock in the same run.
-10. Select the best overall opportunity across the top five.
-11. Send a clear Telegram recommendation.
-12. Store a compact evidence-based log card for each recommendation.
-13. Allow user-configurable account size, risk profile, timezone, API keys, and cron schedules.
+1. Use Finviz as the primary visible screener.
+2. Open the Finviz screener URL with the next-week earnings filter already
+   encoded.
+3. Work from the top five visible rows exactly as the screener presents them.
+4. Keep browser automation stateless and retry-safe.
+5. Validate or supplement Finviz candidates with backup earnings sources.
+6. Fetch market data, news context, and option chains through service modules
+   that can fail independently without crashing the whole run.
+7. Use deterministic per-candidate scoring before the final cross-candidate
+   decision step.
+8. Use the OpenRouter heavy route only for the final structured decision step.
+9. Enforce a per-user run lock so overlapping scans do not execute together.
+10. Persist recommendation artifacts, candidate cards, option-contract logs,
+    and Telegram output snapshots.
+11. Send either one recommendation, one watchlist-only setup, or a no-trade
+    message.
 
 ### 4.2 The Agent Must Not
 
 1. Execute trades.
-2. Connect to broker accounts in V1.
-3. Recommend both call and put for the same stock.
-4. Invent missing data.
-5. Ignore option liquidity.
-6. Ignore earnings timing.
-7. Ignore option expiry relative to earnings.
-8. Depend on one data source only.
-9. Require users to memorize Telegram slash commands.
+2. Use the retired TradingView provider or phase-4 login flow.
+3. Depend on persistent browser auth for the Finviz scan.
+4. Use hidden or private screener APIs.
+5. Invent missing prices, contracts, earnings dates, or LLM outputs.
+6. Start a second run for the same user while one is already active.
 
 ---
 
-## 5. TradingView Screener Integration
+## 5. Finviz Screener Integration
 
 ### 5.1 Purpose
 
-TradingView Screener is used as the primary visual screener for selecting the top five companies reporting earnings next week.
+Finviz is the primary visible screener for selecting the top five candidate
+companies reporting earnings next week.
 
-The agent should open:
+### 5.2 Required URL and Selection Rule
 
-```text
-https://www.tradingview.com/screener/
-```
-
-Then apply:
+Use this screener URL:
 
 ```text
-Filter: Upcoming earnings date = Next week
-Select: Top 5 rows
+https://finviz.com/screener?v=111&f=earningsdate_nextweek,geo_usa&o=-marketcap
 ```
 
-After applying the `Upcoming earnings date = Next week` filter, the agent
-should not change any additional TradingView filters or sorting unless the user
-explicitly asks for it. The top five rows should be taken exactly as
-TradingView displays them after that filter is applied.
+The URL already encodes:
 
-### 5.2 Allowed Automation Method
+- US equities only
+- earnings date = next week
+- descending market-cap ordering
 
-The agent can use:
+The workflow should take the first five visible rows as they appear. It should
+not layer on extra stateful browser setup or login assumptions.
 
-- Playwright CLI
-- Playwright script
-- browser-use style automation
-- MCP browser automation server
-- visible browser interaction
-- accessibility tree extraction
-- screenshot + vision model extraction if needed
+### 5.3 Extraction Rule
 
-### 5.3 TradingView Extraction Rule
+The system should rely only on visible browser content.
 
-The agent should only rely on data visible in the TradingView browser session.
+Allowed methods:
 
-Preferred extraction methods:
+1. Visible DOM/table extraction
+2. Accessibility extraction
+3. Screenshot-assisted troubleshooting if needed
 
-1. Browser accessibility snapshot
-2. Visible table text extraction
-3. Screenshot analysis
-4. Manual fallback if browser automation fails
-
-The system should not use hidden/private TradingView APIs.
+The system should not use hidden Finviz APIs.
 
 ### 5.4 Required Extracted Fields
 
-For each of the top five rows, extract:
-
-| Field | Required |
-|---|---:|
-| Ticker | Yes |
-| Company name | Yes |
-| Market cap | Yes |
-| Upcoming earnings date | Yes |
+| Field | Current Status |
+|---|---|
+| Ticker | Required |
+| Company name | Required |
+| Market cap | Required when visible; supplement if missing |
+| Earnings date | Usually inferred from the next-week screener window, then validated |
 | Current price | Preferred |
 | Daily change % | Preferred |
 | Volume | Preferred |
-| Sector/industry | Preferred |
-
-If TradingView does not expose all preferred fields, the agent should fill missing fields from backup data sources.
+| Sector | Preferred |
 
 ---
 
 ## 6. Data Sources
 
-The system should use a free-data-first architecture.
+### 6.1 Primary Source Matrix
 
-### 6.1 Primary Data Sources
-
-| Data Need | Primary Source | Backup Source |
+| Data Need | Primary Source | Backup / Supporting Source |
 |---|---|---|
-| Top-five earnings candidates | TradingView Screener browser automation | Earnings calendar API |
-| Earnings date verification | TradingView + backup API | Yahoo Finance / Finnhub / Alpha Vantage |
-| Market cap | TradingView | Yahoo Finance / yfinance |
-| Historical OHLCV | Yahoo Finance / yfinance | Alpha Vantage |
-| Option chains | Alpaca Options Snapshots API | Yahoo Finance / yfinance |
-| Option Greeks | Alpaca Options Snapshots API | calculated/estimated when unavailable |
-| Option bid/ask/quote data | Alpaca indicative options feed | Yahoo Finance / yfinance |
-| News and catalysts | Web search | company investor relations pages |
-| Market context | SPY, QQQ, VIX proxy | Yahoo Finance |
-| Sector context | sector ETFs | Yahoo Finance |
-| LLM reasoning | OpenRouter | user-provided OpenRouter API key |
+| Top-five earnings candidates | Finviz visible screener | yfinance + Finnhub candidate list |
+| Earnings date verification | yfinance earnings source | Finnhub earnings source |
+| Market snapshot | yfinance | Alpha Vantage supplement and cross-check |
+| SPY / QQQ / sector ETF context | yfinance | none |
+| Option chains | Alpaca when user credentials exist | yfinance |
+| News discovery | search service + fetched articles | company IR fallback results |
+| News summarization | OpenRouter lightweight model | structured empty/thin-coverage brief |
+| Final decision | OpenRouter heavy model | heuristic decision fallback |
 
 ### 6.2 Alpaca Options Data Role
 
-Alpaca should be the primary V1 source for option-chain data.
-
-Use Alpaca Options Snapshots API for:
-
-- full option chains
-- calls and puts
-- bid/ask quote data
-- latest trade data if available
-- Greeks if available
-- implied volatility if available
-- expiry filtering
-- strike filtering
-
-The default Alpaca setup should use the free indicative options feed when available. This is suitable for research, screening, and educational testing, but the user must still verify the final contract price inside their broker before manually entering any trade.
-
-Required Alpaca credentials:
+Alpaca is the preferred options source when the user has provided both:
 
 - Alpaca API key
 - Alpaca API secret
 
-The user should be able to add, edit, test, or remove Alpaca credentials from Telegram settings.
+The options service should use Alpaca first, then fall back to yfinance if:
 
-### 6.3 Yahoo Finance / yfinance Fallback Role
+- credentials are missing
+- authentication fails
+- Alpaca returns no usable chain
+- ticker symbol normalization requires a backup lookup
 
-Yahoo Finance / yfinance should be the fallback option-chain source.
+### 6.3 yfinance and Alpha Vantage Role
 
-Use yfinance when:
+yfinance is the primary market-data source in the implemented architecture.
 
-- Alpaca credentials are missing
-- Alpaca API request fails
-- Alpaca does not return the needed contract
-- a backup comparison is needed
-- option Greeks are not critical for the selected scoring path
+Alpha Vantage is optional and currently used as:
 
-Because yfinance is unofficial and may have incomplete option fields, the system should reduce data confidence when it relies only on yfinance for final option-chain data.
+- a supporting overview source
+- a supporting price-history source when yfinance history is unavailable
+- a conflict-detection source for price and market-cap checks
 
-### 6.4 Alpha Vantage Role
+Alpha Vantage is not the primary option-chain provider.
 
-The user may provide a free Alpha Vantage API key.
+### 6.4 News Data Role
 
-Use Alpha Vantage when available for:
-
-- company overview
-- earnings calendar if available
-- daily time series
-- news sentiment if available
-- additional cross-checking
-
-Alpha Vantage should not be the primary option-chain provider in V1 because the free tier may not provide the options-chain depth and real-time option data needed by the agent.
-
-### 6.5 Free Data Fallback Rule
-
-If one source fails:
+The news pipeline is:
 
 ```text
-Try source A
-   ↓
-If missing, try source B
-   ↓
-If still missing, use cached data if fresh
-   ↓
-If critical fields are unavailable, do not fabricate data
-   ↓
-Either downgrade confidence or return No Trade
+Search results
+   |
+Article fetcher
+   |
+OpenRouter lightweight summary
+   |
+Coverage policy and confidence cap
 ```
 
-Critical fields are defined in Section 27.3.
+If coverage is thin, the system should lower news confidence and note when IR
+fallback results were required.
+
+### 6.5 Fallback and Cache Rule
+
+Current fallback order:
+
+```text
+Try primary source
+   |
+Try secondary source
+   |
+Use Redis cache when the service supports it
+   |
+If critical fields still fail, downgrade confidence or return No Trade
+```
+
+Current Redis-backed caches:
+
+- market snapshots
+- news bundles
 
 ---
 
@@ -285,181 +267,120 @@ Critical fields are defined in Section 27.3.
 
 ### 7.1 User-Provided OpenRouter API Key
 
-Each user must be able to provide their own OpenRouter API key.
+Each user must provide an OpenRouter API key.
 
-The app should store the key encrypted.
+The current system:
 
-Required behavior:
+- validates the key during onboarding and edits
+- stores the key encrypted
+- uses it for lightweight news summarization
+- uses it for the heavy final decision route
 
-- User enters OpenRouter API key in Telegram onboarding or settings.
-- System validates the key with a lightweight test call.
-- If the key fails, the user is prompted to update it.
-- LLM workflows do not run without a valid key.
-- The key can be edited or removed from Telegram settings.
+Without a valid OpenRouter key, the final recommendation path should not
+produce a trade recommendation.
 
 ### 7.2 Heavy Reasoning Model
 
-Heavy reasoning must be handled by:
+Default heavy model:
 
 ```text
-Claude Opus 4.7 Thinking
+anthropic/claude-opus-4.7
 ```
 
-This model is responsible for:
+This route is used for the final structured decision step only. It receives a
+fully prepared `DecisionInput` payload rather than raw market prompts.
 
-- market analysis
-- trend interpretation
-- option-chain assessment
-- comparing long vs short options
-- expected move reasoning
-- earnings setup assessment
-- contract selection
-- final confidence calculation
-- reasoning summary
-- risk/reward assessment
-- deciding whether to recommend a trade or avoid
+Responsibilities:
 
-Implementation note:
+- choose the final ticker and contract from pre-scored candidates
+- return `recommend`, `watchlist`, or `no_trade`
+- provide reasoning, evidence, concerns, and watchlist tickers
+- comply with a strict JSON schema
 
-Use a configurable model alias, for example:
-
-```text
-MARKET_ANALYSIS_MODEL = claude-opus-4.7-thinking
-```
-
-The exact OpenRouter model ID should be stored in environment configuration so it can be updated without code changes.
+If the heavy route is unavailable, the system falls back to a heuristic
+decision. If authentication fails, the system returns a blocked no-trade result.
 
 ### 7.3 Lightweight Model
 
-Lighter tasks should be handled by:
+Default lightweight model:
 
 ```text
-Gemini 3.1 Flash
+google/gemini-3.1-flash-lite-preview
 ```
 
-Gemini 3.1 Flash is responsible for:
+Responsibilities in the current architecture:
 
-- browsing assistance
-- news gathering
-- summarizing articles
-- extracting key points from web pages
-- preparing short candidate summaries
-- Telegram message drafting
-- Telegram message interpretation
-- button/menu response handling
-- summarizing logs for display
-
-Implementation note:
-
-Use a configurable model alias, for example:
-
-```text
-LIGHTWEIGHT_MODEL = gemini-3.1-flash
-```
+- summarize fetched news articles
+- produce lightweight structured synthesis tasks
 
 ### 7.4 Model Separation Rule
 
-The lightweight model can collect and summarize information, but it should not make the final trade decision.
+The router enforces a hard separation:
 
-Final decision authority:
+- `summarize()` uses the lightweight route
+- `decide()` uses the heavy route
 
-```text
-Claude Opus 4.7 Thinking
-```
+The heavy `decide()` call cannot be pointed at the lightweight model.
 
 ### 7.5 Model Input Discipline
 
-The heavy reasoning model must receive structured data, not vague prompts.
+The heavy decision step should consume structured candidate bundles that include:
 
-For each stock, pass:
-
-- ticker
-- company name
-- earnings date
-- earnings timing if known
-- market cap
-- current price
-- recent returns
-- trend indicators
-- sector comparison
-- market comparison
-- news summary
-- option chain candidates
-- contract liquidity data
-- expected move data
-- previous earnings move data if available
-- data confidence score
-- rejected contract reasons
+- candidate identity
+- earnings date and verification state
+- market snapshot summary
+- news brief
+- considered contracts
+- chosen per-candidate best contract
+- confidence score and blockers
+- sizing and risk context
 
 ---
 
 ## 8. User Settings
 
-### 8.1 Required User Settings
+### 8.1 Current User Settings
 
-| Setting | Type | Example | Required |
-|---|---|---:|---:|
-| Telegram chat ID | string | `123456789` | Yes |
-| Account size | number | `$5,000` | Yes |
-| Risk profile | enum | Conservative / Balanced / Aggressive | Yes |
-| Broker | enum/string | Wealthsimple / IBKR / Questrade / Other | Optional |
-| Timezone | enum | Eastern (ET) | Yes |
-| OpenRouter API key | encrypted string | `sk-or-...` | Yes |
-| Alpaca API key | encrypted string | optional but strongly recommended | Preferred |
-| Alpaca API secret | encrypted string | optional but strongly recommended | Preferred |
-| Alpha Vantage API key | encrypted string | optional | No |
-| Strategy permission | enum | Long only / Short only / Long and short | Yes |
-| Max contracts | number | `3` | Yes |
-| Max option premium | number | `$500` | Optional |
-| Cron jobs | list | Monday 10:30 AM | Yes |
+| Setting | Status in Current UX | Required |
+|---|---|---:|
+| Telegram chat ID | automatic | Yes |
+| Account size | editable | Yes |
+| Risk profile | editable | Yes |
+| Broker | editable | Yes |
+| Timezone label + IANA timezone | editable | Yes |
+| Strategy permission | editable | Yes |
+| Max contracts | editable | Yes |
+| OpenRouter API key | editable | Yes |
+| Alpaca API key + secret | editable | Optional |
+| Alpha Vantage API key | editable | Optional |
+| Cron jobs | editable | Yes |
+
+Persisted but not currently exposed in the Telegram UI:
+
+- `custom_risk_percent`
+- `max_option_premium`
 
 ### 8.2 Timezone Options
 
-The user must be able to select timezone from this list:
-
-| Display Name | UTC Offset |
+| Label | Stored IANA Timezone |
 |---|---|
-| Pacific (PT) | UTC-08:00 |
-| Mountain (MT) | UTC-07:00 |
-| Central (CT) | UTC-06:00 |
-| Eastern (ET) | UTC-05:00 |
-| Atlantic (AT) | UTC-04:00 |
-| Newfoundland (NT) | UTC-03:30 |
-
-Default:
-
-```text
-Eastern (ET), Montreal/Quebec local time
-```
-
-Implementation note:
-
-The UI should show the above labels, but the backend should store an IANA timezone where possible so daylight saving time is handled correctly.
-
-Recommended mapping:
-
-| Display Name | Suggested IANA Timezone |
-|---|---|
-| Pacific (PT) | America/Vancouver |
-| Mountain (MT) | America/Edmonton |
-| Central (CT) | America/Winnipeg |
-| Eastern (ET) | America/Toronto or America/Montreal |
-| Atlantic (AT) | America/Halifax |
-| Newfoundland (NT) | America/St_Johns |
+| PT | America/Vancouver |
+| MT | America/Edmonton |
+| CT | America/Winnipeg |
+| ET | America/Toronto |
+| AT | America/Halifax |
+| NT | America/St_Johns |
 
 ### 8.3 Default User Settings
 
 | Setting | Default |
 |---|---|
-| Default cron job | Monday 10:30 AM Eastern/Montreal time |
+| Timezone | ET / America/Toronto |
+| Default cron job | Monday 10:30 |
 | Risk profile | Balanced |
-| Strategy permission | Long and short |
+| Strategy permission | long_and_short |
 | Max contracts | 3 |
-| Max weekly recommendations | 1 main recommendation per scan |
-| Minimum confidence for main recommendation | 68/100 |
-| Action if score below threshold | Send No Trade + best watchlist setup |
-| Telegram tone | Friendly, clear, lightly energetic |
-| Emoji style | Light use, not excessive |
+| Main result threshold | Recommendation at final score 68+ with no blockers |
 
 ---
 
@@ -467,83 +388,51 @@ Recommended mapping:
 
 ### 9.1 Risk Profile Defaults
 
-| Risk Profile | Max Account Allocation Per Trade |
+| Risk Profile | Long Option Risk Budget |
 |---|---:|
 | Conservative | 1% |
 | Balanced | 2% |
 | Aggressive | 4% |
 
-The user should be able to edit these values later, but these are the defaults.
-
 ### 9.2 Long Options Sizing
 
-For long calls and long puts:
+Current long-option sizing:
 
 ```text
-Max loss per contract = option ask price × 100
-Trade budget = account size × risk percentage
+Trade budget = account size x risk percent
+Max loss per contract = ask x 100
 Suggested contracts = floor(trade budget / max loss per contract)
+Suggested contracts are capped by max_contracts
 ```
 
-Example:
-
-```text
-Account size = $5,000
-Risk profile = Balanced = 2%
-Trade budget = $100
-Option ask = $0.85
-Contract cost = $85
-Suggested quantity = 1 contract
-```
+If the result is zero, the setup becomes watchlist-only.
 
 ### 9.3 Short Options Sizing
 
-V1 supports short calls and short puts, but sizing is more complex because broker margin requirements are not always available from free APIs.
+Current short-option handling:
 
-For short options, the agent must calculate and display:
-
-- premium collected
-- strike price
-- contract notional exposure
-- breakeven
-- distance from current price
-- estimated margin requirement if possible
-- whether max loss is defined or undefined
-- whether the setup requires broker-side margin verification
-
-For short puts:
-
-```text
-Approximate worst-case notional exposure = strike × 100 × contracts
-```
-
-For short calls:
-
-```text
-Theoretical max loss may be undefined if naked
-```
-
-The agent should still support short calls and short puts in V1, but it must clearly label the trade type and show broker verification requirements in the recommendation metadata.
+- `short_put`: approximate notional exposure = strike x 100
+- `short_call`: max loss text = `Undefined for naked short call`
+- both short strategies set `broker_verification_required = true`
+- both short strategies use broker/margin-dependent messaging
 
 ### 9.4 Contract Quantity for Short Options
 
-Because broker margin is unavailable in many free data sources, the agent should use conservative notional exposure limits.
+Current short-notional caps:
 
-Default short-option exposure rule:
-
-| Risk Profile | Max Short Option Notional Exposure |
+| Risk Profile | Max Short Notional Exposure |
 |---|---:|
 | Conservative | 10% of account size |
 | Balanced | 20% of account size |
 | Aggressive | 35% of account size |
 
-The agent should calculate:
+Quantity is:
 
 ```text
-contracts = floor(max_short_notional_exposure / (strike × 100))
+floor(max_short_notional_exposure / (strike x 100))
 ```
 
-If the result is zero, the agent can still show the setup as “watch only” but should not suggest a contract quantity.
+The result is still capped by `max_contracts`.
 
 ---
 
@@ -551,23 +440,12 @@ If the result is zero, the agent can still show the setup as “watch only” bu
 
 ### 10.1 General UX Rule
 
-The bot should not force users to memorize commands.
-
-The bot should use:
-
-- persistent reply keyboard
-- inline keyboard buttons
-- menu items
-- guided forms
-- quick action buttons
-- confirmation prompts
-- simple setting screens
-
-Slash commands can exist as fallback, but buttons should be the main UX.
+The bot should be button-first. Users should not have to memorize slash
+commands for normal use.
 
 ### 10.2 Main Menu Buttons
 
-Suggested main menu:
+Current main menu:
 
 ```text
 🚀 Run Scan Now
@@ -581,7 +459,7 @@ Suggested main menu:
 
 ### 10.3 Recommendation Message Buttons
 
-After sending a recommendation, include inline buttons:
+Current inline actions:
 
 ```text
 🔍 Why this?
@@ -592,23 +470,21 @@ After sending a recommendation, include inline buttons:
 ❌ I skipped it
 ```
 
-For V1, “I bought it” and “I skipped it” can be stored as simple log fields. The deeper feedback-loop system is V2.
-
 ### 10.4 Schedule Management Buttons
 
-The schedule screen should support:
+Current schedule actions:
 
 ```text
-➕ Add Cron Job
-✏️ Edit Cron Job
-🗑 Delete Cron Job
-⏸ Pause Schedule
-▶️ Resume Schedule
+Add
+Edit
+Delete
+Pause all
+Resume all
 ```
 
-### 10.5 Settings Buttons
+### 10.5 Settings and API Key Buttons
 
-The settings screen should support:
+Current settings actions:
 
 ```text
 💰 Account Size
@@ -618,47 +494,21 @@ The settings screen should support:
 📜 Strategy Permission
 🔢 Max Contracts
 🔑 OpenRouter API Key
-🔑 Alpaca API Key
-🔑 Alpaca API Secret
+🔑 Alpaca Key + Secret
 🔑 Alpha Vantage API Key
 ```
 
 ### 10.6 Telegram Tone
 
-Telegram messages should feel friendly, clear, and fresh.
+Messages should be:
 
-Use light emojis, for example:
+- friendly
+- concise
+- clear
+- cautious around risk
 
-- 🚀
-- 📊
-- ⚠️
-- ✅
-- 🔍
-- 🧠
-- 📈
-- 🗓
-
-Do not overuse emojis. The message should still feel serious and useful.
-
-Good tone:
-
-```text
-📊 Weekly scan is ready.
-
-I found one setup that looks stronger than the rest. It is still an earnings trade, so the setup needs careful review before entry.
-```
-
-Avoid cold tone:
-
-```text
-Recommendation generated. Execute according to parameters.
-```
-
-Avoid hype tone:
-
-```text
-This is a guaranteed winner.
-```
+The current templates use short status messages before the final recommendation
+or no-trade result.
 
 ---
 
@@ -666,36 +516,26 @@ This is a guaranteed winner.
 
 ### 11.1 First-Time Setup
 
-1. User opens Telegram bot.
-2. Bot welcomes user.
-3. Bot asks for account size.
-4. Bot asks for risk profile.
-5. Bot asks for timezone.
-6. Bot asks for broker.
-7. Bot asks whether to allow:
-   - long options only
-   - short options only
-   - long and short options
-8. Bot asks for OpenRouter API key.
-9. Bot asks for Alpaca API key and secret, with a clear option to skip and use yfinance fallback.
-10. Bot optionally asks for Alpha Vantage API key.
-11. Bot creates the default cron job:
-    - Monday 10:30 AM Eastern/Montreal time
-12. Bot shows setup summary.
-13. User confirms settings.
-14. Bot shows main menu.
+Current onboarding flow:
+
+1. account size
+2. risk profile
+3. timezone
+4. broker
+5. strategy permission
+6. OpenRouter key validation
+7. Alpaca key
+8. Alpaca secret validation or skip
+9. Alpha Vantage key validation or skip
+10. setup summary
+11. confirm
+12. create user + default cron job
+13. show main menu
 
 ### 11.2 Main Menu After Setup
 
-After onboarding, the user should see:
-
-```text
-🚀 Run Scan Now
-📊 Last Recommendation
-🗓 Manage Schedule
-⚙️ Settings
-📘 Logs
-```
+After setup the user lands on the persistent main menu described in Section
+10.2.
 
 ---
 
@@ -703,143 +543,98 @@ After onboarding, the user should see:
 
 ### 12.1 Default Cron Job
 
-Create this by default:
+Current default cron:
 
 ```text
-Monday 10:30 AM Eastern/Montreal local time
+Monday 10:30 AM America/Toronto
 ```
 
 ### 12.2 Multiple Cron Jobs
 
-The user must be able to create multiple cron jobs.
+Users can create multiple cron rows. Each row stores:
 
-Example:
-
-```text
-Monday 10:30 AM
-Tuesday 9:00 AM
-Friday 11:00 AM
-```
-
-If the user adds Tuesday at 9:00 AM, the bot should run on both:
-
-```text
-Monday 10:30 AM
-Tuesday 9:00 AM
-```
+- weekday
+- local time
+- timezone label
+- timezone IANA
+- active flag
 
 ### 12.3 Cron Job Actions
 
-The user must be able to:
+Current actions:
 
-- add a cron job
-- edit an existing cron job
-- delete a cron job
-- pause all cron jobs
-- resume all cron jobs
-- run the workflow manually outside cron schedule
+- add
+- edit
+- delete
+- pause all
+- resume all
+- run manually from the main menu
 
-### 12.4 Cron Job Storage
+### 12.4 Cron Job Storage and Delivery
 
-Each cron job should store:
+Current architecture:
 
-| Field | Type |
-|---|---|
-| id | UUID |
-| user_id | UUID |
-| day_of_week | enum |
-| time | HH:MM |
-| timezone | enum/IANA |
-| is_active | boolean |
-| created_at | timestamp |
-| updated_at | timestamp |
+- cron rows are stored in PostgreSQL
+- APScheduler uses a SQLAlchemy job store outside test mode
+- scheduler startup syncs database rows into runtime jobs
+- user timezone updates rewrite stored cron timezone fields
 
 ### 12.5 Cron Conflict Handling
 
-If two cron jobs overlap or trigger within a short time window, the system should avoid duplicate runs.
+If a user already has a run in progress, the workflow runner should not start a
+second run.
 
-Default rule:
-
-```text
-If the same user has a scan already running, do not start another scan.
-```
-
-If another run is requested manually while one is already running, Telegram should show:
+User-facing message:
 
 ```text
-⏳ A scan is already running. I’ll show the result here when it finishes.
+⏳ A scan is already running. I'll show the result here when it finishes.
 ```
+
+The default lock TTL is 900 seconds.
 
 ---
 
 ## 13. Recommendation Output Format
 
-Telegram message should be short but complete.
+### 13.1 Main Recommendation Template
 
-### 13.1 Main recommendation template
+Current template includes:
 
-**Weekly Earnings Options Signal**
+- warning text when the screener fell back
+- setup label (`Best setup` or `Next best setup`)
+- ticker
+- direction
+- contract label
+- strike
+- expiry
+- suggested entry
+- suggested quantity or watchlist-only status
+- estimated max loss
+- account risk
+- earnings date
+- confidence score
+- risk level
+- reasoning summary
+- important warning
+- action text
 
-**Best setup:** AMD  
-**Direction:** Bullish  
-**Contract:** AMD Call  
-**Strike:** $X  
-**Expiry:** YYYY-MM-DD  
-**Suggested entry:** up to $X.XX premium  
-**Suggested quantity:** X contract(s)  
-**Estimated max loss:** $X  
-**Account risk:** X%  
-**Earnings date:** YYYY-MM-DD  
-**Confidence:** 74/100  
-**Risk level:** High
+### 13.2 No-Trade Template
 
-**Why this setup:**  
-AMD is one of the largest companies reporting next week. The stock has positive short-term momentum, strong relative strength versus its sector, and recent news sentiment is supportive. The selected call is near-the-money, has acceptable liquidity, and the breakeven move is reasonable compared with recent earnings reactions.
+Current no-trade output includes:
 
-**Important warning:**  
-This trade holds through earnings. IV crush can reduce the option value after the report even if the stock moves in the expected direction.
-
-**Action:**  
-Manually review the contract in your broker before buying.
-
-### 13.2 No-trade template
-
-**Weekly Earnings Options Scan Complete**
-
-I scanned the top five large-cap companies reporting earnings next week.
-
-**Result:** No trade recommended.
-
-**Reason:**  
-The available options had poor risk/reward. The expected move was already expensive, bid-ask spreads were wide, and the directional edge was not strong enough to justify holding through earnings.
-
-**Best watchlist names:**  
-1. Ticker A  
-2. Ticker B  
-3. Ticker C
+- optional screener warning text
+- scan-complete header
+- explicit `No trade recommended`
+- concise reason
+- top watchlist tickers
 
 ### 13.3 Short Option Output Note
 
-For short options, the template should remain structurally similar, but the agent must clearly label the contract as:
+Short-option recommendations must clearly identify:
 
-```text
-Short Call
-Short Put
-```
-
-If maximum loss is undefined or broker-margin dependent, the “Estimated max loss” field should display:
-
-```text
-Broker/margin dependent
-```
-
-or:
-
-```text
-Undefined for naked short call
-```
-
-The recommendation card should still store all sizing, breakeven, notional exposure, and margin-estimate fields.
+- `Short Put` or `Short Call`
+- broker/margin dependency
+- undefined naked-call risk when relevant
 
 ---
 
@@ -847,52 +642,35 @@ The recommendation card should still store all sizing, breakeven, notional expos
 
 ### 14.1 Candidate Universe
 
-The candidate universe starts from TradingView Screener.
-
-Required filter:
-
-```text
-Upcoming earnings date = Next week
-```
-
-Required selection:
-
-```text
-Top 5 rows
-```
-
-After the required filter is applied, do not change any additional TradingView
-filters or sorting unless the user explicitly asks for it. Use the first five
-visible rows exactly as TradingView presents them.
+The candidate universe starts from the Finviz next-week screener URL in Section
+5.2. The system should use the first five visible rows.
 
 ### 14.2 Candidate Validation
 
-After selecting the top five, validate each stock using backup data sources.
+Current candidate validation architecture:
 
-Validation checks:
+1. try Finviz top five visible rows
+2. validate each ticker with yfinance and Finnhub detail lookups
+3. reconcile conflicts through `CandidateReconciler`
+4. supplement missing valid rows from backup candidate lists
 
-| Check | Action if Missing |
-|---|---|
-| Ticker | reject candidate |
-| Earnings date | verify from backup source |
-| Market cap | fill from backup source |
-| Current price | fill from backup source |
-| Option chain availability | reject options analysis if unavailable |
-| Historical candles | downgrade trend confidence |
-| News availability | continue but downgrade news confidence |
+Important behavior:
+
+- backup-only rows require a valid next-week earnings date
+- Finviz-visible rows may remain eligible with downgraded earnings-date
+  confidence when the row is visible but backup confirmation is incomplete
 
 ### 14.3 Exclusions
 
-Exclude candidates only for hard reasons:
+Hard exclusion cases include:
 
-- ticker cannot be verified
-- earnings date cannot be verified
-- no option chain is available
+- ticker cannot be reconciled
+- no next-week earnings date can be supported
+- no usable option chain survives scoring
 - current price is unavailable
-- company has no usable market data
-- selected expiry window has no options
 
-Avoid overly aggressive exclusions. The agent should not reject a candidate just because one non-critical metric is missing.
+The system should prefer confidence downgrade over unnecessary candidate loss
+when non-critical fields are missing.
 
 ---
 
@@ -900,198 +678,104 @@ Avoid overly aggressive exclusions. The agent should not reject a candidate just
 
 ### 15.1 Inputs Per Stock
 
-Each top-five stock should be analyzed with the following inputs:
+Each candidate is analyzed from:
 
-| Input | Purpose |
-|---|---|
-| Ticker | Contract matching |
-| Company name | Telegram output |
-| Earnings date | Expiry logic |
-| Earnings timing | Before open / after close if available |
-| Market cap | Ranking verification |
-| Current price | Strike and moneyness |
-| 1-day return | Short-term movement |
-| 5-day return | Pre-earnings trend |
-| 20-day return | Medium short-term trend |
-| 50-day return | Broader trend |
-| Volume vs average volume | Participation confirmation |
-| Relative strength vs SPY/QQQ | Market comparison |
-| Sector ETF trend | Sector confirmation |
-| News summary | Catalyst context |
-| Previous earnings move | Expected move comparison |
-| Options implied move | Market expectation |
-| Option chain | Contract selection |
-| Data confidence score | Reliability adjustment |
+- `CandidateRecord`
+- `MarketSnapshot`
+- `NewsBundle`
+- expanded option chain
+- `UserContext`
 
 ### 15.2 Direction Classification
 
-For each stock, the agent must classify the setup as one of:
+Current direction logic is deterministic, not LLM-driven.
 
-| Classification | Meaning |
-|---|---|
-| Bullish | Consider long calls or short puts |
-| Bearish | Consider long puts or short calls |
-| Neutral | No directional edge |
-| Avoid | Data or options setup is not usable |
+Classification rules:
 
-The agent must not classify a stock as both bullish and bearish in the same final output.
+- `bullish` when bias >= `0.12`
+- `bearish` when bias <= `-0.12`
+- `neutral` otherwise
+- `avoid` when price is missing or data confidence is below 40
 
 ### 15.3 Direction and Opportunity Scoring
 
-This section is critical. The scoring system must avoid two failure modes:
-
-1. Being too strict and almost never recommending anything.
-2. Being too loose and recommending weak setups.
-
-To solve this, V1 should use a two-stage scoring system:
-
-```text
-Stage 1: Candidate Direction Score
-Stage 2: Contract Opportunity Score
-```
-
-The agent should not rely on one vague score.
-
----
+The current architecture uses deterministic per-candidate scoring and reserves
+the heavy LLM route for the final cross-candidate choice.
 
 ### 15.3.1 Stage 1: Candidate Direction Score
 
-Candidate Direction Score measures whether the stock has a clear directional setup before earnings.
+Direction score components:
 
-Score range:
-
-```text
-0 to 100
-```
-
-Suggested weighting:
-
-| Factor | Weight | Description |
-|---|---:|---|
-| Trend alignment | 20 | 5-day, 20-day, and 50-day direction |
-| Relative strength | 15 | Stock vs SPY/QQQ and sector ETF |
-| Volume confirmation | 10 | Recent volume compared with average |
-| News/catalyst quality | 15 | Recent news supports direction |
-| Earnings expectation context | 15 | Estimate revisions, previous earnings reaction, guidance tone if available |
-| Market/sector environment | 10 | Broad market and sector are supportive |
-| Price structure | 10 | Breakout, breakdown, support/resistance, pre-earnings compression |
-| Data confidence | 5 | Reliability of data used |
-
-Interpretation:
-
-| Score | Meaning |
-|---|---|
-| 80 to 100 | Strong directional setup |
-| 68 to 79 | Usable setup |
-| 55 to 67 | Watchlist only unless contract score is excellent |
-| Below 55 | Avoid directional recommendation |
-
-Important rule:
-
-A stock with a Direction Score of 60 can still produce a recommendation if the Contract Opportunity Score is very strong, especially for short-option IV strategies. But a stock below 55 should usually not produce a recommendation.
-
----
+- trend alignment
+- relative strength
+- volume confirmation
+- news/catalyst quality
+- earnings expectation context
+- market/sector environment
+- price structure
+- data confidence
 
 ### 15.3.2 Stage 2: Contract Opportunity Score
 
-Contract Opportunity Score measures whether the actual option contract is attractive enough.
+Contract score components:
 
-Score range:
+- breakeven feasibility
+- liquidity
+- expiry fit
+- strike or moneyness fit
+- IV setup
+- premium/risk fit
+- direction compatibility
 
-```text
-0 to 100
-```
-
-Suggested weighting:
-
-| Factor | Weight | Description |
-|---|---:|---|
-| Breakeven feasibility | 20 | Required move is reasonable compared with expected/historical move |
-| Option liquidity | 15 | Volume, open interest, spread quality |
-| Expiry fit | 15 | Expiry is well matched to earnings timing |
-| Strike/moneyness fit | 15 | Strike makes sense for direction and strategy |
-| IV setup | 15 | IV is favorable for long or short option structure |
-| Premium/risk fit | 10 | Contract fits account size and risk profile |
-| Direction compatibility | 10 | Contract type matches stock thesis |
-
-Interpretation:
-
-| Score | Meaning |
-|---|---|
-| 82 to 100 | Excellent contract |
-| 70 to 81 | Good contract |
-| 60 to 69 | Acceptable if direction score is strong |
-| Below 60 | Avoid |
-
----
+Hard vetoes zero out the final contract score.
 
 ### 15.3.3 Final Opportunity Score
 
-Final Opportunity Score combines the two stages:
+Current combination:
 
 ```text
-Final Score = (Candidate Direction Score × 0.45) + (Contract Opportunity Score × 0.55)
+final score = 45% direction score + 55% contract score
 ```
-
-Reason:
-
-The contract matters slightly more than the stock thesis because even a correct thesis can fail if the option is overpriced, illiquid, or poorly timed.
 
 ### 15.3.4 Recommendation Thresholds
 
-Use tiered thresholds:
+Current action rules:
 
-| Final Score | Action |
-|---|---|
-| 78+ | Strong recommendation |
-| 68 to 77 | Recommendation allowed |
-| 60 to 67 | Watchlist / only recommend if top setup and no major red flags |
-| Below 60 | No trade |
-
-Default recommendation threshold:
-
-```text
-68/100
-```
-
-The agent should not be killed by overly strict filters. If no setup reaches 68, the bot should still send the best watchlist names and explain why no trade was selected.
+- `no_trade` if no viable contract exists
+- `no_trade` if confidence blockers exist
+- `no_trade` if confidence score < 40
+- `watchlist` if confidence is 40-54 and score >= 60
+- `watchlist` if score is 60-67 without a full recommendation
+- `recommend` if score >= 68 and no blockers remain
 
 ### 15.3.5 Hard Vetoes
 
-Hard vetoes should be rare and only used when necessary.
+Current hard vetoes include:
 
-Hard veto conditions:
-
-- earnings date cannot be verified
-- option chain unavailable
-- expiry is before earnings
-- bid/ask data missing for selected contract
-- current price unavailable
-- contract is not tradable or appears stale
-- spread is extremely wide
+- unverified earnings date
+- missing current price
+- empty option chain
+- expiry outside the valid earnings window
+- missing long ask or short bid
+- unusable quote
+- zero open interest and zero volume
+- extreme spread
+- stale or non-tradable contract
 - user risk settings allow zero contracts
-- data confidence is critically low
-- short option selected but user disabled short options
-- long option selected but user disabled long options
+- strategy side disabled for the user
 
 ### 15.3.6 Soft Penalties
 
-Soft penalties should reduce score but not automatically reject the setup.
+Current soft penalties include:
 
-Soft penalty examples:
-
-| Issue | Penalty |
-|---|---:|
-| News mixed | -5 to -10 |
-| Sector trend weak | -3 to -8 |
-| Option volume low but open interest acceptable | -3 to -7 |
-| Spread wider than ideal but still usable | -5 to -12 |
-| IV elevated for long options | -5 to -15 |
-| IV too low for short options | -5 to -10 |
-| Expiry slightly less ideal | -3 to -8 |
-| Previous earnings moves inconsistent | -3 to -8 |
-
-This approach allows the agent to still trigger when the setup is imperfect but reasonable.
+- mixed news
+- weak sector alignment
+- light same-day option volume
+- moderate or wide spreads
+- elevated IV for longs
+- weak IV for shorts
+- valid but less-ideal expiry
+- earnings-history versus implied-move mismatch
 
 ---
 
@@ -1099,38 +783,27 @@ This approach allows the agent to still trigger when the setup is imperfect but 
 
 ### 16.1 V1 Supported Strategies
 
-V1 must support four single-leg option strategies:
+Current supported strategies:
 
-| Strategy | Directional Thesis | Notes |
-|---|---|---|
-| Long Call | Bullish | Benefits from upside move |
-| Long Put | Bearish | Benefits from downside move |
-| Short Put | Bullish or neutral-bullish | Benefits from price staying above strike and IV collapse |
-| Short Call | Bearish or neutral-bearish | Benefits from price staying below strike and IV collapse |
+- `long_call`
+- `long_put`
+- `short_put`
+- `short_call`
 
 ### 16.2 Strategy Selection Logic
 
-The agent should decide between long and short options based on:
+Current mapping is deterministic and filtered by user permission.
 
-| Condition | More Suitable Strategy |
-|---|---|
-| Strong directional conviction + reasonable premium | Long call/put |
-| Moderate directional conviction + high IV | Short put/call |
-| Very high IV + unclear direction | Usually avoid single-leg directional recommendation |
-| Poor liquidity | Avoid |
-| Wide spreads | Avoid or watchlist |
-| Expiry too close and move already priced in | Avoid or short-option candidate if allowed |
+The strategy selector also tilts toward short premium when IV is rich enough
+and the direction score is not extremely strong.
 
 ### 16.3 Direction-to-Strategy Mapping
 
-| Stock Classification | Allowed Option Types |
+| Direction | Allowed Strategies |
 |---|---|
-| Bullish | Long call or short put |
-| Bearish | Long put or short call |
-| Neutral | No trade in V1 |
-| Avoid | No trade |
-
-The agent should select the best single contract among the allowed options.
+| Bullish | `long_call`, `short_put` |
+| Bearish | `long_put`, `short_call` |
+| Neutral / Avoid | none |
 
 ---
 
@@ -1138,55 +811,33 @@ The agent should select the best single contract among the allowed options.
 
 ### 17.1 Expiry Window
 
-The expiry date can be:
+Current valid expiry window:
 
-```text
-Same day after earnings up to 30 days after earnings
-```
-
-The LLM must decide the best expiry based on reasoning, inference, and calculations.
+- not before earnings date
+- not more than 30 calendar days after earnings
 
 ### 17.2 Earnings Timing Rule
 
-If earnings are before market open:
+Current timing rule:
 
-```text
-Same-day expiry is allowed if the option expires after the earnings event.
-```
-
-If earnings are after market close:
-
-```text
-Same-day expiry is not valid because the option would expire before the earnings reaction.
-```
-
-In that case, the earliest valid expiry is the next available expiry after the earnings event.
+- same-day expiry is only valid when earnings timing is `BMO`
+- same-day long expiries are allowed but penalized even for `BMO`
 
 ### 17.3 Expiry Selection Factors
 
-The agent should consider:
+Expiry scoring considers:
 
-- earnings date
-- earnings timing
-- expected move
-- option liquidity by expiry
-- IV level
-- theta decay
-- premium cost
-- user risk profile
+- days after earnings
 - strategy type
-- historical earnings reaction window
+- risk profile
+- whether the expiry is merely valid or also preferred
 
 ### 17.4 Expiry Preference by Strategy
 
-| Strategy | Preferred Expiry Range |
-|---|---|
-| Long call/put | 3 to 21 days after earnings |
-| Short put/call | 0 to 14 days after earnings |
-| Aggressive setup | 0 to 7 days after earnings |
-| Conservative setup | 14 to 30 days after earnings |
+Current preferences:
 
-These are preferences, not hard rules. The agent can choose any expiry from same day after earnings to 30 days after earnings if the reasoning supports it.
+- long strategies: strongest in the 3-21 day window after earnings
+- short strategies: strongest in the 0-14 day window after earnings
 
 ---
 
@@ -1194,217 +845,78 @@ These are preferences, not hard rules. The agent can choose any expiry from same
 
 ### 18.1 Long Options Strike Guidance
 
-For long calls and long puts, avoid being too restrictive.
+Current strike candidate selection samples:
 
-Preferred range:
-
-```text
-Delta: 0.30 to 0.70
-```
-
-If Greeks are unavailable, approximate with moneyness:
-
-| Contract Type | Preferred Moneyness |
-|---|---|
-| Long call | ATM to moderately OTM, or slightly ITM |
-| Long put | ATM to moderately OTM, or slightly ITM |
-
-Suggested default:
-
-- prioritize ATM or slightly ITM when premium fits the user budget
-- allow moderately OTM when the expected move justifies it
-- avoid far OTM lottery contracts unless user chooses aggressive profile and the setup score is high
+- near-ATM
+- slight ITM
+- slight OTM
+- best breakeven candidate
+- best liquidity candidate
 
 ### 18.2 Short Options Strike Guidance
 
-For short puts and short calls:
+Current short-option sampling emphasizes:
 
-Preferred range:
-
-```text
-Absolute delta: 0.15 to 0.40
-```
-
-If Greeks are unavailable:
-
-| Contract Type | Preferred Moneyness |
-|---|---|
-| Short put | OTM below current price |
-| Short call | OTM above current price |
-
-Default behavior:
-
-- prefer OTM strikes with meaningful premium
-- avoid strikes too close to current price unless confidence is high
-- avoid strikes so far OTM that premium is tiny and not worth the setup
+- slight OTM
+- moderate OTM
+- strongest safety buffer
+- best liquidity
 
 ### 18.3 Strike Flexibility
 
-Strike selection should not be too rigid.
-
-The agent should compare multiple strikes and score them rather than only selecting one fixed delta.
-
-For each expiry and strategy, evaluate:
-
-- ATM
-- slightly ITM
-- slightly OTM
-- moderate OTM
-- best liquidity strike
-- best breakeven strike
-- best score strike
-
-Then select the strongest contract based on the Contract Opportunity Score.
+The system does not score the full raw chain blindly. It first picks a focused
+set of representative strike candidates per expiry, deduplicates them, and
+then scores that smaller set.
 
 ---
 
 ## 19. Liquidity and Spread Parameters
 
-This section must be balanced. The thresholds should protect the recommendation quality without preventing the agent from ever triggering.
-
 ### 19.1 Hard Liquidity Rejects
 
-Reject a contract only if one or more of these is true:
+Current hard rejects:
 
-| Condition | Hard Reject |
-|---|---:|
-| Bid and ask are both missing | Yes |
-| Ask is zero or invalid for long options | Yes |
-| Bid is zero or invalid for short options | Yes |
-| Open interest = 0 and volume = 0 | Yes |
-| Bid-ask spread is extreme | Yes |
-| Contract expiry is invalid | Yes |
-| Contract strike is clearly wrong or corrupted | Yes |
+- zero open interest and zero same-day volume
+- unusable quote
+- extreme spread with no cheap-contract exception
+- stale or non-tradable contract
 
 ### 19.2 Balanced Liquidity Thresholds
 
-Preferred, but not mandatory:
+Current liquidity score biases:
 
-| Metric | Preferred |
-|---|---:|
-| Open interest | 100+ |
-| Same-day volume | 25+ |
-| Bid-ask spread | ≤ 15% of mid price |
-| Contract premium | Fits user risk profile |
-| Expiry liquidity | Multiple nearby strikes available |
+- open interest >= 100 is strong
+- volume >= 25 is strong
+- spread <= 15% is strong
+- spread <= 25% is usable
 
 ### 19.3 Flexible Acceptance Rule
 
-A contract can still be considered if:
-
-```text
-Open interest is low but same-day volume is strong
-```
-
-or:
-
-```text
-Same-day volume is low but open interest is strong
-```
-
-Minimum acceptable rule:
-
-```text
-Open interest ≥ 50 OR same-day volume ≥ 20
-```
-
-If both are below this minimum, the contract should normally be rejected unless it is a highly liquid mega-cap ticker and all nearby strikes show consistent pricing.
+The architecture is intentionally not all-or-nothing. Cheap contracts may still
+be considered when percentage spread looks wide but absolute spread remains
+reasonable.
 
 ### 19.4 Spread Rules
 
-Spread percent:
+Current spread handling:
 
-```text
-Spread % = (Ask - Bid) / Mid
-```
-
-Preferred:
-
-```text
-≤ 15%
-```
-
-Acceptable:
-
-```text
-15% to 25%
-```
-
-High penalty:
-
-```text
-25% to 35%
-```
-
-Hard reject:
-
-```text
-> 35%
-```
-
-For very cheap contracts under $0.50, spread percentage can look distorted. In that case, also check absolute spread.
-
-Suggested absolute spread guidance:
-
-| Premium Range | Preferred Max Absolute Spread |
-|---|---:|
-| Under $0.50 | $0.05 to $0.10 |
-| $0.50 to $2.00 | $0.10 to $0.25 |
-| Above $2.00 | $0.25 to $0.50 |
+- `> 15%` adds a moderate penalty
+- `> 25%` adds a stronger penalty
+- `> 35%` can trigger a hard veto
 
 ### 19.5 Avoid Killing the Agent
 
-The system should not use overly strict filters like:
+If the workflow cannot justify a full recommendation but a candidate is still
+interesting, the final action should prefer `watchlist` over silently discarding
+all signal.
 
-```text
-Volume must be 500+
-Open interest must be 1000+
-Spread must be under 5%
-```
-
-Those rules may reject too many valid setups.
-
-Instead:
-
-- use hard rejects only for broken or unusable data
-- use scoring penalties for imperfect contracts
-- allow the best setup to surface if it is reasonable
-- show “watchlist only” if the score is close but not strong enough
-
----
 ### 19.6 Option Chain Retrieval Order
 
-For every selected ticker, the Options Service should retrieve option-chain data in this order:
+Current order:
 
-```text
-1. Alpaca Options Snapshots API
-2. Yahoo Finance / yfinance fallback
-3. Cached recent option-chain snapshot if still fresh
-4. Mark option-chain data unavailable
-```
-
-Freshness rule:
-
-| Source | Maximum Age for Scheduled Scan |
-|---|---:|
-| Alpaca indicative feed | current session or latest available snapshot |
-| yfinance | current session if available |
-| cached options snapshot | same trading day only |
-
-If both Alpaca and yfinance are available, the system should prefer Alpaca for:
-
-- bid/ask quotes
-- Greeks
-- implied volatility
-- contract-level scoring
-
-The system can still use yfinance as a cross-check for:
-
-- expiry availability
-- call/put table existence
-- volume/open interest sanity check
-
-If Alpaca and yfinance disagree significantly, the system should reduce data confidence and log the conflict.
+1. Alpaca by normalized ticker variants when credentials exist
+2. yfinance by normalized ticker variants
+3. in-memory per-day chain cache inside the options service
 
 ---
 
@@ -1412,84 +924,41 @@ If Alpaca and yfinance disagree significantly, the system should reduce data con
 
 ### 20.1 Required Calculations
 
-For every candidate option, calculate:
+Current calculations include:
 
+- option premium
+- midpoint
 - breakeven price
-- breakeven move %
-- expected move if available
-- previous earnings move %
-- option premium as % of stock price
-- IV level if available
-- IV rank/percentile if available
-- directional move required for profit
-- post-earnings sensitivity estimate if possible
+- breakeven move percent
+- spread percent
+- premium collected for short options
+- contract capacity from user sizing
 
 ### 20.2 Breakeven Formulas
 
-Long call:
+Current breakeven math:
 
 ```text
-Breakeven = strike + premium paid
-```
-
-Long put:
-
-```text
-Breakeven = strike - premium paid
-```
-
-Short put:
-
-```text
-Breakeven = strike - premium received
-```
-
-Short call:
-
-```text
-Breakeven = strike + premium received
+Long Call breakeven  = strike + premium
+Long Put breakeven   = strike - premium
+Short Put buffer     = premium below strike
+Short Call buffer    = premium above strike
 ```
 
 ### 20.3 Strategy-Specific IV Interpretation
 
-| Strategy | IV Preference |
-|---|---|
-| Long call | Lower or reasonable IV preferred |
-| Long put | Lower or reasonable IV preferred |
-| Short put | Higher IV can be beneficial |
-| Short call | Higher IV can be beneficial |
+Current IV preferences:
 
-Important:
-
-High IV is not automatically bad.  
-It is bad for long options if the expected move is not enough.  
-It may be attractive for short options if the directional and exposure setup is acceptable.
+- longs prefer lower IV
+- shorts prefer richer IV
+- missing IV is allowed but reduces confidence
 
 ### 20.4 Expected Move Decision Rule
 
-The agent should compare:
-
-```text
-required move for profit
-vs
-market implied move
-vs
-historical earnings move
-vs
-current trend strength
-```
-
-A long option should be favored when:
-
-```text
-expected/historical move > breakeven move by a reasonable margin
-```
-
-A short option should be favored when:
-
-```text
-premium collected is attractive and the selected strike is outside the most likely post-earnings range
-```
+When contextual move data is available, the contract score compares required
+breakeven move against expected or prior earnings move. When that data is
+missing, the scoring engine falls back to simpler heuristics instead of
+fabricating precision.
 
 ---
 
@@ -1497,61 +966,34 @@ premium collected is attractive and the selected strike is outside the most like
 
 ### 21.1 Per-Stock Output
 
-For each of the top five stocks, the system should produce:
+Each candidate analysis produces:
 
-| Field | Description |
-|---|---|
-| Ticker | Stock symbol |
-| Direction classification | Bullish / Bearish / Neutral / Avoid |
-| Candidate Direction Score | 0 to 100 |
-| Best strategy | Long call / long put / short put / short call / avoid |
-| Best contract | strike + expiry |
-| Contract Opportunity Score | 0 to 100 |
-| Final Opportunity Score | 0 to 100 |
-| Main evidence | 3 to 5 bullets |
-| Rejection reasons | if avoided |
-| Data confidence | 0 to 100 |
+- direction result
+- confidence result
+- considered contracts
+- chosen best contract if one survives
+- final candidate score
+- candidate action (`recommend`, `watchlist`, `no_trade`)
 
 ### 21.2 Final Selection
 
-The agent should select:
+The final selection step is cross-candidate.
 
-```text
-The best single opportunity across the top five companies
-```
+Current architecture:
 
-The final result can be:
-
-- one long call
-- one long put
-- one short put
-- one short call
-- no trade
+- build a structured decision payload from all five candidates
+- ask the heavy LLM route to choose one setup or no trade
+- validate the response against actual candidate/contract IDs
+- fall back to heuristic selection on transient LLM failure
 
 ### 21.3 No-Trade Rule
 
-No trade should be selected if:
+If the final action is `no_trade`:
 
-- all Final Opportunity Scores are below 60
-- critical data is missing
-- all options fail basic liquidity checks
-- earnings date cannot be verified
-- no contract fits user settings
-- data confidence is critically low
-
-If the best score is between 60 and 67:
-
-- do not send it as a strong recommendation
-- send it as a watchlist setup
-- explain what would need to improve
-
-If the best score is 68 or higher:
-
-- recommendation is allowed
-
-If the best score is 78 or higher:
-
-- strong recommendation label is allowed
+- no recommendation row is created
+- the workflow run status becomes `no_trade`
+- candidate cards and contract logs are still persisted
+- the user still receives watchlist names and reasoning
 
 ---
 
@@ -1559,50 +1001,35 @@ If the best score is 78 or higher:
 
 ### 22.1 Purpose
 
-News research is used to understand recent catalysts, sentiment, and context.
+News is used to add catalyst context, not to override hard market-data or
+options-data constraints.
 
-The news layer should answer:
+### 22.2 Lightweight Model Role
 
-- Is there recent company-specific news?
-- Is there sector-specific momentum?
-- Are analysts revising expectations?
-- Is there a product launch, regulatory issue, lawsuit, merger, guidance update, or macro event?
-- Is the news supportive or contradictory to the stock trend?
+The lightweight model summarizes recent fetched articles into:
 
-### 22.2 Gemini 3.1 Flash Role
+- bullish evidence
+- bearish evidence
+- neutral/contextual evidence
+- key uncertainty
+- news confidence
 
-Gemini 3.1 Flash should collect and summarize:
+### 22.3 Heavy Model Role
 
-- recent headlines
-- earnings preview articles
-- company announcements
-- sector news
-- analyst expectation summaries
-- market-wide context
-
-### 22.3 Claude Opus 4.7 Thinking Role
-
-Claude Opus 4.7 Thinking should decide how much the news matters for the final trade.
-
-It should identify:
-
-- strong catalyst
-- weak catalyst
-- contradictory catalyst
-- irrelevant noise
-- uncertainty
+The heavy model does not perform article-by-article browsing in the current
+architecture. It consumes the already-prepared news brief during the final
+decision step.
 
 ### 22.4 News Summary Format
 
-For each ticker:
+Current brief structure:
 
 ```text
-News Summary:
-- Bullish evidence:
-- Bearish evidence:
-- Neutral/contextual evidence:
-- Key uncertainty:
-- News confidence:
+Bullish evidence
+Bearish evidence
+Neutral/contextual evidence
+Key uncertainty
+News confidence
 ```
 
 ---
@@ -1611,388 +1038,320 @@ News Summary:
 
 ### 23.1 Purpose
 
-V1 must build a strong logging system even though the feedback loop is V2.
-
-The logs should store compact “recommendation cards” explaining:
-
-- what option was suggested
-- what evidence supported the recommendation
-- what alternatives were rejected
-- what data was used
-- what model made the final decision
-- what the final confidence score was
-
-These logs are the foundation for future improvement.
+The logging system should make every run explainable after the fact.
 
 ### 23.2 Recommendation Card
 
-Each recommendation card should include:
+Current recommendation-card fields include:
 
-| Field | Description |
-|---|---|
-| card_id | Unique card ID |
-| user_id | User ID |
-| run_id | Weekly/manual run ID |
-| timestamp | Time of recommendation |
-| trigger_type | Cron/manual |
-| selected_ticker | Final ticker |
-| selected_company | Company name |
-| selected_strategy | Long call / long put / short put / short call / no trade |
-| selected_contract | Strike, expiry, type |
-| suggested_quantity | Number of contracts |
-| confidence_score | Final score |
-| risk_profile | Conservative/Balanced/Aggressive |
-| account_size_snapshot | User account size at recommendation time |
-| earnings_date | Earnings date |
-| earnings_timing | Before open / after close / unknown |
-| key_evidence | Short bullet list |
-| key_concerns | Short bullet list |
-| rejected_alternatives | Top rejected alternatives and why |
-| data_confidence | 0 to 100 |
-| model_used_heavy | Claude Opus 4.7 Thinking |
-| model_used_light | Gemini 3.1 Flash |
-| telegram_message | Final message text |
-| created_at | timestamp |
+- card ID, user ID, run ID, timestamp
+- trigger type
+- selected ticker and company
+- selected strategy and selected contract
+- contract rationale
+- suggested entry and quantity
+- confidence score and data confidence
+- risk profile and account size snapshot
+- earnings date and timing
+- key evidence and concerns
+- rejected alternatives
+- decision engine and engine notes
+- heavy and light model IDs
+- action and reasoning
+- watchlist tickers
+- warning text
+- Telegram message and message ID
 
 ### 23.3 Per-Candidate Logs
 
-For each of the top five candidates, store:
+Current candidate-card data includes:
 
-| Field | Description |
-|---|---|
-| ticker | Stock symbol |
-| company_name | Company |
-| market_cap | Market cap |
-| earnings_date | Earnings date |
-| direction_classification | Bullish/Bearish/Neutral/Avoid |
-| candidate_direction_score | 0 to 100 |
-| best_contract_score | 0 to 100 |
-| final_opportunity_score | 0 to 100 |
-| best_strategy | chosen strategy |
-| best_contract | strike + expiry |
-| reason_selected_or_rejected | concise explanation |
-| data_sources_used | list |
-| missing_data_fields | list |
+- ticker
+- company name
+- market cap
+- earnings date
+- direction classification
+- direction score
+- best strategy
+- final opportunity score
+- selected or rejected reason
+- data confidence
+- selected-for-final flag
 
 ### 23.4 Option Contract Logs
 
-For each seriously considered contract, store:
+Current option-contract log fields include:
 
-| Field | Description |
-|---|---|
-| ticker | Stock symbol |
-| option_type | call/put |
-| position_side | long/short |
-| strike | strike price |
-| expiry | expiry date |
-| bid | bid price |
-| ask | ask price |
-| mid | mid price |
-| volume | volume |
-| open_interest | open interest |
-| implied_volatility | IV if available |
-| delta | delta if available |
-| breakeven | breakeven price |
-| spread_percent | spread quality |
-| liquidity_score | 0 to 100 |
-| contract_score | 0 to 100 |
-| passed_hard_filters | true/false |
-| rejection_reason | if rejected |
+- ticker
+- option type
+- position side
+- strike
+- expiry
+- bid / ask / mid
+- volume / open interest
+- IV / delta
+- breakeven
+- spread percent
+- liquidity score
+- contract score
+- hard-filter pass/fail
+- rejection reason
 
 ### 23.5 Logging Format
 
-Use structured JSON.
+Current storage layers:
 
-Each run should create:
+- `workflow_runs.run_summary_json`
+- `workflow_runs.candidate_cards_json`
+- `workflow_runs.option_contracts_json`
+- `workflow_runs.recommendation_card_json`
+- `workflow_runs.telegram_message_text`
+
+Outside test mode, the same artifacts are also archived under:
 
 ```text
-run_summary.json
-candidate_cards.json
-option_contracts.json
-recommendation_card.json
-telegram_message.txt
+var/runs/<run_id>/
 ```
-
-In production, store these in PostgreSQL and optionally archive JSON snapshots to object storage.
 
 ### 23.6 V2 Feedback Loop Preparation
 
-V1 should store enough data so that V2 can introduce a Feedback Agent.
+V1 already stores enough context for V2 feedback work:
 
-V2 Feedback Agent will:
-
-1. Ask user what happened after the recommendation:
-   - profit
-   - loss
-   - still holding
-   - did not buy
-2. Read the original recommendation card.
-3. Compare the original thesis to the actual outcome.
-4. Identify whether the issue came from:
-   - wrong direction
-   - bad expiry
-   - bad strike
-   - poor IV judgment
-   - liquidity issue
-   - bad news interpretation
-   - earnings timing error
-   - overconfidence
-   - missing data
-5. Suggest improvements to scoring and filters.
-6. Store lessons for future runs.
-
-V1 only needs to log the data. The improvement loop is V2.
+- user action (`bought` / `skipped`)
+- original recommendation context
+- candidate and contract alternatives
+- final reasoning
 
 ---
 
 ## 24. Database Schema
 
-### 24.1 users
+### 24.1 `users`
 
-| Field | Type |
-|---|---|
-| id | UUID |
-| telegram_chat_id | string |
-| account_size | decimal |
-| risk_profile | string |
-| custom_risk_percent | decimal/null |
-| broker | string |
-| timezone_label | string |
-| timezone_iana | string |
-| strategy_permission | string |
-| max_contracts | integer |
-| max_option_premium | decimal/null |
-| openrouter_api_key_encrypted | text |
-| alpaca_api_key_encrypted | text/null |
-| alpaca_api_secret_encrypted | text/null |
-| alpha_vantage_api_key_encrypted | text/null |
-| is_active | boolean |
-| created_at | timestamp |
-| updated_at | timestamp |
+Current fields:
 
-### 24.2 cron_jobs
+- `id`
+- `telegram_chat_id`
+- `account_size`
+- `risk_profile`
+- `custom_risk_percent`
+- `broker`
+- `timezone_label`
+- `timezone_iana`
+- `strategy_permission`
+- `max_contracts`
+- `max_option_premium`
+- encrypted API key fields for OpenRouter, Alpaca key, Alpaca secret, and
+  Alpha Vantage
+- `is_active`
+- `created_at`
+- `updated_at`
 
-| Field | Type |
-|---|---|
-| id | UUID |
-| user_id | UUID |
-| day_of_week | string |
-| local_time | string |
-| timezone_label | string |
-| timezone_iana | string |
-| is_active | boolean |
-| created_at | timestamp |
-| updated_at | timestamp |
+### 24.2 `cron_jobs`
 
-### 24.3 workflow_runs
+Current fields:
 
-| Field | Type |
-|---|---|
-| id | UUID |
-| user_id | UUID |
-| trigger_type | cron/manual |
-| status | running/success/failed/no_trade |
-| started_at | timestamp |
-| finished_at | timestamp |
-| tradingview_status | success/failed |
-| selected_candidate_count | integer |
-| final_recommendation_id | UUID/null |
-| error_message | text/null |
+- `id`
+- `user_id`
+- `day_of_week`
+- `local_time`
+- `timezone_label`
+- `timezone_iana`
+- `is_active`
+- `created_at`
+- `updated_at`
 
-### 24.4 candidates
+### 24.3 `workflow_runs`
 
-| Field | Type |
-|---|---|
-| id | UUID |
-| run_id | UUID |
-| ticker | string |
-| company_name | string |
-| market_cap | decimal |
-| earnings_date | date |
-| earnings_timing | string/null |
-| current_price | decimal |
-| direction_classification | string |
-| candidate_direction_score | integer |
-| best_strategy | string/null |
-| final_opportunity_score | integer |
-| data_confidence_score | integer |
-| selected_for_final | boolean |
-| created_at | timestamp |
+Current fields:
 
-### 24.5 option_contracts
+- `id`
+- `user_id`
+- `trigger_type`
+- `status`
+- `started_at`
+- `finished_at`
+- `screener_status`
+- `selected_candidate_count`
+- `final_recommendation_id`
+- `error_message`
+- `run_summary_json`
+- `candidate_cards_json`
+- `option_contracts_json`
+- `recommendation_card_json`
+- `telegram_message_text`
 
-| Field | Type |
-|---|---|
-| id | UUID |
-| candidate_id | UUID |
-| ticker | string |
-| option_type | call/put |
-| position_side | long/short |
-| strike | decimal |
-| expiry | date |
-| bid | decimal |
-| ask | decimal |
-| mid | decimal |
-| volume | integer/null |
-| open_interest | integer/null |
-| implied_volatility | decimal/null |
-| delta | decimal/null |
-| breakeven | decimal |
-| spread_percent | decimal |
-| liquidity_score | integer |
-| contract_opportunity_score | integer |
-| passed_hard_filters | boolean |
-| rejection_reason | text/null |
-| created_at | timestamp |
+### 24.4 `candidates`
 
-### 24.6 recommendations
+Current fields:
 
-| Field | Type |
-|---|---|
-| id | UUID |
-| user_id | UUID |
-| run_id | UUID |
-| ticker | string |
-| company_name | string |
-| strategy | string |
-| option_type | call/put |
-| position_side | long/short |
-| strike | decimal |
-| expiry | date |
-| suggested_entry | decimal/null |
-| suggested_quantity | integer |
-| estimated_max_loss | text |
-| account_risk_percent | decimal |
-| confidence_score | integer |
-| risk_level | string |
-| reasoning_summary | text |
-| key_evidence_json | jsonb |
-| key_concerns_json | jsonb |
-| telegram_message_id | string/null |
-| created_at | timestamp |
+- `id`
+- `run_id`
+- `ticker`
+- `company_name`
+- `market_cap`
+- `earnings_date`
+- `earnings_timing`
+- `current_price`
+- `direction_classification`
+- `candidate_direction_score`
+- `best_strategy`
+- `final_opportunity_score`
+- `data_confidence_score`
+- `selected_for_final`
+- `created_at`
 
-### 24.7 feedback_events
+### 24.5 `option_contracts`
 
-This table is mostly for V2, but V1 can already create simple feedback records.
+Current fields:
 
-| Field | Type |
-|---|---|
-| id | UUID |
-| recommendation_id | UUID |
-| user_id | UUID |
-| user_action | bought/skipped/still_holding/closed |
-| entry_price | decimal/null |
-| exit_price | decimal/null |
-| pnl | decimal/null |
-| note | text/null |
-| created_at | timestamp |
+- `id`
+- `candidate_id`
+- `ticker`
+- `option_type`
+- `position_side`
+- `strike`
+- `expiry`
+- `bid`
+- `ask`
+- `mid`
+- `volume`
+- `open_interest`
+- `implied_volatility`
+- `delta`
+- `breakeven`
+- `spread_percent`
+- `liquidity_score`
+- `contract_opportunity_score`
+- `passed_hard_filters`
+- `rejection_reason`
+- `created_at`
+
+### 24.6 `recommendations`
+
+Current fields:
+
+- `id`
+- `user_id`
+- `run_id`
+- `parent_recommendation_id`
+- `ticker`
+- `company_name`
+- `strategy`
+- `option_type`
+- `position_side`
+- `strike`
+- `expiry`
+- `suggested_entry`
+- `suggested_quantity`
+- `estimated_max_loss`
+- `account_risk_percent`
+- `confidence_score`
+- `risk_level`
+- `reasoning_summary`
+- `key_evidence_json`
+- `key_concerns_json`
+- `telegram_message_id`
+- `created_at`
+
+### 24.7 `feedback_events`
+
+Current fields:
+
+- `id`
+- `recommendation_id`
+- `user_id`
+- `user_action`
+- `entry_price`
+- `exit_price`
+- `pnl`
+- `note`
+- `created_at`
 
 ---
 
 ## 25. Backend Architecture
 
-### 25.1 Suggested Stack
+### 25.1 Current Stack
 
-| Layer | Recommendation |
+| Layer | Current Choice |
 |---|---|
-| Language | Python |
-| Backend API | FastAPI |
-| Browser automation | Playwright |
-| Scheduler | APScheduler or Celery Beat |
+| Language | Python 3.12 |
+| App lifecycle | FastAPI |
+| Telegram bot | aiogram 3 |
+| Scheduler | APScheduler |
 | Database | PostgreSQL |
-| Cache | Redis |
-| Telegram bot | python-telegram-bot or aiogram |
-| Data analysis | pandas, numpy |
-| Market data | Alpaca for options, yfinance for fallback/market data, Alpha Vantage optional |
+| Cache / locks | Redis |
+| ORM | SQLAlchemy async + Alembic |
+| Browser automation | Playwright |
+| Screener | Finviz |
+| Market data | yfinance + Alpha Vantage support |
+| Options data | Alpaca primary when configured, yfinance fallback |
 | LLM routing | OpenRouter |
-| Deployment | VPS |
-| Logging | JSON structured logs + database records |
 
 ### 25.2 Service Components
 
-| Component | Responsibility |
+| Component | Module |
 |---|---|
-| Telegram Bot Service | User interaction |
-| Schedule Service | Cron management |
-| TradingView Browser Service | Screener interaction |
-| Candidate Service | Top-five extraction and validation |
-| Market Data Service | OHLCV, market cap, sector data |
-| News Service | Web/news gathering |
-| Options Service | Option chain retrieval from Alpaca first, yfinance fallback |
-| Scoring Service | Direction and contract scoring |
-| Risk/Sizing Service | Quantity and exposure calculation |
-| LLM Router | Routes tasks to Opus or Gemini |
-| Recommendation Service | Final trade/no-trade decision |
-| Logging Service | Stores evidence cards |
-| Feedback Stub | Stores simple user feedback for V2 |
+| FastAPI app | `app/main.py` |
+| Telegram bootstrap | `app/telegram/bot.py` |
+| Scheduler service | `app/scheduler/scheduler.py` |
+| Workflow runner | `app/scheduler/jobs.py` |
+| Pipeline orchestrator | `app/pipeline/orchestrator.py` |
+| Candidate service | `app/services/candidate_service.py` |
+| Finviz browser/extractor | `app/services/finviz/` |
+| Market data service | `app/services/market_data/service.py` |
+| News service | `app/services/news/service.py` |
+| Options service | `app/services/options/service.py` |
+| Scoring engine | `app/scoring/` |
+| LLM router | `app/llm/router.py` |
+| Logging service | `app/services/logging_service.py` |
+| User/settings service | `app/services/user_service.py` |
 
 ---
 
 ## 26. Error Handling
 
-### 26.1 TradingView Failure
+### 26.1 Finviz Failure
 
-If TradingView cannot be accessed:
+Required Finviz fallback behavior:
 
-1. Retry browser session.
-2. Try a clean browser context.
-3. Try backup earnings calendar.
-4. Notify user if TradingView failed.
-5. Continue only if backup candidates are usable.
+1. retry safely
+2. retry with a clean browser context
+3. fall back to backup earnings sources
+4. continue only if five validated candidates can still be produced
 
-Telegram message example:
+If backup candidates are used, surface this warning:
 
 ```text
-⚠️ TradingView did not load correctly, so I used backup earnings data for this scan.
+⚠️ Finviz did not load correctly, so I used backup earnings data for this scan.
 ```
 
 ### 26.2 Option Chain Failure
 
-If Alpaca option-chain data is unavailable for a candidate:
+Current option-chain fallback behavior:
 
-1. retry Alpaca once
-2. try yfinance fallback
-3. try same-day cached data if available
-4. mark the candidate as unusable only if no usable option-chain data remains
-
-If option chain is unavailable after all fallbacks:
-
-- mark the candidate as unusable for final recommendation
-- continue with other candidates
-- log the failure
-- do not invent contracts
+1. try Alpaca when credentials exist
+2. fall back to yfinance
+3. if both fail, the candidate can still be analyzed but should not produce an
+   invented contract
+4. final action should become `watchlist` or `no_trade`
 
 ### 26.3 Missing Data
 
-If non-critical data is missing:
+Critical blockers include:
 
-- continue
-- apply data confidence penalty
-- mention missing data in logs
+- missing ticker
+- unverified earnings date
+- missing current price
+- missing expiry
+- missing strike
+- unusable quote
+- invalid user account size
+- invalid or missing OpenRouter key for final recommendation work
 
-If critical data is missing:
-
-- reject the candidate or contract
-
-Critical data:
-
-| Field | Critical? |
-|---|---:|
-| Ticker | Yes |
-| Earnings date | Yes |
-| Current stock price | Yes |
-| Option expiry | Yes |
-| Option strike | Yes |
-| Bid/ask or usable mid price | Yes |
-| Position side | Yes |
-| Option type | Yes |
-| User account size | Yes |
-| User risk profile | Yes |
-| OpenRouter API key | Yes |
-| News summary | No |
-| Greeks | No |
-| IV | Preferred but not always critical |
-| Volume/open interest | Preferred, but one usable liquidity signal is required |
+Non-critical missing fields should reduce confidence rather than automatically
+crashing the run.
 
 ---
 
@@ -2000,110 +1359,60 @@ Critical data:
 
 ### 27.1 Purpose
 
-Data confidence should help the agent make better decisions without killing too many opportunities.
+Data confidence should measure whether the system has enough reliable input to
+support a recommendation.
 
-The system should not say:
+### 27.2 Current Confidence Weights
 
-```text
-Missing one non-critical field = no trade
-```
-
-Instead, it should say:
-
-```text
-Which data is missing?
-How important is it?
-Can another source confirm it?
-Should this reduce confidence or block the trade?
-```
-
-### 27.2 Data Confidence Score
-
-Score range:
-
-```text
-0 to 100
-```
-
-Suggested components:
-
-| Component | Weight | Description |
-|---|---:|---|
-| Candidate identity confidence | 15 | Ticker/company match across sources |
-| Earnings date confidence | 20 | Earnings date confirmed or conflicting |
-| Market data freshness | 15 | Current price and candles are fresh |
-| Options data completeness | 20 | Bid/ask, expiry, strike, volume/OI, IV if available |
-| Cross-source agreement | 10 | TradingView vs backup sources agree |
-| News/context availability | 10 | Recent relevant news available |
-| Calculation integrity | 10 | Breakeven, spread, sizing, scores calculated successfully |
+| Component | Weight |
+|---|---:|
+| Earnings-date confidence | 25% |
+| Options-data confidence | 22% |
+| Market-data confidence | 20% |
+| Identity confidence | 13% |
+| Cross-source agreement | 10% |
+| Calculation integrity | 7% |
+| News coverage | 3% |
 
 ### 27.3 Data Confidence Interpretation
 
-| Score | Meaning | Action |
+| Score | Label | Action |
 |---|---|---|
-| 85 to 100 | Strong data | Recommendation allowed |
-| 70 to 84 | Good data | Recommendation allowed |
-| 55 to 69 | Partial data | Recommendation allowed only if setup is strong |
-| 40 to 54 | Weak data | Watchlist only unless user manually overrides |
-| Below 40 | Critical weakness | No recommendation |
+| 85 to 100 | strong | recommendation allowed |
+| 70 to 84 | good | recommendation allowed |
+| 55 to 69 | partial | recommendation allowed only if score is strong |
+| 40 to 54 | weak | watchlist or no trade |
+| below 40 | critical | no trade |
 
 ### 27.4 Critical Field Override
 
-Even if the data confidence score is numerically above 40, the system must block the recommendation if any critical field is missing.
-
-Critical blocking fields:
-
-- ticker
-- verified earnings date
-- current price
-- contract type
-- position side
-- strike
-- expiry
-- usable bid/ask or mid
-- user account size
-- risk profile
-- valid OpenRouter API key
+A candidate should still be blocked even if its numeric score looks usable when
+any critical blocker remains unresolved.
 
 ### 27.5 Missing Greeks Rule
 
-Missing Greeks should not automatically block a recommendation.
+Missing Greeks should not automatically kill the trade. The current engine can
+fall back to:
 
-If delta, IV, or theta are unavailable:
-
-1. approximate moneyness using stock price and strike
-2. use premium as percentage of stock price
-3. use expected move from available option prices if possible
-4. reduce confidence
-5. log the limitation
+- moneyness
+- premium
+- spread quality
+- liquidity
+- confidence penalties
 
 ### 27.6 Source Conflict Rule
 
-If sources disagree:
+Cross-source conflicts should:
 
-| Conflict | Action |
-|---|---|
-| Slight price difference | Use most recent source |
-| Different earnings date | Verify with additional source |
-| Different market cap | Use TradingView for ranking, backup source for context |
-| Different option chain values | Use most recent option-chain source |
-| Severe conflict | Downgrade confidence or no trade |
+- create confidence notes
+- lower confidence adjustment
+- become blockers only when they affect critical fields
 
 ### 27.7 Data Confidence in Telegram
 
-Do not overload the main message with data confidence details unless there is an issue.
-
-Good format:
-
-```text
-Data confidence: Good
-```
-
-If confidence is weak:
-
-```text
-⚠️ Data confidence is partial because Greeks were unavailable and earnings timing could not be confirmed.
-```
+The main recommendation message should stay readable. Confidence detail belongs
+mainly in logs and supporting views unless a data issue materially affects the
+trade decision.
 
 ---
 
@@ -2113,63 +1422,46 @@ If confidence is weak:
 
 The workflow passes if:
 
-- the scheduled scan runs at the correct user timezone
-- manual scan can be triggered from Telegram
-- TradingView screener opens successfully
-- the earnings filter is applied
-- no additional TradingView filters or sorting are changed after applying the
-  earnings filter unless explicitly requested by the user
-- the top five visible companies are extracted
-- option chains are retrieved or failure is logged
-- one recommendation or no-trade result is produced
-- Telegram message is delivered
-- recommendation card is stored
+- scheduled scans fire in the correct user timezone
+- manual scans run from Telegram
+- Finviz or backup candidate selection yields five validated rows
+- market data, news, and option services can fail independently without
+  inventing output
+- one recommendation, one watchlist setup, or one no-trade result is produced
+- the user receives Telegram output
+- run artifacts are stored
 
 ### 28.2 Recommendation Acceptance Criteria
 
-Each recommendation must include:
+A recommendation must include:
 
 - ticker
-- company name
-- earnings date
 - direction
-- strategy type
-- long or short position side
-- option type
+- contract
 - strike
 - expiry
 - suggested entry
-- suggested quantity
-- estimated max loss or margin-dependent label
-- confidence score
-- short reasoning
-- key evidence
-- Telegram buttons for details and logs
+- quantity or watchlist-only status
+- risk warning
+- confidence
+- reasoning
 
 ### 28.3 Schedule Acceptance Criteria
 
 The user must be able to:
 
-- view all cron jobs
-- add a new cron job
-- edit an existing cron job
-- delete a cron job
-- pause cron jobs
-- resume cron jobs
-- run scan manually outside cron schedule
+- add, edit, delete, pause, and resume schedules
+- see stored schedules in local time
+- trigger a manual run without bypassing the run lock
 
 ### 28.4 Logging Acceptance Criteria
 
-For every run, the system must store:
+Every completed run must store:
 
 - run summary
-- top-five candidates
-- candidate scores
-- considered option contracts
-- final recommendation
-- no-trade reason if no trade
-- model used
-- data confidence score
+- candidate cards
+- option contract logs
+- recommendation card or no-trade context
 - Telegram message text
 
 ---
@@ -2178,188 +1470,60 @@ For every run, the system must store:
 
 ### 29.1 V1 Must Include
 
-- Telegram bot onboarding
-- user settings
-- OpenRouter API key storage
-- Alpaca API key and secret storage
-- optional Alpha Vantage key storage
-- TradingView browser automation
-- earnings next-week filter
-- market-cap descending sort
-- top-five candidate selection
-- market data retrieval
-- option chain retrieval
-- web/news gathering
-- Claude Opus 4.7 Thinking for heavy reasoning
-- Gemini 3.1 Flash for lighter tasks
-- long call support
-- long put support
-- short put support
-- short call support
-- scoring system
-- position sizing
-- cron job management
+- Telegram onboarding
+- encrypted API-key storage
+- Finviz top-five candidate scan
+- yfinance and Finnhub candidate validation
+- market-data service
+- options-data service
+- news service
+- deterministic scoring
+- OpenRouter heavy and light routing
+- cron management
 - manual run button
-- recommendation message
-- no-trade message
-- recommendation logs
+- recommendation/no-trade output
+- structured run logging
 
 ### 29.2 V1 Should Not Include
 
-- broker connection
-- automatic trading
+- broker execution
+- auto-trading
+- public web dashboard
+- multi-leg options strategies
 - payment system
-- public user management
-- web dashboard
-- complex multi-leg strategies
-- automatic feedback optimization
-- full backtesting engine
+- automated strategy self-modification
 
 ---
 
 ## 30. V2 Scope
 
-V2 should add:
+V2 can add:
 
-- feedback agent
-- result-checking workflow
-- user outcome collection
-- trade result analysis
-- performance dashboard
-- scoring improvement suggestions
-- automated detection of repeated mistakes
-- weekly performance summary
-- multi-leg options strategies
-- better options data provider
-- historical backtesting
-- strategy comparison
-- ticker-specific memory
+- deeper feedback capture
+- post-earnings result tracking
+- richer recommendation drill-downs
+- performance reporting
+- multi-leg strategies
+- stronger option-data providers
+- historical evaluation tools
 
 ### 30.1 V2 Feedback Agent
 
-The Feedback Agent should ask users after the earnings event:
-
-```text
-How did the previous recommendation go?
-```
-
-Button options:
-
-```text
-✅ Profit
-❌ Loss
-⏳ Still holding
-🚫 Did not buy
-📝 Add note
-```
-
-Then the Feedback Agent reads the original log card and identifies possible improvement areas.
-
-Possible bug categories:
-
-- direction was wrong
-- expiry was too short
-- expiry was too long
-- strike was too aggressive
-- premium was too expensive
-- IV crush was underestimated
-- liquidity was poor
-- news interpretation was weak
-- earnings timing was wrong
-- confidence score was too high
-- data confidence was too low
-- user settings caused poor sizing
-
-The Feedback Agent should not directly change production scoring automatically in V2. It should propose changes for review.
+The existing `feedback_events` table is enough to support a later feedback
+agent that asks the user what happened after the trade and compares outcome
+versus original thesis.
 
 ---
 
 ## 31. Suggested Development Phases
 
-### Phase 1: Telegram and Settings
+The detailed phase plan now lives in [`Plan1.md`](./Plan1.md). From the
+perspective of the current architecture, the major milestones are:
 
-Build:
-
-- Telegram bot
-- onboarding
-- settings screens
-- API key storage
-- timezone selection
-- risk profile selection
-- strategy permission setting
-- cron job UI
-
-### Phase 2: TradingView Candidate Extraction
-
-Build:
-
-- Playwright browser automation
-- TradingView screener opening
-- earnings next-week filter
-- market-cap descending sort
-- top-five extraction
-- fallback extraction from screenshot if needed
-
-### Phase 3: Market and Options Data
-
-Build:
-
-- market data service
-- Alpaca option chain service
-- yfinance fallback option chain service
-- fallback data logic
-- data confidence scoring
-- candidate validation
-
-### Phase 4: Scoring and Recommendation
-
-Build:
-
-- Direction Score
-- Contract Opportunity Score
-- Final Opportunity Score
-- long/short strategy selection
-- position sizing
-- no-trade logic
-
-### Phase 5: LLM Integration
-
-Build:
-
-- OpenRouter integration
-- Claude Opus 4.7 Thinking route
-- Gemini 3.1 Flash route
-- structured prompts
-- structured outputs
-- final recommendation generation
-
-### Phase 6: Logging
-
-Build:
-
-- recommendation cards
-- candidate logs
-- contract logs
-- run summaries
-- Telegram message archive
-
-### Phase 7: Testing
-
-Test:
-
-- manual scan
-- Monday scheduled scan
-- timezone behavior
-- multiple cron jobs
-- bad OpenRouter API key
-- bad Alpaca API key/secret
-- TradingView failure
-- missing option chain
-- no-trade result
-- long call recommendation
-- long put recommendation
-- short put recommendation
-- short call recommendation
+1. foundation, persistence, onboarding, and scheduling
+2. Finviz candidate selection and backup earnings validation
+3. market, options, news, scoring, LLM decision, and logging
+4. remaining hardening, UX refinement, and future V2 feedback work
 
 ---
 
@@ -2367,19 +1531,17 @@ Test:
 
 ### 32.1 Normal Weekly Run
 
-```text
-Monday 10:30 AM Montreal time
-```
-
-Bot:
+Bot status message:
 
 ```text
 📊 Weekly scan is ready.
-
-I checked the top 5 large-cap companies reporting earnings next week and found one setup that looks stronger than the rest.
 ```
 
-Then sends the recommendation card.
+Then the bot sends either:
+
+- one best setup
+- one watchlist-only setup
+- or a no-trade result
 
 ### 32.2 Manual Run
 
@@ -2389,70 +1551,55 @@ User taps:
 🚀 Run Scan Now
 ```
 
-Bot:
+Bot replies:
 
 ```text
 🧠 Starting a fresh earnings-options scan now.
 ```
 
-After the workflow finishes:
-
-```text
-✅ Scan complete. Here is the strongest setup I found.
-```
-
 ### 32.3 No Trade
 
-Bot:
+Example:
 
 ```text
 📊 Scan complete.
 
-No trade looks strong enough this time. The best setups had either weak direction, poor option pricing, or not enough data confidence.
+No trade looks strong enough this time. The best setups had either weak
+direction, poor option pricing, or not enough data confidence.
 ```
-
-Then shows top watchlist names.
 
 ---
 
 ## 33. Build Priorities
 
-The most important parts to build correctly are:
+Current priorities:
 
-1. TradingView extraction
-2. option-chain retrieval
-3. expiry logic around earnings date
-4. long vs short option selection
-5. scoring system
-6. data confidence scoring
-7. Telegram UX
-8. logging system
+1. keep Finviz candidate selection reliable and stateless
+2. preserve high-signal contract filtering and no-fabrication rules
+3. keep deterministic scoring explainable
+4. keep LLM routing constrained to the right decision boundary
+5. keep run artifacts complete enough for review and future feedback work
 
-The least important parts for V1 are:
+Lower priorities:
 
-1. beautiful dashboards
-2. complex analytics
-3. backtesting
-4. multi-leg options
-5. broker integration
+1. decorative UI polish
+2. public dashboards
+3. advanced analytics beyond the stored run artifacts
 
 ---
 
 ## 34. Definition of Done for V1
 
-V1 is complete when:
+V1 is done when:
 
-- a user can onboard from Telegram
-- a user can set account size, timezone, risk profile, and API key
-- a user can manage cron jobs from Telegram buttons
-- the default Monday 10:30 AM Montreal schedule works
-- the user can manually run the workflow
-- the agent opens TradingView Screener
-- the agent selects top five next-week earnings stocks by market cap
-- the agent retrieves option-chain data from Alpaca first, with yfinance fallback
-- the agent uses Gemini 3.1 Flash for light research
-- the agent uses Claude Opus 4.7 Thinking for final analysis
-- the agent supports long calls, long puts, short puts, and short calls
-- the agent sends one recommendation or no-trade message
-- the recommendation includes contract details and reasoning
-- the system stores a complete recommendation card and evidence log
+- a user can onboard entirely from Telegram
+- settings and API keys are stored encrypted
+- cron jobs can be managed from Telegram
+- manual runs and scheduled runs both execute through the same workflow
+- Finviz top-five candidate selection works with backup earnings fallback
+- market, news, and options data are fetched through the current service layer
+- the system can return a recommendation, a watchlist setup, or a no-trade
+  result without inventing data
+- the user receives clear Telegram output
+- the database stores the run, candidates, option contracts, recommendation
+  data, and artifact snapshots
