@@ -253,17 +253,23 @@ def validate_llm_decision(
             raw_response=raw_response,
         )
 
+    _validate_action_thresholds(decision, raw_response=raw_response)
+    structural_final_score = combine_scores(
+        candidate.evaluation.direction.score,
+        matched_contract.score,
+    )
+    normalized_final_score = (
+        structural_final_score
+        if decision.final_score is None
+        else min(decision.final_score, structural_final_score)
+    )
     normalized = decision.model_copy(
         update={
             "direction_score": candidate.evaluation.direction.score,
             "contract_score": matched_contract.score,
-            "final_score": combine_scores(
-                candidate.evaluation.direction.score,
-                matched_contract.score,
-            ),
+            "final_score": normalized_final_score,
         }
     )
-    _validate_action_thresholds(normalized, raw_response=raw_response)
     _validate_action_not_more_aggressive(
         candidate,
         matched_contract,

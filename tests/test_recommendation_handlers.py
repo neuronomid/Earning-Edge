@@ -3,9 +3,11 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from datetime import date
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
+from aiogram.exceptions import TelegramBadRequest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import crypto
@@ -17,6 +19,7 @@ from app.db.models.workflow_run import WorkflowRun
 from app.db.repositories.feedback_repo import FeedbackEventRepository
 from app.db.repositories.recommendation_repo import RecommendationRepository
 from app.db.repositories.user_repo import UserRepository
+from app.services.alternative_recommendation_service import AlternativeRecommendationResult
 from app.telegram.handlers import recommendation as recommendation_handlers
 from app.telegram.keyboards.settings import RecCB
 from tests.telegram_testkit import SendRecorder, make_callback, make_message
@@ -192,8 +195,104 @@ async def test_alternative_button_sends_next_full_recommendation(
     assert "<b>Weekly Earnings Options Signal</b>" in send_recorder.calls[-1].text
     assert "<b>2nd best setup:</b> 🥈 AAPL" in send_recorder.calls[-1].text
     assert send_recorder.calls[-1].kwargs["reply_markup"] is not None
+    assert callback.answer.await_count == 1
 
     recommendations = await RecommendationRepository(db_session).list_for_run(
         seeded_recommendation.run_id
     )
     assert [recommendation.ticker for recommendation in recommendations] == ["AMD", "AAPL"]
+
+
+async def test_alternative_button_answers_callback_before_building_result(
+    monkeypatch: pytest.MonkeyPatch,
+    send_recorder: SendRecorder,
+    patch_session_scope: None,
+    seeded_recommendation: Recommendation,
+) -> None:
+    callback = make_callback(chat_id=12345, message=make_message(chat_id=12345))
+    events: list[str] = []
+
+    async def answer_side_effect(*args, **kwargs) -> None:
+        del args, kwargs
+        events.append("answered")
+
+    callback.answer.side_effect = answer_side_effect
+
+    class StubAlternativeRecommendationService:
+        def __init__(self, session) -> None:
+            self.session = session
+
+        async def build_next(
+            self,
+            *,
+            user,
+            current_recommendation,
+        ) -> AlternativeRecommendationResult:
+            del user, current_recommendation
+            events.append("build")
+            return AlternativeRecommendationResult(
+                recommendation=None,
+                message="No additional qualified alternatives are available for this run.",
+            )
+
+    monkeypatch.setattr(
+        recommendation_handlers,
+        "AlternativeRecommendationService",
+        StubAlternativeRecommendationService,
+    )
+
+    await recommendation_handlers.recommendation_action(
+        callback,
+        RecCB(action="alts", rec_id=str(seeded_recommendation.id)),
+    )
+
+    assert events[:2] == ["answered", "build"]
+    assert (
+        send_recorder.calls[-1].text
+        == "No additional qualified alternatives are available for this run."
+    )
+
+
+async def test_alternative_button_still_sends_message_when_callback_query_has_expired(
+    monkeypatch: pytest.MonkeyPatch,
+    send_recorder: SendRecorder,
+    patch_session_scope: None,
+    seeded_recommendation: Recommendation,
+) -> None:
+    callback = make_callback(chat_id=12345, message=make_message(chat_id=12345))
+    callback.answer.side_effect = TelegramBadRequest(
+        method=SimpleNamespace(),
+        message="query is too old and response timeout expired or query ID is invalid",
+    )
+
+    class StubAlternativeRecommendationService:
+        def __init__(self, session) -> None:
+            self.session = session
+
+        async def build_next(
+            self,
+            *,
+            user,
+            current_recommendation,
+        ) -> AlternativeRecommendationResult:
+            del user, current_recommendation
+            return AlternativeRecommendationResult(
+                recommendation=None,
+                message="No additional qualified alternatives are available for this run.",
+            )
+
+    monkeypatch.setattr(
+        recommendation_handlers,
+        "AlternativeRecommendationService",
+        StubAlternativeRecommendationService,
+    )
+
+    await recommendation_handlers.recommendation_action(
+        callback,
+        RecCB(action="alts", rec_id=str(seeded_recommendation.id)),
+    )
+
+    assert (
+        send_recorder.calls[-1].text
+        == "No additional qualified alternatives are available for this run."
+    )

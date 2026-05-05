@@ -153,8 +153,13 @@ async def test_llm_decision_step_returns_no_trade_on_authentication_error() -> N
     assert result.decision.key_concerns == ["OpenRouter rejected the API key."]
 
 
-async def test_llm_decision_step_falls_back_when_model_selects_non_viable_visible_contract() -> None:
-    candidate = _candidate("MCD", chosen_index=0, rejected_indexes={1: "Bid/ask spread is extremely wide."})
+async def test_llm_decision_step_falls_back_when_model_selects_non_viable_visible_contract(
+) -> None:
+    candidate = _candidate(
+        "MCD",
+        chosen_index=0,
+        rejected_indexes={1: "Bid/ask spread is extremely wide."},
+    )
     step = LLMDecisionStep(
         router=StubRouter(
             decision=StructuredDecision(
@@ -230,6 +235,52 @@ async def test_llm_decision_step_falls_back_when_model_escalates_watchlist_to_re
 
     assert result.trace.engine == "heuristic_fallback"
     assert result.decision.action == "watchlist"
+
+
+async def test_llm_decision_step_accepts_conservative_watchlist_on_recommend_quality_setup(
+) -> None:
+    candidate = _candidate(
+        "MCD",
+        chosen_index=0,
+        final_score=72,
+        action="recommend",
+        contract_scores=(70, 66),
+    )
+    step = LLMDecisionStep(
+        router=StubRouter(
+            decision=StructuredDecision(
+                action="watchlist",
+                chosen_ticker="MCD",
+                chosen_contract=ChosenContract(
+                    ticker="MCD",
+                    option_type="put",
+                    position_side="long",
+                    strike=Decimal("270"),
+                    expiry=date(2026, 5, 15),
+                    rationale="Catalyst quality is too thin for a full recommendation.",
+                ),
+                direction_score=68,
+                contract_score=61,
+                final_score=64,
+                reasoning="The setup is structurally sound, but conviction is not high enough.",
+                key_evidence=["Relative strength rolled over."],
+                key_concerns=["Catalyst coverage is sparse."],
+                watchlist_tickers=[],
+            )
+        )
+    )
+
+    result = await step.execute(
+        [candidate],
+        _user_context(),
+        openrouter_api_key="sk-or-test",
+    )
+
+    assert result.trace.engine == "llm"
+    assert result.decision.action == "watchlist"
+    assert result.decision.direction_score == 74
+    assert result.decision.contract_score == 70
+    assert result.decision.final_score == 64
 
 
 async def test_default_decision_step_uses_heuristic_in_tests_and_llm_elsewhere() -> None:
