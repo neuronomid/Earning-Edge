@@ -4,7 +4,7 @@ import hashlib
 from dataclasses import dataclass, replace
 from urllib.parse import urlencode
 
-FINVIZ_SCREENER_BASE_URL = "https://finviz.com/screener.ashx"
+FINVIZ_SCREENER_BASE_URL = "https://finviz.com/screener"
 
 
 class FinvizQueryError(ValueError):
@@ -17,7 +17,7 @@ class FinvizQuery:
     sort: str
     view: str = "111"
 
-    def with_filter_replaced(self, group_prefix: str, value: str) -> "FinvizQuery":
+    def with_filter_replaced(self, group_prefix: str, value: str) -> FinvizQuery:
         if not value.startswith(group_prefix):
             raise FinvizQueryError(
                 f"Replacement value '{value}' does not start with prefix '{group_prefix}'"

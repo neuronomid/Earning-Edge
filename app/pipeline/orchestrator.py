@@ -59,6 +59,7 @@ from app.telegram.templates.no_trade import render_no_trade
 from app.telegram.templates.status import render_scan_started, render_weekly_scan_ready
 
 ZERO = Decimal("0")
+DECISION_FINALIST_LIMIT = 4
 
 
 class TelegramNotifier(Protocol):
@@ -156,9 +157,10 @@ class PipelineOrchestrator:
                 ]
             )
         )
+        decision_candidates = _select_decision_finalists(candidates)
 
         decision_result = await self.decision_step.execute(
-            candidates,
+            decision_candidates,
             user_context,
             openrouter_api_key=secrets.openrouter_api_key,
         )
@@ -553,6 +555,22 @@ def _select_candidate(
         if item.record.ticker == chosen_ticker:
             return item
     return None
+
+
+def _select_decision_finalists(
+    candidates: list[PipelineCandidate],
+    *,
+    limit: int = DECISION_FINALIST_LIMIT,
+) -> list[PipelineCandidate]:
+    return sorted(
+        candidates,
+        key=lambda item: (
+            item.evaluation.final_score,
+            item.evaluation.confidence.score,
+            item.evaluation.direction.score,
+        ),
+        reverse=True,
+    )[:limit]
 
 
 def _select_contract(

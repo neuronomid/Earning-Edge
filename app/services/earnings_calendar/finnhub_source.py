@@ -12,6 +12,9 @@ import httpx
 from app.services.candidate_models import CandidateRecord
 from app.services.parsing import parse_date_value
 
+BACKUP_MIN_MARKET_CAP = Decimal("2000000000")
+BACKUP_MIN_PRICE = Decimal("20")
+
 
 class FinnhubEarningsSource:
     BASE_URL = "https://finnhub.io/api/v1"
@@ -27,6 +30,7 @@ class FinnhubEarningsSource:
         self.api_key = api_key
         self.client = client
         self.today_provider = today_provider or date.today
+        self._earnings_calendar_cache: dict[tuple[date, date], dict[str, date]] = {}
 
     async def get_candidate_details(
         self,
@@ -52,36 +56,69 @@ class FinnhubEarningsSource:
         if self.api_key == "":
             return []
 
-        payload = await self._request_json(
-            "/calendar/earnings",
-            params={
-                "from": window[0].isoformat(),
-                "to": window[1].isoformat(),
-            },
-        )
-        calendar_rows = payload.get("earningsCalendar", [])
-        if not isinstance(calendar_rows, list):
+        calendar = await self._load_calendar(window=window)
+        if not calendar:
             return []
 
-        seen: set[str] = set()
-        candidates: list[tuple[str, date]] = []
-        for row in calendar_rows:
-            symbol = str(row.get("symbol") or "").upper().strip()
-            earnings_date = parse_date_value(str(row.get("date") or ""), today=window[0])
-            if symbol == "" or earnings_date is None or symbol in seen:
-                continue
-            candidates.append((symbol, earnings_date))
-            seen.add(symbol)
-
-        enriched = await asyncio.gather(
+        candidates = list(calendar.items())
+        profile_limit = min(len(candidates), max(limit * 16, 64))
+        profiled = await asyncio.gather(
             *[
-                self._enrich_candidate(ticker=symbol, earnings_date=earnings_date)
-                for symbol, earnings_date in candidates[: limit * 4]
+                self._request_json("/stock/profile2", params={"symbol": symbol})
+                for symbol, _ in candidates[:profile_limit]
             ],
             return_exceptions=True,
         )
 
-        rows = [row for row in enriched if isinstance(row, CandidateRecord)]
+        ranked: list[tuple[str, date, dict[str, Any]]] = []
+        for (symbol, earnings_date), payload in zip(
+            candidates[:profile_limit], profiled, strict=True
+        ):
+            if not isinstance(payload, dict):
+                continue
+            market_cap = _market_cap_to_decimal(payload.get("marketCapitalization"))
+            if market_cap is None or market_cap < BACKUP_MIN_MARKET_CAP:
+                continue
+            if not _is_allowed_exchange(payload.get("exchange")):
+                continue
+            ranked.append((symbol, earnings_date, payload))
+
+        ranked.sort(
+            key=lambda item: _market_cap_to_decimal(item[2].get("marketCapitalization"))
+            or Decimal("0"),
+            reverse=True,
+        )
+        quote_limit = max(limit * 3, 12)
+
+        shortlisted = ranked[:quote_limit]
+        quotes = await asyncio.gather(
+            *[
+                self._request_json("/quote", params={"symbol": symbol})
+                for symbol, _, _ in shortlisted
+            ],
+            return_exceptions=True,
+        )
+        enriched = [
+            self._build_candidate(
+                ticker=symbol,
+                earnings_date=earnings_date,
+                profile_payload=profile_payload,
+                quote_payload=quote_payload,
+            )
+            if isinstance(quote_payload, dict)
+            else quote_payload
+            for (symbol, earnings_date, profile_payload), quote_payload in zip(
+                shortlisted,
+                quotes,
+                strict=True,
+            )
+        ]
+
+        rows = [
+            row
+            for row in enriched
+            if isinstance(row, CandidateRecord) and _is_viable_backup_candidate(row)
+        ]
         rows.sort(key=lambda item: item.market_cap or Decimal("0"), reverse=True)
         return rows[:limit]
 
@@ -91,6 +128,18 @@ class FinnhubEarningsSource:
         *,
         window: tuple[date, date],
     ) -> date | None:
+        calendar = await self._load_calendar(window=window)
+        return calendar.get(ticker.upper())
+
+    async def _load_calendar(
+        self,
+        *,
+        window: tuple[date, date],
+    ) -> dict[str, date]:
+        cached = self._earnings_calendar_cache.get(window)
+        if cached is not None:
+            return cached
+
         payload = await self._request_json(
             "/calendar/earnings",
             params={
@@ -100,13 +149,17 @@ class FinnhubEarningsSource:
         )
         rows = payload.get("earningsCalendar", [])
         if not isinstance(rows, list):
-            return None
-        symbol = ticker.upper()
+            self._earnings_calendar_cache[window] = {}
+            return {}
+
+        calendar: dict[str, date] = {}
         for row in rows:
-            if str(row.get("symbol") or "").upper().strip() != symbol:
-                continue
-            return parse_date_value(str(row.get("date") or ""), today=window[0])
-        return None
+            symbol = str(row.get("symbol") or "").upper().strip()
+            earnings_date = parse_date_value(str(row.get("date") or ""), today=window[0])
+            if symbol and earnings_date is not None and symbol not in calendar:
+                calendar[symbol] = earnings_date
+        self._earnings_calendar_cache[window] = calendar
+        return calendar
 
     async def _enrich_candidate(
         self,
@@ -118,12 +171,28 @@ class FinnhubEarningsSource:
             self._request_json("/stock/profile2", params={"symbol": ticker}),
             self._request_json("/quote", params={"symbol": ticker}),
         )
+        return self._build_candidate(
+            ticker=ticker,
+            earnings_date=earnings_date,
+            profile_payload=profile_payload,
+            quote_payload=quote_payload,
+        )
+
+    def _build_candidate(
+        self,
+        *,
+        ticker: str,
+        earnings_date: date | None,
+        profile_payload: dict[str, Any],
+        quote_payload: dict[str, Any],
+    ) -> CandidateRecord | None:
 
         company_name = _to_text(profile_payload.get("name"))
         market_cap = _market_cap_to_decimal(profile_payload.get("marketCapitalization"))
         sector = _to_text(profile_payload.get("finnhubIndustry"))
         current_price = _to_decimal(quote_payload.get("c"))
         daily_change_percent = _to_decimal(quote_payload.get("dp"))
+        volume = _to_int(quote_payload.get("v"))
 
         if company_name is None and market_cap is None and current_price is None:
             return None
@@ -135,6 +204,7 @@ class FinnhubEarningsSource:
             earnings_date=earnings_date,
             current_price=current_price,
             daily_change_percent=daily_change_percent,
+            volume=volume,
             sector=sector,
             sources=(self.name,),
         )
@@ -182,3 +252,24 @@ def _to_text(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _to_int(value: Any) -> int | None:
+    decimal_value = _to_decimal(value)
+    return None if decimal_value is None else int(decimal_value)
+
+
+def _is_allowed_exchange(value: Any) -> bool:
+    exchange = _to_text(value)
+    if exchange is None:
+        return True
+    upper = exchange.upper()
+    return "NASDAQ" in upper or "NYSE" in upper
+
+
+def _is_viable_backup_candidate(row: CandidateRecord) -> bool:
+    if row.market_cap is None or row.market_cap < BACKUP_MIN_MARKET_CAP:
+        return False
+    if row.current_price is None or row.current_price < BACKUP_MIN_PRICE:
+        return False
+    return True

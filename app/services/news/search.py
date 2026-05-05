@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import warnings
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any, Literal, Protocol
@@ -57,14 +59,9 @@ class DuckDuckGoSearchProvider:
         max_results: int,
         section: SearchSection,
     ) -> list[SearchResult]:
-        try:
-            from duckduckgo_search import DDGS
-        except ImportError as exc:  # pragma: no cover - exercised through dependency install
-            raise RuntimeError(
-                "duckduckgo-search is not installed. Add phase-8 dependencies first."
-            ) from exc
+        ddgs_cls = _load_ddgs()
 
-        with DDGS() as ddgs:
+        with ddgs_cls() as ddgs:
             if section == "news":
                 rows = list(
                     ddgs.news(
@@ -154,32 +151,32 @@ class NewsSearchService:
         seen_urls: set[str] | None = None,
     ) -> tuple[SearchResult, ...]:
         seen = set() if seen_urls is None else set(seen_urls)
-        results = await asyncio.gather(
-            *[
-                self.provider.search(
+        merged: list[SearchResult] = []
+        for query in queries:
+            try:
+                result = await self.provider.search(
                     query,
                     max_results=self.max_results_per_query,
                     section=section,
                 )
-                for query in queries
-            ],
-            return_exceptions=True,
-        )
-
-        merged: list[SearchResult] = []
-        for query, result in zip(queries, results, strict=True):
-            if isinstance(result, BaseException):
+            except BaseException as exc:
                 self.logger.warning(
                     "news_search_query_failed",
                     query=query,
                     section=section,
-                    error=str(result),
+                    error=str(exc),
                 )
+                if section == "news" and _is_rate_limited(exc):
+                    break
                 continue
 
             for row in result:
                 normalized_url = _normalized_url(row.url)
-                if not normalized_url or normalized_url in seen:
+                if (
+                    not normalized_url
+                    or normalized_url in seen
+                    or not _is_allowed_result_url(row.url, is_fallback=mark_ir_fallback)
+                ):
                     continue
                 seen.add(normalized_url)
                 merged.append(
@@ -251,3 +248,95 @@ def _normalized_url(url: str) -> str:
             "",
         )
     )
+
+
+def _load_ddgs():
+    try:
+        from ddgs import DDGS
+
+        return DDGS
+    except ImportError:
+        try:
+            import primp
+            from duckduckgo_search import DDGS as LEGACY_DDGS
+            from duckduckgo_search.utils import _expand_proxy_tb_alias
+
+            class QuietLegacyDDGS(LEGACY_DDGS):
+                def __init__(
+                    self,
+                    headers: dict[str, str] | None = None,
+                    proxy: str | None = None,
+                    proxies: dict[str, str] | str | None = None,
+                    timeout: int | None = 10,
+                    verify: bool = True,
+                ) -> None:
+                    ddgs_proxy = os.environ.get("DDGS_PROXY")
+                    self.proxy = (
+                        ddgs_proxy if ddgs_proxy else _expand_proxy_tb_alias(proxy)
+                    )
+                    assert self.proxy is None or isinstance(
+                        self.proxy, str
+                    ), "proxy must be a str"
+                    if not proxy and proxies:
+                        warnings.warn("'proxies' is deprecated, use 'proxy' instead.", stacklevel=1)
+                        self.proxy = (
+                            proxies.get("http") or proxies.get("https")
+                            if isinstance(proxies, dict)
+                            else proxies
+                        )
+                    self.headers = headers if headers else {}
+                    self.timeout = timeout
+                    self.client = primp.Client(
+                        proxy=self.proxy,
+                        timeout=self.timeout,
+                        cookie_store=True,
+                        referer=True,
+                        impersonate="random",
+                        impersonate_os="random",
+                        follow_redirects=False,
+                        verify=verify,
+                    )
+                    self.sleep_timestamp = 0.0
+
+            return QuietLegacyDDGS
+        except ImportError as exc:  # pragma: no cover - exercised through dependency install
+            raise RuntimeError(
+                "ddgs is not installed. Add the news-search dependency first."
+            ) from exc
+
+
+def _is_rate_limited(error: BaseException) -> bool:
+    message = str(error).lower()
+    return "ratelimit" in message or ("403" in message and "duckduckgo" in message)
+
+
+def _is_allowed_result_url(url: str, *, is_fallback: bool) -> bool:
+    parts = urlsplit(url.strip())
+    host = parts.netloc.lower()
+    path = parts.path.lower()
+    if parts.scheme == "file" and parts.path:
+        return True
+    if not host:
+        return False
+    if host in {"duckduckgo.com", "www.duckduckgo.com", "bing.com", "www.bing.com"}:
+        return False
+    if not is_fallback:
+        return True
+
+    allowed_tokens = (
+        "investor",
+        "ir.",
+        "press-release",
+        "pressrelease",
+        "newsroom",
+        "media",
+        "news/",
+        "prnewswire",
+        "businesswire",
+        "globenewswire",
+        "accessnewswire",
+        "newsfilecorp",
+        "sec.gov",
+    )
+    haystack = f"{host}{path}"
+    return any(token in haystack for token in allowed_tokens)

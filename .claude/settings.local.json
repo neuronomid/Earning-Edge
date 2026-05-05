@@ -19,7 +19,11 @@
       "Bash(git commit -m ' *)",
       "Bash(git push *)",
       "Bash(.venv/bin/python -m pytest tests/test_scoring_engine.py tests/test_decision_step.py -x -q)",
-      "Bash(.venv/bin/python -c ' *)"
+      "Bash(.venv/bin/python -c ' *)",
+      "Bash(./dev.sh)",
+      "Bash(docker exec *)",
+      "Bash(pkill -f 'dev.sh')",
+      "Bash(pkill -f 'app.telegram.bot')"
     ]
   }
 }

@@ -50,6 +50,7 @@ class FakeRunner:
 class FakeSource:
     details: dict[str, CandidateRecord]
     upcoming: list[CandidateRecord]
+    requested_limits: list[int] = field(default_factory=list)
 
     async def get_candidate_details(
         self,
@@ -67,6 +68,7 @@ class FakeSource:
         limit: int,
     ) -> list[CandidateRecord]:
         del window
+        self.requested_limits.append(limit)
         return self.upcoming[:limit]
 
 
@@ -308,7 +310,87 @@ async def test_candidate_service_keeps_finviz_top_five_when_backup_date_conflict
         "DDD",
         "EEE",
     ]
-    assert batch.candidates[0].earnings_date == date(2026, 5, 1)
+    assert batch.candidates[0].earnings_date == date(2026, 5, 4)
     assert batch.candidates[0].earnings_date_verified is False
     assert FINVIZ_CONFLICT_NOTE in batch.candidates[0].validation_notes
     assert all(candidate.earnings_date is not None for candidate in batch.candidates)
+
+
+async def test_candidate_service_marks_partial_backup_usage_when_finviz_needs_supplemental_rows(
+) -> None:
+    finviz_rows = [
+        _candidate(
+            "AAA",
+            "900",
+            earnings_date=None,
+            current_price="100.00",
+            sources=("finviz",),
+        ),
+        _candidate(
+            "BBB",
+            "800",
+            earnings_date=None,
+            current_price="90.00",
+            sources=("finviz",),
+        ),
+    ]
+    source = FakeSource(
+        details={
+            "AAA": _candidate(
+                "AAA",
+                "901",
+                earnings_date=date(2026, 5, 8),
+                current_price="100.10",
+                sources=("yfinance",),
+            ),
+            "BBB": _candidate(
+                "BBB",
+                "801",
+                earnings_date=date(2026, 5, 8),
+                current_price="90.10",
+                sources=("yfinance",),
+            ),
+        },
+        upcoming=[
+            _candidate(
+                "CCC",
+                "700",
+                earnings_date=date(2026, 5, 8),
+                current_price="80.00",
+                sources=("finnhub",),
+            ),
+            _candidate(
+                "DDD",
+                "600",
+                earnings_date=date(2026, 5, 8),
+                current_price="70.00",
+                sources=("finnhub",),
+            ),
+            _candidate(
+                "EEE",
+                "500",
+                earnings_date=date(2026, 5, 8),
+                current_price="60.00",
+                sources=("finnhub",),
+            ),
+        ],
+    )
+    service = CandidateService(
+        FakeRunner(rows=finviz_rows),
+        sources=(source,),
+        today_provider=lambda: date(2026, 5, 1),
+    )
+
+    batch = await service.get_top_five()
+
+    assert batch.screener_status == "success"
+    assert batch.fallback_used is True
+    assert batch.warning_text is None
+    assert [candidate.ticker for candidate in batch.candidates] == [
+        "AAA",
+        "BBB",
+        "CCC",
+        "DDD",
+        "EEE",
+    ]
+    assert source.requested_limits == [6]

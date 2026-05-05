@@ -8,7 +8,9 @@ import pytest
 from app.services.candidate_models import CandidateBatch, CandidateRecord
 from app.services.multi_strategy_service import (
     BOTH_FAILED_WARNING,
+    CATALYST_FAILED_WARNING,
     CATALYST_ONLY_WARNING,
+    COILED_FAILED_WARNING,
     COILED_ONLY_WARNING,
     MultiStrategyCandidateService,
 )
@@ -78,6 +80,10 @@ async def test_merges_disjoint_strategies() -> None:
     assert len(batch.candidates) == 10
     sources = {row.strategy_source for row in batch.candidates}
     assert sources == {"catalyst_confluence", "coiled_setup"}
+    assert {report.strategy_source for report in batch.strategy_reports} == {
+        "catalyst_confluence",
+        "coiled_setup",
+    }
 
 
 async def test_dedupes_overlapping_tickers_keeping_catalyst() -> None:
@@ -126,6 +132,10 @@ async def test_partial_when_only_catalyst_returns() -> None:
     assert batch.screener_status == "partial"
     assert batch.warning_text == CATALYST_ONLY_WARNING
     assert len(batch.candidates) == 1
+    coiled_report = next(
+        report for report in batch.strategy_reports if report.strategy_source == "coiled_setup"
+    )
+    assert coiled_report.status == "empty"
 
 
 async def test_partial_when_only_coiled_returns() -> None:
@@ -178,8 +188,31 @@ async def test_catalyst_exception_treated_as_zero_rows() -> None:
     batch = await service.get_candidates()
 
     assert batch.screener_status == "partial"
-    assert batch.warning_text == COILED_ONLY_WARNING
+    assert batch.warning_text == CATALYST_FAILED_WARNING
     assert [row.ticker for row in batch.candidates] == ["XXX"]
+
+
+async def test_coiled_exception_is_reported_as_failed_not_empty() -> None:
+    catalyst_batch = CandidateBatch(
+        candidates=(
+            _row("AAA", rank=1, strategy_source="catalyst_confluence"),
+        ),
+        screener_status="success",
+        fallback_used=False,
+    )
+    service = MultiStrategyCandidateService(
+        FakeCatalyst(batch=catalyst_batch),
+        FakeCoiled(error=RuntimeError("coiled exploded")),
+    )
+
+    batch = await service.get_candidates()
+
+    assert batch.screener_status == "partial"
+    assert batch.warning_text == COILED_FAILED_WARNING
+    coiled_report = next(
+        report for report in batch.strategy_reports if report.strategy_source == "coiled_setup"
+    )
+    assert coiled_report.status == "failed"
 
 
 async def test_propagates_fallback_used_from_catalyst() -> None:

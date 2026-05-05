@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import getpass
 import json
 from dataclasses import replace
 from datetime import UTC, date, datetime
@@ -181,15 +182,23 @@ def test_logging_service_builds_complete_artifacts_and_archive(tmp_path) -> None
         "ticker",
         "screener_rank",
         "company_name",
+        "current_price",
+        "sector",
         "market_cap",
         "earnings_date",
         "earnings_date_verified",
+        "data_confidence_score",
         "direction_classification",
         "candidate_direction_score",
         "best_contract_score",
         "final_opportunity_score",
         "best_strategy",
+        "strategy_source",
+        "candidate_sources",
+        "candidate_origin",
         "best_contract",
+        "selected_contract",
+        "selected_contract_matches_best_scored",
         "reason_selected_or_rejected",
         "data_sources_used",
         "missing_data_fields",
@@ -244,6 +253,13 @@ def test_logging_service_builds_complete_artifacts_and_archive(tmp_path) -> None
     assert (archive_dir / "telegram_message.txt").read_text(encoding="utf-8") == (
         "Weekly Earnings Options Signal"
     )
+    results_dir = tmp_path / "results"
+    username = getpass.getuser().strip().lower().replace(" ", "_")
+    assert sorted(path.name for path in results_dir.glob("*.csv")) == [
+        f"{username}_combined_2026-05-01.csv",
+        f"{username}_strategy_a_2026-05-01.csv",
+        f"{username}_strategy_b_2026-05-01.csv",
+    ]
 
 
 def test_logging_service_records_actual_model_usage(tmp_path) -> None:

@@ -7,7 +7,7 @@ import pytest
 
 from app.services.candidate_models import CandidateRecord
 from app.services.finviz.query import FinvizQuery
-from app.services.finviz.runner import FinvizQueryRunner
+from app.services.finviz.runner import FinvizAllVariantsFailedError, FinvizQueryRunner
 
 pytestmark = pytest.mark.asyncio
 
@@ -159,3 +159,25 @@ async def test_run_with_swap_uses_cache_when_present() -> None:
 
     assert browser.seen_urls == []
     assert [row.ticker for row in rows] == ["ZZZ"]
+
+
+async def test_run_with_swap_raises_when_all_variants_fail() -> None:
+    base = FinvizQuery(filters=("x_a",), sort="-x")
+    url_a = base.with_filter_replaced("x_", "x_a").to_url()
+    url_b = base.with_filter_replaced("x_", "x_b").to_url()
+    browser = FakeBrowser(
+        error_by_url={
+            url_a: RuntimeError("Finviz blew up a"),
+            url_b: RuntimeError("Finviz blew up b"),
+        }
+    )
+    runner = FinvizQueryRunner(browser)
+
+    with pytest.raises(FinvizAllVariantsFailedError):
+        await runner.run_with_swap(
+            base,
+            swap_prefix="x_",
+            swap_values=("x_a", "x_b"),
+            limit=5,
+            strategy_source="catalyst_confluence",
+        )

@@ -11,8 +11,8 @@ from app.services.coiled_setup_service import (
     CoiledSetupCandidateService,
 )
 from app.services.finviz.strategies import (
-    STRATEGY_B_PATTERN_PREFIX,
-    STRATEGY_B_PATTERN_VALUES,
+    STRATEGY_B_VARIANT_PREFIX,
+    STRATEGY_B_VARIANT_VALUES,
 )
 
 pytestmark = pytest.mark.asyncio
@@ -58,14 +58,14 @@ def _row(ticker: str, *, rank: int) -> CandidateRecord:
     )
 
 
-async def test_coiled_setup_service_uses_strategy_b_pattern_swap() -> None:
+async def test_coiled_setup_service_uses_strategy_b_variant_swap() -> None:
     runner = FakeRunner(rows=[_row("AAA", rank=1)])
     service = CoiledSetupCandidateService(runner)
 
     rows = await service.get_top_five()
 
-    assert runner.last_call["swap_prefix"] == STRATEGY_B_PATTERN_PREFIX
-    assert tuple(runner.last_call["swap_values"]) == STRATEGY_B_PATTERN_VALUES
+    assert runner.last_call["swap_prefix"] == STRATEGY_B_VARIANT_PREFIX
+    assert tuple(runner.last_call["swap_values"]) == STRATEGY_B_VARIANT_VALUES
     assert runner.last_call["strategy_source"] == COILED_STRATEGY_SOURCE
     assert [row.ticker for row in rows] == ["AAA"]
 

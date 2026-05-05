@@ -14,6 +14,7 @@ from app.services.finviz.browser import FinvizBrowserClient
 from app.services.finviz.cache import FinvizScreenerCache
 from app.services.finviz.runner import FinvizQueryRunner
 from app.services.run_lock import get_redis_client
+from app.services.strategy_catalog import build_strategy_report
 
 CATALYST_ONLY_WARNING = (
     "⚠️ Coiled-setup screen returned no candidates this scan — showing catalyst-driven setups only."
@@ -22,6 +23,12 @@ COILED_ONLY_WARNING = (
     "⚠️ Catalyst screen returned no setups this scan — showing structure-driven candidates only."
 )
 BOTH_FAILED_WARNING = "⚠️ Both screening strategies failed to return candidates."
+COILED_FAILED_WARNING = (
+    "⚠️ Coiled-setup screen failed this scan — showing catalyst-driven candidates only."
+)
+CATALYST_FAILED_WARNING = (
+    "⚠️ Catalyst screen failed this scan — showing structure-driven candidates only."
+)
 
 
 class MultiStrategyCandidateService:
@@ -48,20 +55,77 @@ class MultiStrategyCandidateService:
 
         a_batch: CandidateBatch | None = None
         a_rows: list[CandidateRecord] = []
+        strategy_reports = []
+        catalyst_failed = False
         if isinstance(a_result, CandidateBatch):
             a_batch = a_result
             a_rows = list(a_result.candidates)
+            strategy_reports.extend(a_result.strategy_reports)
+            if not any(
+                report.strategy_source == "catalyst_confluence"
+                for report in strategy_reports
+            ):
+                final_rows = tuple(a_rows)
+                strategy_reports.append(
+                    build_strategy_report(
+                        "catalyst_confluence",
+                        status="success" if a_rows else "empty",
+                        raw_row_count=len(a_rows),
+                        candidate_count=len(final_rows),
+                        finviz_candidate_count=sum(
+                            1 for row in final_rows if "finviz" in row.sources
+                        ),
+                        backup_candidate_count=sum(
+                            1 for row in final_rows if "finviz" not in row.sources
+                        ),
+                        fallback_used=a_batch.fallback_used,
+                        warning_text=a_batch.warning_text,
+                    )
+                )
         elif isinstance(a_result, BaseException):
+            catalyst_failed = True
             self.logger.warning(
                 "multi_strategy_catalyst_failed", error=str(a_result)
             )
+            strategy_reports.append(
+                build_strategy_report(
+                    "catalyst_confluence",
+                    status="failed",
+                    raw_row_count=0,
+                    candidate_count=0,
+                    error=str(a_result),
+                )
+            )
 
         b_rows: list[CandidateRecord] = []
+        coiled_failed = False
         if isinstance(b_result, tuple):
             b_rows = list(b_result)
+            status = "success" if b_rows else "empty"
+            final_rows = tuple(b_rows)
+            strategy_reports.append(
+                build_strategy_report(
+                    "coiled_setup",
+                    status=status,
+                    raw_row_count=len(b_rows),
+                    candidate_count=len(final_rows),
+                    finviz_candidate_count=len(final_rows),
+                    backup_candidate_count=0,
+                )
+            )
         elif isinstance(b_result, BaseException):
+            coiled_failed = True
             self.logger.warning(
                 "multi_strategy_coiled_failed", error=str(b_result)
+            )
+            strategy_reports.append(
+                build_strategy_report(
+                    "coiled_setup",
+                    status="failed",
+                    raw_row_count=0,
+                    candidate_count=0,
+                    error=str(b_result),
+                )
             )
 
         merged = _merge_dedupe(a_rows, b_rows)
@@ -73,10 +137,10 @@ class MultiStrategyCandidateService:
             warning_text = None
         elif a_rows:
             screener_status = "partial"
-            warning_text = CATALYST_ONLY_WARNING
+            warning_text = COILED_FAILED_WARNING if coiled_failed else CATALYST_ONLY_WARNING
         elif b_rows:
             screener_status = "partial"
-            warning_text = COILED_ONLY_WARNING
+            warning_text = CATALYST_FAILED_WARNING if catalyst_failed else COILED_ONLY_WARNING
         else:
             screener_status = "failed"
             warning_text = BOTH_FAILED_WARNING
@@ -98,6 +162,7 @@ class MultiStrategyCandidateService:
             screener_status=screener_status,
             fallback_used=fallback_used,
             warning_text=warning_text,
+            strategy_reports=tuple(strategy_reports),
         )
 
 

@@ -8,15 +8,15 @@ from app.services.finviz.strategies import (
     STRATEGY_A_EARNINGS_PREFIX,
     STRATEGY_A_EARNINGS_VALUES,
     STRATEGY_B_BASE,
-    STRATEGY_B_PATTERN_PREFIX,
-    STRATEGY_B_PATTERN_VALUES,
+    STRATEGY_B_VARIANT_PREFIX,
+    STRATEGY_B_VARIANT_VALUES,
 )
 
 
 def test_to_url_includes_canonical_finviz_path() -> None:
     query = FinvizQuery(filters=("a", "b"), sort="-x")
     url = query.to_url()
-    assert url.startswith("https://finviz.com/screener.ashx?")
+    assert url.startswith("https://finviz.com/screener?")
     assert "v=111" in url
     assert "ft=4" in url
     assert "o=-x" in url
@@ -60,29 +60,28 @@ def test_stable_hash_differs_when_sort_changes() -> None:
 def test_strategy_a_url_contains_doc_filters() -> None:
     url = STRATEGY_A_BASE.to_url()
     for required in (
-        "cap_midover",
-        "earningsdate_thisweek",
-        "fa_epssurprise_pos",
-        "fa_revenuesurprise_pos",
-        "sh_relvol_o1.5",
-        "ta_rsi_50to70",
+        "earningsdate_nextweek",
+        "geo_usa",
     ):
         assert required in url, f"Strategy A URL missing {required}"
-    assert "o=-relativevolume" in url
+    assert "o=-marketcap" in url
 
 
 def test_strategy_b_url_contains_doc_filters() -> None:
     url = STRATEGY_B_BASE.to_url()
     for required in (
         "cap_midover",
-        "sh_short_u20",
-        "sh_insidertrans_pos",
-        "ta_volatility_wo4",
-        "ta_pattern_channelup2",
-        "ta_highlow52w_b10h",
+        "sh_avgvol_o1000",
+        "sh_opt_option",
+        "sh_price_o20",
+        "ta_sma50_pa",
+        "ta_sma200_pa",
+        "ta_highlow52w_b20h",
+        "ta_beta_o1",
+        "ta_rsi_40to70",
     ):
         assert required in url, f"Strategy B URL missing {required}"
-    assert "o=-perfhalf" in url
+    assert "o=-relativevolume" in url
 
 
 def test_strategy_a_swap_values_match_prefix() -> None:
@@ -91,5 +90,5 @@ def test_strategy_a_swap_values_match_prefix() -> None:
 
 
 def test_strategy_b_swap_values_match_prefix() -> None:
-    for value in STRATEGY_B_PATTERN_VALUES:
-        assert value.startswith(STRATEGY_B_PATTERN_PREFIX)
+    for value in STRATEGY_B_VARIANT_VALUES:
+        assert value.startswith(STRATEGY_B_VARIANT_PREFIX)

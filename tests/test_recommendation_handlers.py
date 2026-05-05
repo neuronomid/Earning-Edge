@@ -10,10 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import crypto
 from app.db.models.candidate import Candidate
+from app.db.models.option_contract import OptionContract
 from app.db.models.recommendation import Recommendation
 from app.db.models.user import User
 from app.db.models.workflow_run import WorkflowRun
 from app.db.repositories.feedback_repo import FeedbackEventRepository
+from app.db.repositories.recommendation_repo import RecommendationRepository
 from app.db.repositories.user_repo import UserRepository
 from app.telegram.handlers import recommendation as recommendation_handlers
 from app.telegram.keyboards.settings import RecCB
@@ -87,21 +89,45 @@ async def seeded_recommendation(db_session: AsyncSession) -> Recommendation:
         key_concerns_json=["IV crush is still a risk."],
     )
     db_session.add(recommendation)
+    aapl = Candidate(
+        run_id=run.id,
+        ticker="AAPL",
+        company_name="Apple Inc.",
+        market_cap=Decimal("850"),
+        earnings_date=date(2026, 5, 8),
+        earnings_timing="AMC",
+        current_price=Decimal("190"),
+        direction_classification="bullish",
+        candidate_direction_score=76,
+        best_strategy="long_call",
+        final_opportunity_score=72,
+        data_confidence_score=84,
+        selected_for_final=False,
+        strategy_source="catalyst_confluence",
+    )
+    db_session.add(aapl)
+    await db_session.flush()
     db_session.add(
-        Candidate(
-            run_id=run.id,
+        OptionContract(
+            candidate_id=aapl.id,
             ticker="AAPL",
-            company_name="Apple Inc.",
-            market_cap=Decimal("850"),
-            earnings_date=date(2026, 5, 8),
-            earnings_timing="AMC",
-            current_price=Decimal("190"),
-            direction_classification="bullish",
-            candidate_direction_score=70,
-            best_strategy="long_call",
-            final_opportunity_score=66,
-            data_confidence_score=84,
-            selected_for_final=False,
+            option_type="call",
+            position_side="long",
+            strike=Decimal("195.00"),
+            expiry=date(2026, 5, 16),
+            bid=Decimal("1.10"),
+            ask=Decimal("1.25"),
+            mid=Decimal("1.175"),
+            volume=120,
+            open_interest=300,
+            implied_volatility=Decimal("0.44"),
+            delta=Decimal("0.52"),
+            breakeven=Decimal("196.25"),
+            spread_percent=Decimal("12.7600"),
+            liquidity_score=82,
+            contract_opportunity_score=74,
+            passed_hard_filters=True,
+            rejection_reason=None,
         )
     )
     await db_session.flush()
@@ -148,3 +174,26 @@ async def test_bought_button_persists_feedback_event(
         send_recorder.calls[-1].text
         == "✅ Feedback saved. I'll keep that attached to this recommendation."
     )
+
+
+async def test_alternative_button_sends_next_full_recommendation(
+    db_session: AsyncSession,
+    send_recorder: SendRecorder,
+    patch_session_scope: None,
+    seeded_recommendation: Recommendation,
+) -> None:
+    callback = make_callback(chat_id=12345, message=make_message(chat_id=12345))
+
+    await recommendation_handlers.recommendation_action(
+        callback,
+        RecCB(action="alts", rec_id=str(seeded_recommendation.id)),
+    )
+
+    assert "<b>Weekly Earnings Options Signal</b>" in send_recorder.calls[-1].text
+    assert "<b>Best setup:</b> AAPL" in send_recorder.calls[-1].text
+    assert send_recorder.calls[-1].kwargs["reply_markup"] is not None
+
+    recommendations = await RecommendationRepository(db_session).list_for_run(
+        seeded_recommendation.run_id
+    )
+    assert [recommendation.ticker for recommendation in recommendations] == ["AMD", "AAPL"]

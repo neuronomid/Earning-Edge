@@ -21,6 +21,7 @@ from app.scoring.types import (
     ContractScoreResult,
     DataConfidenceResult,
     DirectionResult,
+    HardVeto,
     OptionContractInput,
     StrategySelection,
     UserContext,
@@ -152,6 +153,85 @@ async def test_llm_decision_step_returns_no_trade_on_authentication_error() -> N
     assert result.decision.key_concerns == ["OpenRouter rejected the API key."]
 
 
+async def test_llm_decision_step_falls_back_when_model_selects_non_viable_visible_contract() -> None:
+    candidate = _candidate("MCD", chosen_index=0, rejected_indexes={1: "Bid/ask spread is extremely wide."})
+    step = LLMDecisionStep(
+        router=StubRouter(
+            decision=StructuredDecision(
+                action="recommend",
+                chosen_ticker="MCD",
+                chosen_contract=ChosenContract(
+                    ticker="MCD",
+                    option_type="put",
+                    position_side="long",
+                    strike=Decimal("265"),
+                    expiry=date(2026, 5, 15),
+                    rationale="Still visible in the chain, but it was rejected by scoring.",
+                ),
+                direction_score=73,
+                contract_score=71,
+                final_score=72,
+                reasoning="This should fail validation.",
+                key_evidence=["Relative strength rolled over."],
+                key_concerns=["Spread is too wide."],
+                watchlist_tickers=[],
+            )
+        )
+    )
+
+    result = await step.execute(
+        [candidate],
+        _user_context(),
+        openrouter_api_key="sk-or-test",
+    )
+
+    assert result.trace.engine == "heuristic_fallback"
+    assert result.decision.chosen_contract is not None
+    assert result.decision.chosen_contract.strike == Decimal("270")
+
+
+async def test_llm_decision_step_falls_back_when_model_escalates_watchlist_to_recommend() -> None:
+    candidate = _candidate(
+        "MCD",
+        chosen_index=0,
+        final_score=63,
+        action="watchlist",
+        contract_scores=(54, 50),
+    )
+    step = LLMDecisionStep(
+        router=StubRouter(
+            decision=StructuredDecision(
+                action="recommend",
+                chosen_ticker="MCD",
+                chosen_contract=ChosenContract(
+                    ticker="MCD",
+                    option_type="put",
+                    position_side="long",
+                    strike=Decimal("270"),
+                    expiry=date(2026, 5, 15),
+                    rationale="The model tried to promote a weaker setup.",
+                ),
+                direction_score=80,
+                contract_score=80,
+                final_score=80,
+                reasoning="This should fail because the scorer only produced a watchlist.",
+                key_evidence=["Relative strength rolled over."],
+                key_concerns=["Contract score stayed average."],
+                watchlist_tickers=[],
+            )
+        )
+    )
+
+    result = await step.execute(
+        [candidate],
+        _user_context(),
+        openrouter_api_key="sk-or-test",
+    )
+
+    assert result.trace.engine == "heuristic_fallback"
+    assert result.decision.action == "watchlist"
+
+
 async def test_default_decision_step_uses_heuristic_in_tests_and_llm_elsewhere() -> None:
     test_settings = Settings(app_env="test", app_encryption_key="x" * 44)
     dev_settings = Settings(app_env="development", app_encryption_key="x" * 44)
@@ -160,10 +240,29 @@ async def test_default_decision_step_uses_heuristic_in_tests_and_llm_elsewhere()
     assert isinstance(get_default_decision_step(settings=dev_settings), LLMDecisionStep)
 
 
-def _candidate(ticker: str, *, chosen_index: int) -> PipelineCandidate:
+def _candidate(
+    ticker: str,
+    *,
+    chosen_index: int,
+    final_score: int = 76,
+    action: str = "recommend",
+    contract_scores: tuple[int, int] = (76, 74),
+    rejected_indexes: dict[int, str] | None = None,
+) -> PipelineCandidate:
+    rejected_indexes = rejected_indexes or {}
     contracts = (
-        _contract_result(ticker, strike="270", score=76),
-        _contract_result(ticker, strike="265", score=74),
+        _contract_result(
+            ticker,
+            strike="270",
+            score=contract_scores[0],
+            rejection_reason=rejected_indexes.get(0),
+        ),
+        _contract_result(
+            ticker,
+            strike="265",
+            score=contract_scores[1],
+            rejection_reason=rejected_indexes.get(1),
+        ),
     )
     chosen = contracts[chosen_index]
     return PipelineCandidate(
@@ -207,8 +306,8 @@ def _candidate(ticker: str, *, chosen_index: int) -> PipelineCandidate:
             ),
             considered_contracts=contracts,
             chosen_contract=chosen,
-            final_score=76,
-            action="recommend",
+            final_score=final_score,
+            action=action,  # type: ignore[arg-type]
             reasons=(f"{ticker} had the cleanest bearish setup.",),
         ),
         news_bundle=_news_bundle(ticker),
@@ -216,7 +315,13 @@ def _candidate(ticker: str, *, chosen_index: int) -> PipelineCandidate:
     )
 
 
-def _contract_result(ticker: str, *, strike: str, score: int) -> ContractScoreResult:
+def _contract_result(
+    ticker: str,
+    *,
+    strike: str,
+    score: int,
+    rejection_reason: str | None = None,
+) -> ContractScoreResult:
     contract = OptionContractInput(
         ticker=ticker,
         option_type="put",
@@ -236,10 +341,12 @@ def _contract_result(ticker: str, *, strike: str, score: int) -> ContractScoreRe
         strategy=contract.strategy,
         contract=contract,
         base_score=score,
-        score=score,
+        score=0 if rejection_reason is not None else score,
         factors=(),
         penalties=(),
-        vetoes=(),
+        vetoes=()
+        if rejection_reason is None
+        else (HardVeto("fixture_rejection", rejection_reason),),
         breakeven=Decimal(strike) - Decimal("4.60"),
         breakeven_move_percent=Decimal("0.05"),
         liquidity_score=82,

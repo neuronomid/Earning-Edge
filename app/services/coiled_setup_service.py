@@ -5,8 +5,8 @@ from app.services.candidate_models import CandidateRecord
 from app.services.finviz.runner import FinvizQueryRunner
 from app.services.finviz.strategies import (
     STRATEGY_B_BASE,
-    STRATEGY_B_PATTERN_PREFIX,
-    STRATEGY_B_PATTERN_VALUES,
+    STRATEGY_B_VARIANT_PREFIX,
+    STRATEGY_B_VARIANT_VALUES,
 )
 
 COILED_STRATEGY_SOURCE = "coiled_setup"
@@ -26,8 +26,8 @@ class CoiledSetupCandidateService:
         try:
             rows = await self.runner.run_with_swap(
                 STRATEGY_B_BASE,
-                swap_prefix=STRATEGY_B_PATTERN_PREFIX,
-                swap_values=STRATEGY_B_PATTERN_VALUES,
+                swap_prefix=STRATEGY_B_VARIANT_PREFIX,
+                swap_values=STRATEGY_B_VARIANT_VALUES,
                 limit=limit,
                 strategy_source=COILED_STRATEGY_SOURCE,
             )

@@ -21,3 +21,11 @@ class RecommendationRepository(BaseRepository[Recommendation]):
             .limit(limit)
         )
         return list(result.scalars().all())
+
+    async def list_for_run(self, run_id: UUID) -> list[Recommendation]:
+        result = await self.session.execute(
+            select(Recommendation)
+            .where(Recommendation.run_id == run_id)
+            .order_by(Recommendation.created_at.asc(), Recommendation.id.asc())
+        )
+        return list(result.scalars().all())

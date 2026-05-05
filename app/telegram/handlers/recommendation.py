@@ -6,13 +6,14 @@ from aiogram import Router
 from aiogram.types import CallbackQuery
 
 from app.db.models.feedback_event import FeedbackEvent
-from app.db.repositories.candidate_repo import CandidateRepository
 from app.db.repositories.feedback_repo import FeedbackEventRepository
 from app.db.repositories.recommendation_repo import RecommendationRepository
+from app.services.alternative_recommendation_service import AlternativeRecommendationService
 from app.services.user_service import UserService
 from app.telegram.deps import session_scope
 from app.telegram.handlers._common import send_text
-from app.telegram.keyboards.settings import RecCB
+from app.telegram.keyboards.settings import RecCB, recommendation_keyboard
+from app.telegram.templates.main_recommendation import render_main_recommendation
 
 router = Router(name="recommendation")
 
@@ -43,11 +44,25 @@ async def recommendation_action(callback: CallbackQuery, callback_data: RecCB) -
             await send_text(callback.message, _render_risk(recommendation))
             return
         if callback_data.action == "alts":
-            candidates = await CandidateRepository(session).list_for_run(recommendation.run_id)
+            result = await AlternativeRecommendationService(session).build_next(
+                user=user,
+                current_recommendation=recommendation,
+            )
             await callback.answer()
+            if result.recommendation is None:
+                await send_text(
+                    callback.message,
+                    result.message
+                    or "No additional qualified alternatives are available for this run.",
+                )
+                return
             await send_text(
                 callback.message,
-                _render_alternatives(recommendation.ticker, candidates),
+                render_main_recommendation(
+                    result.recommendation,
+                    watchlist_only=result.watchlist_only,
+                ),
+                reply_markup=recommendation_keyboard(str(result.recommendation.id)),
             )
             return
         if callback_data.action == "save_note":
@@ -105,25 +120,6 @@ def _render_risk(recommendation) -> str:
         f"Stored sizing note: {recommendation.estimated_max_loss}",
         f"Account risk: {recommendation.account_risk_percent}%",
     ]
-    return "\n".join(lines)
-
-
-def _render_alternatives(selected_ticker: str, candidates) -> str:
-    ranked = sorted(
-        (candidate for candidate in candidates if candidate.ticker != selected_ticker),
-        key=lambda candidate: candidate.final_opportunity_score,
-        reverse=True,
-    )
-    lines = ["📈 <b>Alternatives</b>", ""]
-    if not ranked:
-        lines.append("No additional ranked candidates were stored for this run.")
-        return "\n".join(lines)
-
-    for index, candidate in enumerate(ranked[:3], start=1):
-        lines.append(
-            f"{index}. {candidate.ticker} — {candidate.direction_classification} — "
-            f"{candidate.final_opportunity_score}/100"
-        )
     return "\n".join(lines)
 
 

@@ -11,6 +11,10 @@ from app.services.finviz.cache import FinvizScreenerCache
 from app.services.finviz.query import FinvizQuery
 
 
+class FinvizAllVariantsFailedError(RuntimeError):
+    """Raised when every Finviz query variant fails to load."""
+
+
 class FinvizQueryRunner:
     def __init__(
         self,
@@ -45,6 +49,8 @@ class FinvizQueryRunner:
             return_exceptions=True,
         )
         flattened: list[CandidateRecord] = []
+        had_success = False
+        failures: list[BaseException] = []
         for query, result in zip(queries, results, strict=True):
             if isinstance(result, BaseException):
                 self.logger.warning(
@@ -53,8 +59,14 @@ class FinvizQueryRunner:
                     url=query.to_url(),
                     error=str(result),
                 )
+                failures.append(result)
                 continue
+            had_success = True
             flattened.extend(result)
+        if failures and not had_success:
+            raise FinvizAllVariantsFailedError(
+                f"All Finviz variants failed for {strategy_source}."
+            ) from failures[0]
         return self._merge_and_rank(flattened, limit=limit, strategy_source=strategy_source)
 
     async def _run_single(
