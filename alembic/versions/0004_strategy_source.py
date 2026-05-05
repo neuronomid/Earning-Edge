@@ -1,6 +1,6 @@
 """add strategy_source column to candidates
 
-Revision ID: 0004_add_strategy_source_to_candidates
+Revision ID: 0004_strategy_source
 Revises: 0003_rename_tradingview_status
 Create Date: 2026-05-04 00:00:00
 
@@ -13,7 +13,7 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0004_add_strategy_source_to_candidates"
+revision: str = "0004_strategy_source"
 down_revision: str | None = "0003_rename_tradingview_status"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None

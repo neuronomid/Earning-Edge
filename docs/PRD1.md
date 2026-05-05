@@ -9,7 +9,7 @@ The Setup-Driven Options Recommendation Agent is a Telegram-based agent that run
 
 The agent runs automatically based on user-defined cron jobs. The default cron job is:
 
-**Every Monday at 10:30 AM Montreal, Quebec local time**
+**Every Monday at 10:30 AM Montreal, Quebec local time**∆
 
 The user can also manually trigger the workflow anytime from Telegram.
 
