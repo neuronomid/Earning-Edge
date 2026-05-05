@@ -1,11 +1,11 @@
-# PRD: Earnings Options Recommendation Agent
+# PRD: Setup-Driven Options Recommendation Agent
 
-**Version:** V1.1  
-**Update:** Alpaca Options Snapshots API added as the primary option-chain source; Yahoo Finance / yfinance moved to fallback; Alpha Vantage remains optional supporting data.
+**Version:** V1.2  
+**Update:** Replaced single TradingView screener with two complementary Finviz strategies (Strategy A — Catalyst Confluence, Strategy B — Coiled Setup). Each strategy returns up to 5 candidates; both feed the existing scoring system. `strategy_source` field added to candidates for V2 feedback attribution. Redis cache added (600 s TTL). Alpaca Options Snapshots API remains primary option-chain source; Yahoo Finance / yfinance remains fallback; Alpha Vantage remains optional supporting data.
 
 ## 1. Product Summary
 
-The Earnings Options Recommendation Agent is a Telegram-based agent that scans upcoming earnings, selects the top five companies by market capitalization, analyzes their likely earnings-related price movement, evaluates available options contracts, and sends a friendly Telegram recommendation to the user.
+The Setup-Driven Options Recommendation Agent is a Telegram-based agent that runs two complementary Finviz screening strategies, merges up to 10 candidates, scores them with the existing pipeline, and sends a friendly Telegram recommendation to the user. Strategy A ("Catalyst Confluence") targets stocks with earnings catalysts and confirmed multi-timeframe uptrends. Strategy B ("Coiled Setup") targets stocks in established uptrends with compressed volatility — no earnings dependency required. Together they surface tradeable candidates even in slow earnings weeks.
 
 The agent runs automatically based on user-defined cron jobs. The default cron job is:
 
@@ -21,7 +21,7 @@ The agent does not place trades. It only provides structured recommendations and
 
 The product should answer one practical question:
 
-> “Among the largest companies reporting earnings next week, which option contract has the best opportunity based on trend, earnings setup, market context, option chain quality, pricing, and expected move?”
+> “Across catalyst-driven and structure-driven setups, which option contract has the best opportunity based on trend, earnings setup, market context, option chain quality, pricing, and expected move?”
 
 The output should be a simple Telegram message with:
 
@@ -54,13 +54,13 @@ Workflow:
 ```text
 Cron Trigger
    ↓
-Open TradingView Screener
+Run Strategy A (Finviz Catalyst Confluence — earningsdate_thisweek + earningsdate_nextweek, dedupe)
    ↓
-Filter: Upcoming earnings date = Next week
+Run Strategy B (Finviz Coiled Setup — channelup2 + triangleascending, dedupe)
+   ↓  ↓ (both run concurrently)
+Merge results, dedupe by ticker (Strategy A wins ties)
    ↓
-Select top 5 companies
-   ↓
-Gather market data, chart data, option chain data, earnings context, and news
+Up to 10 candidates → existing scoring pipeline
    ↓
 Analyze each stock direction
    ↓
@@ -70,7 +70,7 @@ Select one best contract or return “No trade”
    ↓
 Send recommendation through Telegram
    ↓
-Store recommendation card and evidence logs
+Store recommendation card and evidence logs (with strategy_source per candidate)
 ```
 
 ### 3.2 Manual Workflow
@@ -93,18 +93,18 @@ Manual runs should follow the same pipeline as the scheduled run unless the user
 
 ### 4.1 The Agent Must
 
-1. Use TradingView Screener through browser automation.
-2. Filter for stocks with earnings next week.
-3. Sort the TradingView table by market capitalization descending.
-4. Select the top five stocks.
-5. Gather additional market, option, chart, earnings, and news data.
+1. Use Finviz Screener through browser automation for both Strategy A and Strategy B.
+2. Run Strategy A twice (earningsdate_thisweek, earningsdate_nextweek) and dedupe results.
+3. Run Strategy B twice (ta_pattern_channelup2, ta_pattern_triangleascending) and dedupe results.
+4. Merge both strategy results, dedupe by ticker (Strategy A wins ticker ties), yielding up to 10 candidates.
+5. Gather additional market, option, chart, earnings, and news data for each candidate.
 6. Analyze bullish and bearish scenarios.
 7. Evaluate both long and short options.
 8. Choose only one direction per stock: bullish, bearish, neutral, or avoid.
 9. Never recommend both a call and a put for the same stock in the same run.
-10. Select the best overall opportunity across the top five.
+10. Select the best overall opportunity across all merged candidates.
 11. Send a clear Telegram recommendation.
-12. Store a compact evidence-based log card for each recommendation.
+12. Store a compact evidence-based log card for each recommendation, including strategy_source per candidate.
 13. Allow user-configurable account size, risk profile, timezone, API keys, and cron schedules.
 
 ### 4.2 The Agent Must Not
@@ -121,71 +121,90 @@ Manual runs should follow the same pipeline as the scheduled run unless the user
 
 ---
 
-## 5. TradingView Screener Integration
+## 5. Finviz Dual-Strategy Screener Integration
 
 ### 5.1 Purpose
 
-TradingView Screener is used as the primary visual screener for selecting the top five companies reporting earnings next week.
+Finviz Screener is used as the primary candidate source via two complementary strategies. Finviz's URL-parameter system allows full filter configuration without clicking through UI — the agent constructs the URL directly and calls `page.goto(url)`, then parses the server-rendered HTML table. No hidden APIs are used; all filters are free-tier accessible.
 
-The agent should open:
+**Strategy A — Catalyst Confluence** targets stocks with an earnings catalyst inside the option window, confirmed multi-timeframe uptrend, EPS/revenue beat history, and institutional positioning. Sort: Relative Volume descending.
+
+**Strategy B — Coiled Setup** targets stocks in established long-term uptrends currently consolidating in bullish chart patterns with compressed volatility. No earnings dependency. Sort: Performance (Half Year) descending.
+
+### 5.2 Strategy A URL Template
+
+Run twice per scan — once with `earningsdate_thisweek`, once with `earningsdate_nextweek` — and dedupe results. Finviz's earnings filter is single-value only.
 
 ```text
-https://www.tradingview.com/screener/
+https://finviz.com/screener.ashx?v=111&f=cap_midover,
+earningsdate_thisweek,exch_nasd,exch_nyse,fa_epsqoq_pos,
+fa_epssurprise_pos,fa_revenuesurprise_pos,fa_salesqoq_pos,
+geo_usa,sh_avgvol_o1000,sh_opt_option,sh_price_o20,
+sh_relvol_o1.5,an_recom_buybetter,targetprice_above,
+ta_sma20_pa,ta_sma50_pa,ta_sma200_pa,
+ta_perf_qup,ta_rsi_50to70&ft=4&o=-relativevolume
 ```
 
-Then apply:
+### 5.3 Strategy B URL Template
+
+Run twice per scan — once with `ta_pattern_channelup2`, once with `ta_pattern_triangleascending` — and dedupe results.
 
 ```text
-Filter: Upcoming earnings date = Next week
-Select: Top 5 rows
+https://finviz.com/screener.ashx?v=111&f=cap_midover,exch_nasd,exch_nyse,
+geo_usa,sh_avgvol_o2000,sh_opt_option,sh_price_o20,sh_short_u20,
+sh_insidertrans_pos,ta_sma200_pa,ta_sma50_pa,ta_highlow52w_b10h,
+ta_perf_yup,ta_perf2_hup,ta_rsi_40to60,ta_volatility_wo4,
+ta_pattern_channelup2,ta_beta_o1,sh_relvol_o1
+&ft=4&o=-perfhalf
 ```
-
-After applying the `Upcoming earnings date = Next week` filter, the agent
-should not change any additional TradingView filters or sorting unless the user
-explicitly asks for it. The top five rows should be taken exactly as
-TradingView displays them after that filter is applied.
-
-### 5.2 Allowed Automation Method
-
-The agent can use:
-
-- Playwright CLI
-- Playwright script
-- browser-use style automation
-- MCP browser automation server
-- visible browser interaction
-- accessibility tree extraction
-- screenshot + vision model extraction if needed
-
-### 5.3 TradingView Extraction Rule
-
-The agent should only rely on data visible in the TradingView browser session.
-
-Preferred extraction methods:
-
-1. Browser accessibility snapshot
-2. Visible table text extraction
-3. Screenshot analysis
-4. Manual fallback if browser automation fails
-
-The system should not use hidden/private TradingView APIs.
 
 ### 5.4 Required Extracted Fields
 
-For each of the top five rows, extract:
+For each row returned by either strategy, extract:
 
-| Field | Required |
-|---|---:|
-| Ticker | Yes |
-| Company name | Yes |
-| Market cap | Yes |
-| Upcoming earnings date | Yes |
-| Current price | Preferred |
-| Daily change % | Preferred |
-| Volume | Preferred |
-| Sector/industry | Preferred |
+| Field | Required | Strategy |
+|---|---:|---|
+| Ticker | Yes | Both |
+| Company name | Yes | Both |
+| Market cap | Yes | Both |
+| Upcoming earnings date | Yes (Strategy A only) | A |
+| Current price | Preferred | Both |
+| EPS Surprise | Preferred | A |
+| Revenue Surprise | Preferred | A |
+| Analyst Recom. | Preferred | A |
+| Target Price | Preferred | A |
+| RSI (14) | Preferred | Both |
+| Pattern | Preferred | B |
+| Volatility (Week) | Preferred | B |
+| Float Short | Preferred | B |
+| Insider Transactions | Preferred | B |
+| Relative Volume | Preferred | Both |
+| Sector/industry | Preferred | Both |
 
-If TradingView does not expose all preferred fields, the agent should fill missing fields from backup data sources.
+If Finviz does not expose all preferred fields, the agent should fill missing fields from backup data sources. Strategy B candidates do not have an earnings date from Finviz — leave `earnings_date` null unless confirmed by a backup source.
+
+### 5.5 Allowed Automation Method
+
+The agent uses:
+
+- Playwright `page.goto(url)` — Finviz URL contains all filter parameters
+- HTML table parsing from accessibility tree or raw HTML
+- Screenshot + vision model extraction as fallback
+- Redis cache (600 s TTL) to avoid hammering Finviz between strategy runs
+
+The system must not use undocumented Finviz APIs.
+
+### 5.6 Screener Status Reporting
+
+After each scan the system records a `screener_status` value:
+
+| Value | Meaning |
+|---|---|
+| `success` | Both Strategy A and Strategy B returned candidates |
+| `partial` | Only one strategy returned candidates |
+| `failed` | Both strategies returned no candidates (Finnhub/yfinance backup used) |
+
+The `partial` status triggers a warning text in the Telegram message explaining which strategy was unavailable.
 
 ---
 
@@ -197,9 +216,9 @@ The system should use a free-data-first architecture.
 
 | Data Need | Primary Source | Backup Source |
 |---|---|---|
-| Top-five earnings candidates | TradingView Screener browser automation | Earnings calendar API |
-| Earnings date verification | TradingView + backup API | Yahoo Finance / Finnhub / Alpha Vantage |
-| Market cap | TradingView | Yahoo Finance / yfinance |
+| Screener candidates (up to 10) | Finviz dual-strategy browser automation (Strategy A + B) | Finnhub / yfinance earnings calendar |
+| Earnings date verification | Finviz (Strategy A) + backup API | Yahoo Finance / Finnhub / Alpha Vantage |
+| Market cap | Finviz | Yahoo Finance / yfinance |
 | Historical OHLCV | Yahoo Finance / yfinance | Alpha Vantage |
 | Option chains | Alpaca Options Snapshots API | Yahoo Finance / yfinance |
 | Option Greeks | Alpaca Options Snapshots API | calculated/estimated when unavailable |
@@ -847,23 +866,17 @@ The recommendation card should still store all sizing, breakeven, notional expos
 
 ### 14.1 Candidate Universe
 
-The candidate universe starts from TradingView Screener.
+The candidate universe starts from two concurrent Finviz screens.
 
-Required filter:
+**Strategy A — Catalyst Confluence** (run twice, dedupe):
+- earningsdate_thisweek variant → up to 5 results
+- earningsdate_nextweek variant → merged with above, dedupe by ticker
 
-```text
-Upcoming earnings date = Next week
-```
+**Strategy B — Coiled Setup** (run twice, dedupe):
+- ta_pattern_channelup2 variant → up to 5 results
+- ta_pattern_triangleascending variant → merged with above, dedupe by ticker
 
-Required selection:
-
-```text
-Top 5 rows
-```
-
-After the required filter is applied, do not change any additional TradingView
-filters or sorting unless the user explicitly asks for it. Use the first five
-visible rows exactly as TradingView presents them.
+After both strategies complete, the results are merged and deduped by ticker (Strategy A wins ticker ties). The pipeline receives up to 10 candidates.
 
 ### 14.2 Candidate Validation
 
@@ -1794,7 +1807,7 @@ V1 only needs to log the data. The improvement loop is V2.
 | status | running/success/failed/no_trade |
 | started_at | timestamp |
 | finished_at | timestamp |
-| tradingview_status | success/failed |
+| screener_status | success/partial/failed |
 | selected_candidate_count | integer |
 | final_recommendation_id | UUID/null |
 | error_message | text/null |
@@ -1811,6 +1824,7 @@ V1 only needs to log the data. The improvement loop is V2.
 | earnings_date | date |
 | earnings_timing | string/null |
 | current_price | decimal |
+| strategy_source | catalyst_confluence/coiled_setup |
 | direction_classification | string |
 | candidate_direction_score | integer |
 | best_strategy | string/null |
@@ -1914,8 +1928,8 @@ This table is mostly for V2, but V1 can already create simple feedback records.
 |---|---|
 | Telegram Bot Service | User interaction |
 | Schedule Service | Cron management |
-| TradingView Browser Service | Screener interaction |
-| Candidate Service | Top-five extraction and validation |
+| Finviz Browser Service | Dual-strategy screener (Strategy A + B) with Redis cache |
+| Candidate Service | Candidate extraction, validation, and multi-strategy merge |
 | Market Data Service | OHLCV, market cap, sector data |
 | News Service | Web/news gathering |
 | Options Service | Option chain retrieval from Alpaca first, yfinance fallback |
@@ -1930,20 +1944,20 @@ This table is mostly for V2, but V1 can already create simple feedback records.
 
 ## 26. Error Handling
 
-### 26.1 TradingView Failure
+### 26.1 Finviz Screener Failure
 
-If TradingView cannot be accessed:
+If Finviz cannot be accessed for one or both strategies:
 
-1. Retry browser session.
-2. Try a clean browser context.
-3. Try backup earnings calendar.
-4. Notify user if TradingView failed.
-5. Continue only if backup candidates are usable.
+1. Retry browser session with a clean browser context.
+2. If Strategy A fails but Strategy B succeeds, continue with partial results (`screener_status = "partial"`).
+3. If Strategy B fails but Strategy A succeeds, continue with partial results (`screener_status = "partial"`).
+4. If both fail, try backup earnings calendar (Finnhub/yfinance). Set `screener_status = "failed"`.
+5. Notify user via Telegram if screener was degraded.
 
 Telegram message example:
 
 ```text
-⚠️ TradingView did not load correctly, so I used backup earnings data for this scan.
+⚠️ Finviz Strategy A did not load, so I used structure-driven setups only for this scan.
 ```
 
 ### 26.2 Option Chain Failure
@@ -2054,7 +2068,8 @@ Even if the data confidence score is numerically above 40, the system must block
 Critical blocking fields:
 
 - ticker
-- verified earnings date
+- strategy_source (which Finviz strategy surfaced this candidate — required for V2 feedback attribution)
+- verified earnings date (Strategy A candidates only; Strategy B candidates may have no earnings date)
 - current price
 - contract type
 - position side
@@ -2115,15 +2130,15 @@ The workflow passes if:
 
 - the scheduled scan runs at the correct user timezone
 - manual scan can be triggered from Telegram
-- TradingView screener opens successfully
-- the earnings filter is applied
-- no additional TradingView filters or sorting are changed after applying the
-  earnings filter unless explicitly requested by the user
-- the top five visible companies are extracted
+- Finviz Strategy A screener opens and runs (both earningsdate variants)
+- Finviz Strategy B screener opens and runs (both pattern variants)
+- results from both strategies are merged and deduped
+- screener_status is recorded (success / partial / failed)
+- up to 10 candidates are passed to the scoring pipeline
 - option chains are retrieved or failure is logged
 - one recommendation or no-trade result is produced
-- Telegram message is delivered
-- recommendation card is stored
+- Telegram message is delivered (with partial/failed warning if applicable)
+- recommendation card is stored with strategy_source per candidate
 
 ### 28.2 Recommendation Acceptance Criteria
 
@@ -2183,10 +2198,11 @@ For every run, the system must store:
 - OpenRouter API key storage
 - Alpaca API key and secret storage
 - optional Alpha Vantage key storage
-- TradingView browser automation
-- earnings next-week filter
-- market-cap descending sort
-- top-five candidate selection
+- Finviz browser automation (Strategy A + Strategy B)
+- Strategy A: earnings catalyst filter, relative volume sort
+- Strategy B: coiled pattern filter, half-year performance sort
+- multi-strategy merge with up to 10 candidates and strategy_source tagging
+- Redis cache for Finviz queries (600 s TTL)
 - market data retrieval
 - option chain retrieval
 - web/news gathering
@@ -2289,16 +2305,19 @@ Build:
 - strategy permission setting
 - cron job UI
 
-### Phase 2: TradingView Candidate Extraction
+### Phase 2: Finviz Dual-Strategy Candidate Extraction
 
 Build:
 
 - Playwright browser automation
-- TradingView screener opening
-- earnings next-week filter
-- market-cap descending sort
-- top-five extraction
-- fallback extraction from screenshot if needed
+- Finviz Strategy A screener (earningsdate_thisweek + earningsdate_nextweek variants, dedupe)
+- Finviz Strategy B screener (channelup2 + triangleascending variants, dedupe)
+- concurrent execution via asyncio.gather, Semaphore(2) rate limiter
+- Redis cache (FinvizScreenerCache, 600 s TTL, key: screener:{strategy_source}:{hash}:{date})
+- multi-strategy merge and ticker-level deduplication (A wins ties)
+- strategy_source tagging on every CandidateRecord
+- screener_status reporting (success / partial / failed)
+- fallback to Finnhub/yfinance earnings calendar if both strategies fail
 
 ### Phase 3: Market and Options Data
 
@@ -2419,7 +2438,7 @@ Then shows top watchlist names.
 
 The most important parts to build correctly are:
 
-1. TradingView extraction
+1. Finviz dual-strategy extraction (Strategy A + B, merge, dedupe)
 2. option-chain retrieval
 3. expiry logic around earnings date
 4. long vs short option selection
@@ -2447,8 +2466,8 @@ V1 is complete when:
 - a user can manage cron jobs from Telegram buttons
 - the default Monday 10:30 AM Montreal schedule works
 - the user can manually run the workflow
-- the agent opens TradingView Screener
-- the agent selects top five next-week earnings stocks by market cap
+- the agent runs Finviz Strategy A (both earnings date variants) and Strategy B (both pattern variants)
+- the agent merges up to 10 candidates with strategy_source tagging
 - the agent retrieves option-chain data from Alpaca first, with yfinance fallback
 - the agent uses Gemini 3.1 Flash for light research
 - the agent uses Claude Opus 4.7 Thinking for final analysis

@@ -37,6 +37,8 @@ class Candidate(Base):
     data_confidence_score: Mapped[int] = mapped_column(Integer)
     selected_for_final: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    strategy_source: Mapped[str] = mapped_column(String(32))
+
     created_at: Mapped[CreatedAt]
 
     run: Mapped[WorkflowRun] = relationship(back_populates="candidates", foreign_keys=[run_id])

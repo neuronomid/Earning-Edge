@@ -19,14 +19,21 @@ from app.services.earnings_calendar.reconciler import (
 )
 from app.services.earnings_calendar.yfinance_source import YFinanceEarningsSource
 from app.services.finviz.browser import FinvizBrowserClient
-from app.services.finviz.extractor import FinvizExtractor
+from app.services.finviz.runner import FinvizQueryRunner
+from app.services.finviz.strategies import (
+    STRATEGY_A_BASE,
+    STRATEGY_A_EARNINGS_PREFIX,
+    STRATEGY_A_EARNINGS_VALUES,
+)
+
+CATALYST_STRATEGY_SOURCE = "catalyst_confluence"
 
 FINVIZ_FALLBACK_WARNING = (
     "⚠️ Finviz did not load correctly, so I used backup earnings data for this scan."
 )
-FINVIZ_INFERRED_DATE_NOTE = "earnings date inferred from Finviz next-week screener"
+FINVIZ_INFERRED_DATE_NOTE = "earnings date inferred from Finviz catalyst-window screener"
 FINVIZ_CONFLICT_NOTE = (
-    "backup earnings date conflicted with Finviz next-week screener; kept visible screener row"
+    "backup earnings date conflicted with Finviz catalyst-window screener; kept visible screener row"
 )
 
 
@@ -53,24 +60,34 @@ class CandidateDataSource(Protocol):
 class CandidateService:
     def __init__(
         self,
-        extractor: FinvizExtractor,
+        runner: FinvizQueryRunner,
         *,
         sources: Sequence[CandidateDataSource],
         reconciler: CandidateReconciler | None = None,
         today_provider: Callable[[], date] | None = None,
         logger=None,
     ) -> None:
-        self.extractor = extractor
+        self.runner = runner
         self.sources = tuple(sources)
         self.reconciler = reconciler or CandidateReconciler()
         self.today_provider = today_provider or date.today
         self.logger = logger or get_logger(__name__)
 
     async def get_top_five(self) -> CandidateBatch:
-        window = next_week_window(self.today_provider())
+        window = catalyst_earnings_window(self.today_provider())
 
         try:
-            extracted = await self.extractor.get_top_five(limit=5)
+            extracted = await self.runner.run_with_swap(
+                STRATEGY_A_BASE,
+                swap_prefix=STRATEGY_A_EARNINGS_PREFIX,
+                swap_values=STRATEGY_A_EARNINGS_VALUES,
+                limit=5,
+                strategy_source=CATALYST_STRATEGY_SOURCE,
+            )
+            if not extracted:
+                raise CandidateSelectionError(
+                    "Strategy A returned no rows from Finviz"
+                )
             self.logger.info(
                 "candidate_service_finviz_rows_extracted",
                 window_start=window[0].isoformat(),
@@ -94,7 +111,10 @@ class CandidateService:
                 backup_tickers=[row.ticker for row in validated[:5]],
             )
             return CandidateBatch(
-                candidates=tuple(validated[:5]),
+                candidates=tuple(
+                    replace(row, strategy_source=CATALYST_STRATEGY_SOURCE)
+                    for row in validated[:5]
+                ),
                 screener_status="failed",
                 fallback_used=True,
                 warning_text=FINVIZ_FALLBACK_WARNING,
@@ -115,7 +135,10 @@ class CandidateService:
             fallback_used=False,
         )
         return CandidateBatch(
-            candidates=tuple(validated[:5]),
+            candidates=tuple(
+                replace(row, strategy_source=CATALYST_STRATEGY_SOURCE)
+                for row in validated[:5]
+            ),
             screener_status="success",
             fallback_used=False,
             warning_text=None,
@@ -229,6 +252,15 @@ class CandidateService:
         return merged[:limit]
 
 
+def catalyst_earnings_window(today: date) -> tuple[date, date]:
+    """Window covering today through end of next calendar week (Strategy A)."""
+    days_until_monday = 7 - today.weekday()
+    if days_until_monday <= 0:
+        days_until_monday += 7
+    end = today + timedelta(days=days_until_monday + 6)
+    return today, end
+
+
 def next_week_window(today: date) -> tuple[date, date]:
     days_until_monday = 7 - today.weekday()
     if days_until_monday <= 0:
@@ -249,9 +281,9 @@ def get_candidate_service() -> CandidateService:
         headless=settings.finviz_headless,
         timeout_ms=settings.finviz_timeout_ms,
     )
-    extractor = FinvizExtractor(browser)
+    runner = FinvizQueryRunner(browser)
     return CandidateService(
-        extractor,
+        runner,
         sources=(
             YFinanceEarningsSource(),
             FinnhubEarningsSource(api_key=settings.finnhub_api_key),

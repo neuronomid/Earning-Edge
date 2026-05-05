@@ -5,7 +5,8 @@ from datetime import date
 from decimal import Decimal
 from typing import Literal
 
-ScreenerStatus = Literal["success", "failed"]
+ScreenerStatus = Literal["success", "partial", "failed"]
+StrategySource = Literal["catalyst_confluence", "coiled_setup"]
 
 
 @dataclass(slots=True, frozen=True)
@@ -22,6 +23,7 @@ class CandidateRecord:
     sector: str | None = None
     sources: tuple[str, ...] = ("finviz",)
     validation_notes: tuple[str, ...] = ()
+    strategy_source: StrategySource | None = None
 
 
 @dataclass(slots=True, frozen=True)

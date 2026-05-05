@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from app.services.candidate_models import CandidateRecord
+from app.services.finviz.query import FinvizQuery
 from app.services.parsing import parse_compact_decimal, parse_compact_int, parse_percent
 
 if TYPE_CHECKING:
@@ -14,7 +15,6 @@ class FinvizBrowserError(RuntimeError):
 
 
 class FinvizBrowserClient:
-    URL = "https://finviz.com/screener?v=111&f=earningsdate_nextweek,geo_usa&o=-marketcap"
     _USER_AGENT = (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
@@ -29,9 +29,15 @@ class FinvizBrowserClient:
         self.headless = headless
         self.timeout_ms = timeout_ms
 
-    async def capture_snapshot(self, *, limit: int = 5) -> list[CandidateRecord]:
+    async def capture_snapshot(
+        self,
+        query: FinvizQuery,
+        *,
+        limit: int = 5,
+    ) -> list[CandidateRecord]:
         from playwright.async_api import async_playwright
 
+        url = query.to_url()
         async with async_playwright() as playwright:
             browser = await playwright.chromium.launch(headless=self.headless)
             context = await browser.new_context(
@@ -41,14 +47,14 @@ class FinvizBrowserClient:
             page = await context.new_page()
             page.set_default_timeout(self.timeout_ms)
             try:
-                await self._load_screener(page)
+                await self._load_screener(page, url=url)
                 return await self._extract_rows(page, limit=limit)
             finally:
                 await context.close()
                 await browser.close()
 
-    async def _load_screener(self, page: Page) -> None:
-        await page.goto(self.URL, wait_until="domcontentloaded")
+    async def _load_screener(self, page: Page, *, url: str) -> None:
+        await page.goto(url, wait_until="domcontentloaded")
         table = page.locator("table.styled-table-new")
         try:
             await table.wait_for(state="visible", timeout=self.timeout_ms)

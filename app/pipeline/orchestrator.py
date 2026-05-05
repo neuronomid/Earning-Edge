@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
@@ -147,10 +148,14 @@ class PipelineOrchestrator:
         run.screener_status = batch.screener_status
         run.selected_candidate_count = len(batch.candidates)
 
-        candidates = [
-            await self._analyze_candidate(record, user, user_context, secrets)
-            for record in batch.candidates
-        ]
+        candidates = list(
+            await asyncio.gather(
+                *[
+                    self._analyze_candidate(record, user, user_context, secrets)
+                    for record in batch.candidates
+                ]
+            )
+        )
 
         decision_result = await self.decision_step.execute(
             candidates,
@@ -310,6 +315,7 @@ class PipelineOrchestrator:
                     final_opportunity_score=item.evaluation.final_score,
                     data_confidence_score=item.evaluation.confidence.score,
                     selected_for_final=item.record.ticker == selected_ticker,
+                    strategy_source=item.record.strategy_source or "catalyst_confluence",
                 )
             )
 
