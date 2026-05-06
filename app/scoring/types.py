@@ -17,6 +17,7 @@ PositionSide = Literal["long", "short"]
 Strategy = Literal["long_call", "long_put", "short_put", "short_call"]
 EarningsTiming = Literal["BMO", "AMC", "unknown"]
 ConflictSeverity = Literal["slight", "moderate", "severe"]
+TargetMethod = Literal["full_greeks", "delta_fallback", "intrinsic_fallback"]
 
 RISK_PROFILE_PCTS: dict[RiskProfile, Decimal] = {
     "Conservative": Decimal("0.01"),
@@ -67,7 +68,9 @@ class OptionContractInput:
     open_interest: int | None = None
     implied_volatility: Decimal | None = None
     delta: Decimal | None = None
+    gamma: Decimal | None = None
     theta: Decimal | None = None
+    vega: Decimal | None = None
     source: str = "unknown"
     quote_timestamp: date | None = None
     is_tradable: bool = True
@@ -147,6 +150,18 @@ class StrategySelection:
 
 
 @dataclass(slots=True, frozen=True)
+class ExitTarget:
+    target_stock_price: Decimal
+    target_option_price: Decimal
+    target_gain_percent: Decimal | None
+    stop_loss_option_price: Decimal
+    exit_by_date: date
+    expected_holding_days: int
+    target_method: TargetMethod
+    expected_iv_change: Decimal | None = None
+
+
+@dataclass(slots=True, frozen=True)
 class ContractScoreResult:
     strategy: Strategy
     contract: OptionContractInput
@@ -160,6 +175,7 @@ class ContractScoreResult:
     liquidity_score: int
     expiry_days_after_earnings: int | None
     reasons: tuple[str, ...]
+    exit_target: ExitTarget | None = None
 
     @property
     def is_viable(self) -> bool:
@@ -285,4 +301,3 @@ def estimate_max_contracts(user: UserContext, contract: OptionContractInput) -> 
         contracts = int(exposure_cap // (contract.strike * HUNDRED))
 
     return max(0, min(user.max_contracts, contracts))
-

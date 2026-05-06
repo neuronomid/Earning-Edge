@@ -38,8 +38,18 @@ class OptionContract(Base):
 
     implied_volatility: Mapped[Decimal | None] = mapped_column(Numeric(10, 6), nullable=True)
     delta: Mapped[Decimal | None] = mapped_column(Numeric(10, 6), nullable=True)
+    gamma: Mapped[Decimal | None] = mapped_column(Numeric(10, 6), nullable=True)
+    theta: Mapped[Decimal | None] = mapped_column(Numeric(10, 6), nullable=True)
+    vega: Mapped[Decimal | None] = mapped_column(Numeric(10, 6), nullable=True)
 
     breakeven: Mapped[Decimal] = mapped_column(Numeric(14, 4))
+    target_stock_price: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)
+    target_option_price: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)
+    target_gain_percent: Mapped[Decimal | None] = mapped_column(Numeric(8, 4), nullable=True)
+    stop_loss_option_price: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)
+    exit_by_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    expected_holding_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    target_method: Mapped[str | None] = mapped_column(String(32), nullable=True)
     spread_percent: Mapped[Decimal] = mapped_column(Numeric(8, 4))
     liquidity_score: Mapped[int] = mapped_column(Integer)
     contract_opportunity_score: Mapped[int] = mapped_column(Integer)

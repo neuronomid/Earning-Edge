@@ -163,6 +163,25 @@ class LoggingService:
             "suggested_entry": (
                 None if recommendation is None else _decimal(recommendation.suggested_entry)
             ),
+            "target_stock_price": (
+                None if recommendation is None else _decimal(recommendation.target_stock_price)
+            ),
+            "target_option_price": (
+                None if recommendation is None else _decimal(recommendation.target_option_price)
+            ),
+            "target_gain_percent": (
+                None if recommendation is None else _decimal(recommendation.target_gain_percent)
+            ),
+            "stop_loss_option_price": (
+                None if recommendation is None else _decimal(recommendation.stop_loss_option_price)
+            ),
+            "exit_by_date": (
+                None if recommendation is None else _date(recommendation.exit_by_date)
+            ),
+            "expected_holding_days": (
+                None if recommendation is None else recommendation.expected_holding_days
+            ),
+            "target_method": None if recommendation is None else recommendation.target_method,
             "suggested_quantity": (
                 0 if recommendation is None else recommendation.suggested_quantity
             ),
@@ -405,7 +424,31 @@ def _contract_card(
         "open_interest": contract.contract.open_interest,
         "implied_volatility": _decimal(contract.contract.implied_volatility),
         "delta": _decimal(contract.contract.delta),
+        "gamma": _decimal(contract.contract.gamma),
+        "theta": _decimal(contract.contract.theta),
+        "vega": _decimal(contract.contract.vega),
         "breakeven": _decimal(contract.breakeven),
+        "target_stock_price": (
+            None if contract.exit_target is None else _decimal(contract.exit_target.target_stock_price)
+        ),
+        "target_option_price": (
+            None if contract.exit_target is None else _decimal(contract.exit_target.target_option_price)
+        ),
+        "target_gain_percent": (
+            None if contract.exit_target is None else _decimal(contract.exit_target.target_gain_percent)
+        ),
+        "stop_loss_option_price": (
+            None if contract.exit_target is None else _decimal(contract.exit_target.stop_loss_option_price)
+        ),
+        "exit_by_date": (
+            None if contract.exit_target is None else _date(contract.exit_target.exit_by_date)
+        ),
+        "expected_holding_days": (
+            None if contract.exit_target is None else contract.exit_target.expected_holding_days
+        ),
+        "target_method": (
+            None if contract.exit_target is None else contract.exit_target.target_method
+        ),
         "spread_percent": _decimal(contract_spread_percent(contract)),
         "liquidity_score": contract.liquidity_score,
         "contract_score": contract.score,
@@ -440,6 +483,19 @@ def _selected_contract_fields(contract: ContractScoreResult) -> dict[str, Any]:
         "expiry": _date(contract.contract.expiry),
         "option_type": contract.contract.option_type,
         "position_side": contract.contract.position_side,
+        "target_stock_price": (
+            None if contract.exit_target is None else _decimal(contract.exit_target.target_stock_price)
+        ),
+        "target_option_price": (
+            None if contract.exit_target is None else _decimal(contract.exit_target.target_option_price)
+        ),
+        "stop_loss_option_price": (
+            None if contract.exit_target is None else _decimal(contract.exit_target.stop_loss_option_price)
+        ),
+        "exit_by_date": (
+            None if contract.exit_target is None else _date(contract.exit_target.exit_by_date)
+        ),
+        "target_method": None if contract.exit_target is None else contract.exit_target.target_method,
     }
 
 

@@ -15,6 +15,10 @@ class RecommendationLike(Protocol):
     strike: Decimal
     expiry: date
     suggested_entry: Decimal | None
+    target_stock_price: Decimal | None
+    target_option_price: Decimal | None
+    stop_loss_option_price: Decimal | None
+    exit_by_date: date | None
     suggested_quantity: int
     estimated_max_loss: str
     account_risk_percent: Decimal
@@ -52,6 +56,18 @@ def render_main_recommendation(
             f"<b>Suggested entry:</b> {_entry_text(recommendation.suggested_entry)}",
         ]
     )
+    if getattr(recommendation, "target_option_price", None) is not None:
+        lines.append(
+            f"<b>Target sell price:</b> ${_money(recommendation.target_option_price)}"
+        )
+    if getattr(recommendation, "target_stock_price", None) is not None:
+        lines.append(f"<b>Stock target:</b> ${_money(recommendation.target_stock_price)}")
+    if getattr(recommendation, "stop_loss_option_price", None) is not None:
+        lines.append(
+            f"<b>Stop loss:</b> ${_money(recommendation.stop_loss_option_price)}"
+        )
+    if getattr(recommendation, "exit_by_date", None) is not None:
+        lines.append(f"<b>Exit by:</b> {recommendation.exit_by_date.isoformat()}")
     if watchlist_only:
         lines.append("<b>Suggested quantity:</b> Watchlist only")
     else:

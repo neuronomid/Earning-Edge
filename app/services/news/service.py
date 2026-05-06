@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Any, Protocol
 
@@ -161,7 +161,7 @@ class NewsService:
         bundle = NewsBundle(
             ticker=normalized,
             company_name=company_name,
-            generated_at=datetime.now(tz=UTC),
+            generated_at=datetime.now(tz=timezone.utc),
             search_results=search_response.all_results,
             articles=articles,
             brief=brief,

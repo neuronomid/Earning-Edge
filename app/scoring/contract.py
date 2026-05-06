@@ -19,10 +19,12 @@ from app.scoring.types import (
     round_decimal,
     spread_percent,
 )
+from app.services.exit_target import ExitTargetService
 from app.scoring.vetoes import evaluate_hard_vetoes
 from app.services.sizing import SizingError, SizingPermissionError, size
 
 ZERO = Decimal("0")
+EXIT_TARGETS = ExitTargetService()
 
 
 def score_contract(
@@ -106,6 +108,7 @@ def score_contract(
         liquidity_score=liquidity_quality(contract),
         expiry_days_after_earnings=days_after_earnings(contract.expiry, candidate.earnings_date),
         reasons=reasons,
+        exit_target=EXIT_TARGETS.build(candidate, contract, direction),
     )
 
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from functools import lru_cache
 from typing import Any, Protocol
@@ -154,6 +154,12 @@ class PipelineOrchestrator:
         )
         return outcome
 
+    async def evaluate_batch(self, batch: CandidateBatch, user: User) -> PipelineOutcome:
+        secrets = _decrypt_user_secrets(user)
+        user_context = _build_user_context(
+            user,
+            has_valid_openrouter_api_key=bool(secrets.openrouter_api_key),
+        )
         candidates = list(
             await asyncio.gather(
                 *[
@@ -163,7 +169,6 @@ class PipelineOrchestrator:
             )
         )
         decision_candidates = _select_decision_finalists(candidates)
-
         decision_result = await self.decision_step.execute(
             decision_candidates,
             user_context,
@@ -232,7 +237,7 @@ class PipelineOrchestrator:
         context = CandidateContext(
             ticker=record.ticker,
             company_name=record.company_name or market_snapshot.company_name or record.ticker,
-            earnings_date=record.earnings_date or datetime.now(UTC).date(),
+            earnings_date=record.earnings_date or datetime.now(timezone.utc).date(),
             earnings_timing="unknown",
             market_snapshot=market_snapshot,
             news_brief=news_bundle.brief,
@@ -330,7 +335,45 @@ class PipelineOrchestrator:
                         open_interest=contract.contract.open_interest,
                         implied_volatility=contract.contract.implied_volatility,
                         delta=contract.contract.delta,
+                        gamma=contract.contract.gamma,
+                        theta=contract.contract.theta,
+                        vega=contract.contract.vega,
                         breakeven=contract.breakeven or breakeven_price(contract.contract) or ZERO,
+                        target_stock_price=(
+                            None
+                            if contract.exit_target is None
+                            else contract.exit_target.target_stock_price
+                        ),
+                        target_option_price=(
+                            None
+                            if contract.exit_target is None
+                            else contract.exit_target.target_option_price
+                        ),
+                        target_gain_percent=(
+                            None
+                            if contract.exit_target is None
+                            else contract.exit_target.target_gain_percent
+                        ),
+                        stop_loss_option_price=(
+                            None
+                            if contract.exit_target is None
+                            else contract.exit_target.stop_loss_option_price
+                        ),
+                        exit_by_date=(
+                            None
+                            if contract.exit_target is None
+                            else contract.exit_target.exit_by_date
+                        ),
+                        expected_holding_days=(
+                            None
+                            if contract.exit_target is None
+                            else contract.exit_target.expected_holding_days
+                        ),
+                        target_method=(
+                            None
+                            if contract.exit_target is None
+                            else contract.exit_target.target_method
+                        ),
                         spread_percent=ZERO if spread is None else spread * Decimal("100"),
                         liquidity_score=contract.liquidity_score,
                         contract_opportunity_score=contract.score,
@@ -351,7 +394,7 @@ class PipelineOrchestrator:
             update_run=True,
         )
         if recommendation is None and run.finished_at is None:
-            run.finished_at = datetime.now(UTC)
+            run.finished_at = datetime.now(timezone.utc)
         return recommendation
 
     async def persist_recommendation(
@@ -368,7 +411,7 @@ class PipelineOrchestrator:
         if outcome.decision.action == "no_trade" or outcome.selected is None:
             if update_run:
                 run.status = "no_trade"
-                run.finished_at = datetime.now(UTC)
+                run.finished_at = datetime.now(timezone.utc)
                 run.final_recommendation_id = None
             return None
 
@@ -376,7 +419,7 @@ class PipelineOrchestrator:
         if chosen_contract is None:
             if update_run:
                 run.status = "no_trade"
-                run.finished_at = datetime.now(UTC)
+                run.finished_at = datetime.now(timezone.utc)
                 run.final_recommendation_id = None
             return None
 
@@ -407,6 +450,41 @@ class PipelineOrchestrator:
                 strike=chosen_contract.contract.strike,
                 expiry=chosen_contract.contract.expiry,
                 suggested_entry=option_premium(chosen_contract.contract),
+                target_stock_price=(
+                    None
+                    if chosen_contract.exit_target is None
+                    else chosen_contract.exit_target.target_stock_price
+                ),
+                target_option_price=(
+                    None
+                    if chosen_contract.exit_target is None
+                    else chosen_contract.exit_target.target_option_price
+                ),
+                target_gain_percent=(
+                    None
+                    if chosen_contract.exit_target is None
+                    else chosen_contract.exit_target.target_gain_percent
+                ),
+                stop_loss_option_price=(
+                    None
+                    if chosen_contract.exit_target is None
+                    else chosen_contract.exit_target.stop_loss_option_price
+                ),
+                exit_by_date=(
+                    None
+                    if chosen_contract.exit_target is None
+                    else chosen_contract.exit_target.exit_by_date
+                ),
+                expected_holding_days=(
+                    None
+                    if chosen_contract.exit_target is None
+                    else chosen_contract.exit_target.expected_holding_days
+                ),
+                target_method=(
+                    None
+                    if chosen_contract.exit_target is None
+                    else chosen_contract.exit_target.target_method
+                ),
                 suggested_quantity=quantity,
                 estimated_max_loss=sizing.max_loss_text,
                 account_risk_percent=sizing.account_risk_pct * Decimal("100"),
@@ -420,7 +498,7 @@ class PipelineOrchestrator:
         recommendation.earnings_date = outcome.selected.context.earnings_date
         if update_run:
             run.status = "success"
-            run.finished_at = datetime.now(UTC)
+            run.finished_at = datetime.now(timezone.utc)
             run.final_recommendation_id = recommendation.id
         return recommendation
 
@@ -541,7 +619,7 @@ def _fallback_news_bundle(record: CandidateRecord, *, error: str) -> NewsBundle:
     return NewsBundle(
         ticker=record.ticker,
         company_name=record.company_name,
-        generated_at=datetime.now(tz=UTC),
+        generated_at=datetime.now(tz=timezone.utc),
         search_results=(),
         articles=(),
         brief=NewsBrief(

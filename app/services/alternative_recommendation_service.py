@@ -29,6 +29,7 @@ from app.scoring.types import (
     ContractScoreResult,
     DataConfidenceResult,
     DirectionResult,
+    ExitTarget,
     HardVeto,
     OptionContractInput,
     StrategySelection,
@@ -353,6 +354,9 @@ def _contract_score(contract: OptionContract) -> ContractScoreResult:
         open_interest=contract.open_interest,
         implied_volatility=contract.implied_volatility,
         delta=contract.delta,
+        gamma=contract.gamma,
+        theta=contract.theta,
+        vega=contract.vega,
         source="stored_run",
     )
     vetoes = ()
@@ -376,6 +380,24 @@ def _contract_score(contract: OptionContract) -> ContractScoreResult:
         liquidity_score=contract.liquidity_score,
         expiry_days_after_earnings=None,
         reasons=(f"Stored contract score: {contract.contract_opportunity_score}/100.",),
+        exit_target=(
+            None
+            if contract.target_method is None
+            or contract.target_stock_price is None
+            or contract.target_option_price is None
+            or contract.stop_loss_option_price is None
+            or contract.exit_by_date is None
+            or contract.expected_holding_days is None
+            else ExitTarget(
+                target_stock_price=contract.target_stock_price,
+                target_option_price=contract.target_option_price,
+                target_gain_percent=contract.target_gain_percent,
+                stop_loss_option_price=contract.stop_loss_option_price,
+                exit_by_date=contract.exit_by_date,
+                expected_holding_days=contract.expected_holding_days,
+                target_method=contract.target_method,  # type: ignore[arg-type]
+            )
+        ),
     )
 
 

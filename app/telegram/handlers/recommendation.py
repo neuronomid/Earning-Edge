@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Any
 from uuid import UUID
 
 from aiogram import Router
@@ -14,7 +15,7 @@ from app.services.alternative_recommendation_service import AlternativeRecommend
 from app.services.user_service import UserService
 from app.telegram.deps import session_scope
 from app.telegram.handlers._common import send_text
-from app.telegram.keyboards.settings import RecCB, recommendation_keyboard
+from app.telegram.keyboards.settings import AltRecCB, RecCB, recommendation_keyboard
 from app.telegram.templates.main_recommendation import render_main_recommendation
 
 router = Router(name="recommendation")
@@ -56,25 +57,10 @@ async def recommendation_action(callback: CallbackQuery, callback_data: RecCB) -
             return
         if callback_data.action == "alts":
             await _answer_callback(callback, action=callback_data.action)
-            result = await AlternativeRecommendationService(session).build_next(
+            await _send_next_alternative(
+                callback=callback,
                 user=user,
                 current_recommendation=recommendation,
-            )
-            if result.recommendation is None:
-                await send_text(
-                    callback.message,
-                    result.message
-                    or "No additional qualified alternatives are available for this run.",
-                )
-                return
-            await send_text(
-                callback.message,
-                render_main_recommendation(
-                    result.recommendation,
-                    rank_position=result.rank_position or 2,
-                    watchlist_only=result.watchlist_only,
-                ),
-                reply_markup=recommendation_keyboard(str(result.recommendation.id)),
             )
             return
         if callback_data.action == "save_note":
@@ -92,7 +78,7 @@ async def recommendation_action(callback: CallbackQuery, callback_data: RecCB) -
             await _answer_callback(callback, action=callback_data.action, text="Saved")
             await send_text(
                 callback.message,
-                "✅ Feedback saved. I'll keep that attached to this recommendation.",
+                "Feedback saved. I'll keep that attached to this recommendation.",
             )
             return
 
@@ -117,59 +103,48 @@ async def recommendation_alternative(callback: CallbackQuery, callback_data: Alt
             return
 
         await callback.answer("Assessing the next setup...")
-        displayed_recommendation_id = _displayed_recommendation_id(callback) or str(cursor.id)
+        await _send_next_alternative(
+            callback=callback,
+            user=user,
+            current_recommendation=cursor,
+        )
 
-        service = AlternativeRecommendationService(session)
-        result = await service.get_next_alternative(cursor=cursor, user=user)
 
-        if result.status == "recommendation":
-            assert result.recommendation is not None
-            warning_text = _warning_text(result.run)
-            watchlist_only = result.recommendation.suggested_quantity == 0
-            next_cursor_id = str(result.recommendation.id)
+async def _send_next_alternative(
+    *,
+    callback: CallbackQuery,
+    user,
+    current_recommendation,
+) -> None:
+    assert callback.message is not None
+    async with session_scope() as session:
+        refreshed_user = await UserService(session).get_by_chat_id(str(callback.from_user.id))
+        if refreshed_user is None:
+            await send_text(callback.message, "Finish setup first.")
+            return
+        recommendation = await RecommendationRepository(session).get(current_recommendation.id)
+        if recommendation is None:
+            await send_text(callback.message, "That recommendation is unavailable.")
+            return
+        result = await AlternativeRecommendationService(session).build_next(
+            user=refreshed_user,
+            current_recommendation=recommendation,
+        )
+        if result.recommendation is None:
             await send_text(
                 callback.message,
-                render_main_recommendation(
-                    result.recommendation,
-                    warning_text=warning_text,
-                    watchlist_only=watchlist_only,
-                    setup_label="Next best setup",
-                ),
-                reply_markup=recommendation_keyboard(next_cursor_id),
-            )
-            await _edit_alternative_cursor(
-                callback,
-                displayed_recommendation_id=displayed_recommendation_id,
-                next_cursor_id=next_cursor_id,
+                result.message
+                or "No additional qualified alternatives are available for this run.",
             )
             return
-
-        if result.status == "no_trade":
-            assert result.outcome is not None
-            warning_text = _warning_text(result.run)
-            await send_text(
-                callback.message,
-                render_no_trade(
-                    reason=result.outcome.decision.reasoning,
-                    watchlist_tickers=result.outcome.decision.watchlist_tickers,
-                    warning_text=warning_text,
-                ),
-            )
-            await _edit_alternative_cursor(
-                callback,
-                displayed_recommendation_id=displayed_recommendation_id,
-                next_cursor_id=None,
-            )
-            return
-
         await send_text(
             callback.message,
-            "📈 No additional stored alternatives remain for this scan.",
-        )
-        await _edit_alternative_cursor(
-            callback,
-            displayed_recommendation_id=displayed_recommendation_id,
-            next_cursor_id=None,
+            render_main_recommendation(
+                result.recommendation,
+                rank_position=result.rank_position or 2,
+                watchlist_only=result.watchlist_only,
+            ),
+            reply_markup=recommendation_keyboard(str(result.recommendation.id)),
         )
 
 
@@ -178,22 +153,22 @@ def _render_why(recommendation) -> str:
     concerns = _normalize_string_list(recommendation.key_concerns_json)
 
     lines = [
-        f"🔍 <b>Why {recommendation.ticker}</b>",
+        f"<b>Why {recommendation.ticker}</b>",
         "",
         recommendation.reasoning_summary,
     ]
     if evidence:
         lines.extend(["", "<b>Key evidence</b>"])
-        lines.extend(f"• {item}" for item in evidence[:4])
+        lines.extend(f"- {item}" for item in evidence[:4])
     if concerns:
         lines.extend(["", "<b>Main concerns</b>"])
-        lines.extend(f"• {item}" for item in concerns[:3])
+        lines.extend(f"- {item}" for item in concerns[:3])
     return "\n".join(lines)
 
 
 def _render_risk(recommendation) -> str:
     lines = [
-        f"⚖️ <b>Risk / Sizing for {recommendation.ticker}</b>",
+        f"<b>Risk / Sizing for {recommendation.ticker}</b>",
         "",
         (
             "Contract: "
@@ -211,13 +186,13 @@ def _render_risk(recommendation) -> str:
 
 def _render_note(recommendation) -> str:
     return (
-        f"📘 <b>Saved Note for {recommendation.ticker}</b>\n\n"
+        f"<b>Saved Note for {recommendation.ticker}</b>\n\n"
         f"{recommendation.reasoning_summary}\n\n"
         f"Confidence: {recommendation.confidence_score}/100"
     )
 
 
-def _normalize_string_list(value) -> list[str]:
+def _normalize_string_list(value: Any) -> list[str]:
     if isinstance(value, list):
         return [str(item) for item in value]
     if isinstance(value, dict):

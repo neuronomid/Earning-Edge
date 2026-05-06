@@ -48,6 +48,13 @@ class Recommendation(Base):
     expiry: Mapped[date] = mapped_column(Date)
 
     suggested_entry: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)
+    target_stock_price: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)
+    target_option_price: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)
+    target_gain_percent: Mapped[Decimal | None] = mapped_column(Numeric(8, 4), nullable=True)
+    stop_loss_option_price: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)
+    exit_by_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    expected_holding_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    target_method: Mapped[str | None] = mapped_column(String(32), nullable=True)
     suggested_quantity: Mapped[int] = mapped_column(Integer)
     estimated_max_loss: Mapped[str] = mapped_column(Text)  # text, e.g. "Undefined for naked..."
     account_risk_percent: Mapped[Decimal] = mapped_column(Numeric(7, 4))

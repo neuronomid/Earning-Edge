@@ -627,6 +627,10 @@ Current template includes:
 - strike
 - expiry
 - suggested entry
+- target sell price
+- target stock price
+- stop-loss option price
+- exit-by date
 - suggested quantity or watchlist-only status
 - estimated max loss
 - account risk
@@ -958,6 +962,11 @@ Current calculations include:
 - midpoint
 - breakeven price
 - breakeven move percent
+- target stock price
+- target option exit price
+- stop-loss option price
+- planned holding days
+- exit-by date
 - spread percent
 - premium collected for short options
 - contract capacity from user sizing
@@ -987,6 +996,74 @@ When contextual move data is available, the contract score compares required
 breakeven move against expected or prior earnings move. When that data is
 missing, the scoring engine falls back to simpler heuristics instead of
 fabricating precision.
+
+### 20.5 Long-Option Exit Target Calculation
+
+The final V1 target method is defined in
+[`final-traget-option.md`](./final-traget-option.md).
+
+For long calls and long puts, the primary target method is Greek-based when the
+selected option contract has reliable:
+
+- `delta`
+- `gamma`
+- `theta`
+- `vega`
+- implied volatility
+- current bid / ask / mid
+- current stock price
+- strike
+- expiry
+- planned holding days
+- expected IV change
+
+The stock target should be derived from the expected move, direction conviction,
+support/resistance context, and the intended holding period.
+
+Generic Greek-based target formula:
+
+```text
+stock_move = target_stock_price - current_stock_price
+
+target_option_price =
+current_mid
++ delta * stock_move
++ 0.5 * gamma * stock_move^2
++ theta * planned_holding_days
++ vega * expected_iv_change
+```
+
+This generic formula uses signed option delta. For puts, `delta` is expected to
+be negative, so a lower stock target produces a positive delta contribution.
+
+### 20.6 Exit Target Fallbacks
+
+Missing Greeks should not automatically block a trade recommendation. The
+target service should use this deterministic fallback order:
+
+```text
+If delta, gamma, theta, vega, IV, and bid/ask/mid are present:
+    use the full Greek-based target formula
+Else if delta and bid/ask/mid are present:
+    use the delta-based target estimate
+Else:
+    use intrinsic value at the stock target plus conservative remaining time value
+```
+
+For earnings trades, IV crush should be modeled through
+`vega * expected_iv_change` when vega and an IV-change estimate are available.
+If they are unavailable, apply a conservative haircut to estimated profit or
+extrinsic value rather than pretending the post-earnings option value is
+precise.
+
+Every long-option recommendation should include:
+
+- `target_option_price`
+- `target_stock_price`
+- `stop_loss_option_price`
+- `exit_by_date`
+- `expected_holding_days`
+- `target_method` (`full_greeks`, `delta_fallback`, or `intrinsic_fallback`)
 
 ---
 
@@ -1118,7 +1195,12 @@ Current option-contract log fields include:
 - bid / ask / mid
 - volume / open interest
 - IV / delta
+- gamma / theta / vega when available
 - breakeven
+- target stock price
+- target option price
+- stop-loss option price
+- exit-by date
 - spread percent
 - liquidity score
 - contract score
@@ -1267,7 +1349,17 @@ Current fields:
 - `open_interest`
 - `implied_volatility`
 - `delta`
+- `gamma`
+- `theta`
+- `vega`
 - `breakeven`
+- `target_stock_price`
+- `target_option_price`
+- `target_gain_percent`
+- `stop_loss_option_price`
+- `exit_by_date`
+- `expected_holding_days`
+- `target_method`
 - `spread_percent`
 - `liquidity_score`
 - `contract_opportunity_score`
@@ -1291,6 +1383,13 @@ Current fields:
 - `strike`
 - `expiry`
 - `suggested_entry`
+- `target_stock_price`
+- `target_option_price`
+- `target_gain_percent`
+- `stop_loss_option_price`
+- `exit_by_date`
+- `expected_holding_days`
+- `target_method`
 - `suggested_quantity`
 - `estimated_max_loss`
 - `account_risk_percent`
@@ -1456,6 +1555,8 @@ Critical blocking fields:
 Missing Greeks should not automatically kill the trade. The current engine can
 fall back to:
 
+- delta-only target estimation when delta is available
+- intrinsic value plus conservative remaining time value when Greeks are missing
 - moneyness
 - premium
 - spread quality
@@ -1506,6 +1607,10 @@ A recommendation must include:
 - strike
 - expiry
 - suggested entry
+- target sell price
+- stock target
+- stop-loss option price
+- exit-by date
 - quantity or watchlist-only status
 - risk warning
 - confidence
@@ -1547,6 +1652,7 @@ Every completed run must store:
 - Redis cache for Finviz queries (600 s TTL)
 - market data retrieval
 - option chain retrieval
+- Greek-based exit target calculation with deterministic fallbacks
 - web/news gathering
 - Claude Opus 4.7 Thinking for heavy reasoning
 - Gemini 3.1 Flash for lighter tasks
@@ -1641,6 +1747,7 @@ Build:
 - Contract Opportunity Score
 - Final Opportunity Score
 - long/short strategy selection
+- ExitTargetService for target sell price, stop-loss price, and exit-by date
 - position sizing
 - no-trade logic
 
@@ -1734,12 +1841,13 @@ Current priorities:
 
 1. Finviz dual-strategy extraction (Strategy A + B, merge, dedupe)
 2. option-chain retrieval
-3. expiry logic around earnings date
-4. long vs short option selection
-5. scoring system
-6. data confidence scoring
-7. Telegram UX
-8. logging system
+3. Greek-based exit target calculation
+4. expiry logic around earnings date
+5. long vs short option selection
+6. scoring system
+7. data confidence scoring
+8. Telegram UX
+9. logging system
 
 Lower priorities:
 
@@ -1765,5 +1873,5 @@ V1 is done when:
 - the agent uses Claude Opus 4.7 Thinking for final analysis
 - the agent supports long calls, long puts, short puts, and short calls
 - the agent sends one recommendation or no-trade message
-- the recommendation includes contract details and reasoning
+- the recommendation includes contract details, target sell price, stop-loss price, exit-by date, and reasoning
 - the system stores a complete recommendation card and evidence log

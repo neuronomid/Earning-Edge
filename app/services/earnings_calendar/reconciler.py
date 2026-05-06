@@ -4,8 +4,11 @@ from collections import Counter
 from collections.abc import Iterable
 from datetime import date
 from decimal import Decimal
+from typing import TypeVar
 
 from app.services.candidate_models import CandidateRecord
+
+T = TypeVar("T")
 
 
 class CandidateValidationError(RuntimeError):
@@ -106,7 +109,7 @@ class CandidateReconciler:
         raise CandidateValidationError("earnings date cannot be verified")
 
 
-def _first_non_none[T](values: Iterable[T | None]) -> T | None:
+def _first_non_none(values: Iterable[T | None]) -> T | None:
     for value in values:
         if value is not None:
             return value
