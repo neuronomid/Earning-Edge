@@ -234,6 +234,7 @@ class AlternativeRecommendationService:
             if decision.final_score is not None
             else combine_scores(candidate.evaluation.direction.score, selected_contract.score)
         )
+        exit_target = selected_contract.exit_target
         recommendation = await self.recommendations.add(
             Recommendation(
                 user_id=user.id,
@@ -246,6 +247,23 @@ class AlternativeRecommendationService:
                 strike=selected_contract.contract.strike,
                 expiry=selected_contract.contract.expiry,
                 suggested_entry=option_premium(selected_contract.contract),
+                target_stock_price=(
+                    None if exit_target is None else exit_target.target_stock_price
+                ),
+                target_option_price=(
+                    None if exit_target is None else exit_target.target_option_price
+                ),
+                target_gain_percent=(
+                    None if exit_target is None else exit_target.target_gain_percent
+                ),
+                stop_loss_option_price=(
+                    None if exit_target is None else exit_target.stop_loss_option_price
+                ),
+                exit_by_date=None if exit_target is None else exit_target.exit_by_date,
+                expected_holding_days=(
+                    None if exit_target is None else exit_target.expected_holding_days
+                ),
+                target_method=None if exit_target is None else exit_target.target_method,
                 suggested_quantity=quantity,
                 estimated_max_loss=sizing.max_loss_text,
                 account_risk_percent=sizing.account_risk_pct * Decimal("100"),

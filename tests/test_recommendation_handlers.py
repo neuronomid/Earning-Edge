@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from datetime import date
 from decimal import Decimal
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 import pytest_asyncio
@@ -21,7 +22,7 @@ from app.db.repositories.recommendation_repo import RecommendationRepository
 from app.db.repositories.user_repo import UserRepository
 from app.services.alternative_recommendation_service import AlternativeRecommendationResult
 from app.telegram.handlers import recommendation as recommendation_handlers
-from app.telegram.keyboards.settings import AltRecCB, RecCB, recommendation_keyboard
+from app.telegram.keyboards.settings import RecCB, recommendation_keyboard
 from tests.telegram_testkit import SendRecorder, make_callback, make_message
 
 pytestmark = pytest.mark.asyncio
@@ -127,6 +128,13 @@ async def seeded_recommendation(db_session: AsyncSession) -> Recommendation:
             implied_volatility=Decimal("0.44"),
             delta=Decimal("0.52"),
             breakeven=Decimal("196.25"),
+            target_stock_price=Decimal("198.00"),
+            target_option_price=Decimal("2.10"),
+            target_gain_percent=Decimal("78.7200"),
+            stop_loss_option_price=Decimal("0.59"),
+            exit_by_date=date(2026, 5, 13),
+            expected_holding_days=5,
+            target_method="delta_fallback",
             spread_percent=Decimal("12.7600"),
             liquidity_score=82,
             contract_opportunity_score=74,
@@ -244,6 +252,10 @@ async def test_alternative_button_sends_next_full_recommendation(
 
     assert "<b>Weekly Earnings Options Signal</b>" in send_recorder.calls[-1].text
     assert "<b>2nd best setup:</b> 🥈 AAPL" in send_recorder.calls[-1].text
+    assert "<b>Target sell price:</b> $2.10" in send_recorder.calls[-1].text
+    assert "<b>Stock target:</b> $198.00" in send_recorder.calls[-1].text
+    assert "<b>Stop loss:</b> $0.59" in send_recorder.calls[-1].text
+    assert "<b>Exit by:</b> 2026-05-13" in send_recorder.calls[-1].text
     assert send_recorder.calls[-1].kwargs["reply_markup"] is not None
     assert callback.answer.await_count == 1
 
@@ -251,6 +263,10 @@ async def test_alternative_button_sends_next_full_recommendation(
         seeded_recommendation.run_id
     )
     assert [recommendation.ticker for recommendation in recommendations] == ["AMD", "AAPL"]
+    assert recommendations[-1].target_stock_price == Decimal("198.00")
+    assert recommendations[-1].target_option_price == Decimal("2.10")
+    assert recommendations[-1].stop_loss_option_price == Decimal("0.59")
+    assert recommendations[-1].exit_by_date == date(2026, 5, 13)
 
 
 async def test_alternative_button_answers_callback_before_building_result(

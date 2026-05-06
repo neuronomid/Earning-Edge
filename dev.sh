@@ -7,6 +7,62 @@ cd "$ROOT_DIR"
 BOT_PID_FILE="$ROOT_DIR/var/run/dev-bot.pid"
 VENV_PYTHON="$ROOT_DIR/.venv/bin/python"
 HEALTH_TIMEOUT_SECONDS=60
+DOCKER_TIMEOUT_SECONDS=120
+
+docker_is_available() {
+  docker info >/dev/null 2>&1
+}
+
+docker_desktop_app_path() {
+  if [ -d /Applications/Docker.app ]; then
+    printf '%s\n' /Applications/Docker.app
+    return 0
+  fi
+
+  if [ -d "$HOME/Applications/Docker.app" ]; then
+    printf '%s\n' "$HOME/Applications/Docker.app"
+    return 0
+  fi
+
+  return 1
+}
+
+wait_for_docker_daemon() {
+  local deadline=$((SECONDS + DOCKER_TIMEOUT_SECONDS))
+
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    if docker_is_available; then
+      return 0
+    fi
+    sleep 2
+  done
+
+  return 1
+}
+
+ensure_docker_available() {
+  local context="unknown"
+  local docker_app=""
+
+  if docker_is_available; then
+    return 0
+  fi
+
+  context="$(docker context show 2>/dev/null || printf '%s' unknown)"
+  if [ "$(uname -s)" = "Darwin" ] && docker_app="$(docker_desktop_app_path)"; then
+    echo "Docker daemon is not running. Launching Docker Desktop..."
+    open -g -a "$docker_app"
+    if wait_for_docker_daemon; then
+      return 0
+    fi
+    echo "Docker Desktop did not become ready within ${DOCKER_TIMEOUT_SECONDS}s." >&2
+  fi
+
+  echo "Docker is not available for context '${context}'." >&2
+  echo "Start Docker Desktop, Colima, OrbStack, or another Docker-compatible daemon, then rerun ./dev.sh." >&2
+  docker context ls >&2 || true
+  exit 1
+}
 
 wait_for_container_health() {
   local container_name="$1"
@@ -124,6 +180,8 @@ stop_existing_bot() {
 
 echo "Ensuring local Python environment is synced..."
 uv sync --frozen
+
+ensure_docker_available
 
 echo "Starting database and cache services..."
 docker compose up -d postgres redis
