@@ -37,6 +37,9 @@ from app.telegram.handlers import (
     onboarding as onboarding_handlers,
 )
 from app.telegram.handlers import (
+    position as position_handlers,
+)
+from app.telegram.handlers import (
     recommendation as recommendation_handlers,
 )
 from app.telegram.handlers import (
@@ -132,6 +135,7 @@ def build_dispatcher(storage: BaseStorage | None = None) -> Dispatcher:
     dp.include_router(onboarding_handlers.router)
     dp.include_router(settings_handlers.router)
     dp.include_router(schedule_handlers.router)
+    dp.include_router(position_handlers.router)
     dp.include_router(recommendation_handlers.router)
     dp.include_router(logs_handlers.router)
     dp.include_router(menu_handlers.router)

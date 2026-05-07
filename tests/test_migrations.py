@@ -17,6 +17,7 @@ EXPECTED_TABLES = {
     "workflow_runs",
     "candidates",
     "option_contracts",
+    "open_positions",
     "recommendations",
     "feedback_events",
 }

@@ -91,6 +91,44 @@ class AlpacaOptionsClient:
 
         raise AlpacaUnavailableError("unreachable")
 
+    async def fetch_premium(
+        self,
+        ticker: str,
+        *,
+        api_key: str,
+        api_secret: str,
+        strike: Decimal,
+        expiry: date,
+        option_type: str,
+        today: date | None = None,
+    ) -> Decimal | None:
+        days_to_expiry = max((expiry - (today or date.today())).days, 1)
+        contracts = await self.fetch_chain(
+            ticker,
+            api_key=api_key,
+            api_secret=api_secret,
+            expiry_window_days=days_to_expiry,
+            today=today,
+        )
+        expected_symbol = build_occ_symbol(
+            ticker,
+            expiry=expiry,
+            option_type=option_type,
+            strike=strike,
+        )
+        for contract in contracts:
+            if contract.symbol == expected_symbol:
+                return _premium_from_contract(contract)
+        for contract in contracts:
+            if _matches_contract(
+                contract,
+                option_type=option_type,
+                strike=strike,
+                expiry=expiry,
+            ):
+                return _premium_from_contract(contract)
+        return None
+
     async def _fetch_with_client(
         self,
         client: httpx.AsyncClient,
@@ -215,6 +253,37 @@ def _parse_occ_symbol(symbol: str) -> tuple[str, Decimal, date] | None:
         return option_type, strike, date(year, month, day)
     except (InvalidOperation, ValueError):
         return None
+
+
+def build_occ_symbol(
+    ticker: str,
+    *,
+    expiry: date,
+    option_type: str,
+    strike: Decimal,
+) -> str:
+    root = re.sub(r"[^A-Z0-9]", "", ticker.upper())
+    call_put = "C" if option_type.lower() == "call" else "P"
+    strike_text = str(int((Decimal(str(strike)) * Decimal("1000")).to_integral_value()))
+    return f"{root}{expiry:%y%m%d}{call_put}{strike_text.zfill(8)}"
+
+
+def _matches_contract(
+    contract: OptionContract,
+    *,
+    option_type: str,
+    strike: Decimal,
+    expiry: date,
+) -> bool:
+    return (
+        contract.option_type == option_type.lower()
+        and contract.expiry == expiry
+        and contract.strike == Decimal(str(strike))
+    )
+
+
+def _premium_from_contract(contract: OptionContract) -> Decimal | None:
+    return contract.mid or contract.last_trade_price or contract.ask or contract.bid
 
 
 def _coerce_mapping(value: Any) -> Mapping[str, Any]:

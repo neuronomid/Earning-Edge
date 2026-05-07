@@ -17,12 +17,13 @@ from app.db.models.recommendation import Recommendation
 from app.db.models.user import User
 from app.db.models.workflow_run import WorkflowRun
 from app.db.repositories.feedback_repo import FeedbackEventRepository
+from app.db.repositories.open_position_repo import OpenPositionRepository
 from app.db.repositories.recommendation_repo import RecommendationRepository
 from app.db.repositories.user_repo import UserRepository
 from app.services.alternative_recommendation_service import AlternativeRecommendationResult
 from app.telegram.handlers import recommendation as recommendation_handlers
 from app.telegram.keyboards.settings import AltRecCB, RecCB, recommendation_keyboard
-from tests.telegram_testkit import SendRecorder, make_callback, make_message
+from tests.telegram_testkit import SendRecorder, make_callback, make_message, make_state
 
 pytestmark = pytest.mark.asyncio
 
@@ -204,29 +205,67 @@ async def test_why_button_renders_reasoning_view(
     assert "Momentum held up into the week." in send_recorder.calls[-1].text
 
 
-async def test_bought_button_persists_feedback_event(
+async def test_bought_button_starts_fill_capture(
     db_session: AsyncSession,
     send_recorder: SendRecorder,
     patch_session_scope: None,
     seeded_recommendation: Recommendation,
 ) -> None:
     callback = make_callback(chat_id=12345, message=make_message(chat_id=12345))
+    state, _ = await make_state(chat_id=12345)
 
     await recommendation_handlers.recommendation_action(
         callback,
         RecCB(action="bought", rec_id=str(seeded_recommendation.id)),
+        state,
     )
 
     feedback = await FeedbackEventRepository(db_session).list_for_recommendation(
         seeded_recommendation.id
     )
 
+    assert feedback == []
+    assert send_recorder.calls[-1].text == "What was your fill price per contract?"
+    assert await state.get_state() == "BoughtPositionStates:entry_price"
+
+
+async def test_bought_fill_flow_creates_open_position_and_feedback(
+    db_session: AsyncSession,
+    send_recorder: SendRecorder,
+    patch_session_scope: None,
+    seeded_recommendation: Recommendation,
+) -> None:
+    state, _ = await make_state(chat_id=12345)
+    await state.set_state(recommendation_handlers.BoughtPositionStates.entry_price)
+    await state.update_data(
+        bought_recommendation_id=str(seeded_recommendation.id),
+        default_quantity=seeded_recommendation.suggested_quantity,
+    )
+
+    await recommendation_handlers.capture_entry_price(
+        make_message("1.35", chat_id=12345),
+        state,
+    )
+    await recommendation_handlers.capture_entry_quantity(
+        make_message("2", chat_id=12345),
+        state,
+    )
+
+    feedback = await FeedbackEventRepository(db_session).list_for_recommendation(
+        seeded_recommendation.id
+    )
+    position = await OpenPositionRepository(db_session).get_active_for_recommendation(
+        seeded_recommendation.id
+    )
+
     assert len(feedback) == 1
     assert feedback[0].user_action == "bought"
-    assert (
-        send_recorder.calls[-1].text
-        == "✅ Feedback saved. I'll keep that attached to this recommendation."
-    )
+    assert feedback[0].entry_price == Decimal("1.3500")
+    assert position is not None
+    assert position.entry_price == Decimal("1.3500")
+    assert position.entry_quantity == 2
+    assert send_recorder.calls[-1].text.startswith("Tracking this position.")
+    assert await state.get_state() is None
 
 
 async def test_alternative_button_sends_next_full_recommendation(

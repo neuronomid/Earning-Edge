@@ -1,20 +1,27 @@
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
 from typing import Any
 from uuid import UUID
 
-from aiogram import Router
+from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import CallbackQuery
+from aiogram.fsm.context import FSMContext
+from aiogram.types import CallbackQuery, Message
 
 from app.core.logging import get_logger
 from app.db.models.feedback_event import FeedbackEvent
+from app.db.models.open_position import OpenPosition
 from app.db.repositories.feedback_repo import FeedbackEventRepository
+from app.db.repositories.open_position_repo import OpenPositionRepository
 from app.db.repositories.recommendation_repo import RecommendationRepository
 from app.services.alternative_recommendation_service import AlternativeRecommendationService
 from app.services.user_service import UserService
 from app.telegram.deps import session_scope
+from app.telegram.fsm.onboarding_states import BoughtPositionStates
 from app.telegram.handlers._common import send_text
+from app.telegram.keyboards.confirm import CANCEL_BTN, cancel_keyboard
+from app.telegram.keyboards.main_menu import main_menu_keyboard
 from app.telegram.keyboards.settings import AltRecCB, RecCB, recommendation_keyboard
 from app.telegram.templates.main_recommendation import render_main_recommendation
 
@@ -23,7 +30,11 @@ logger = get_logger(__name__)
 
 
 @router.callback_query(RecCB.filter())
-async def recommendation_action(callback: CallbackQuery, callback_data: RecCB) -> None:
+async def recommendation_action(
+    callback: CallbackQuery,
+    callback_data: RecCB,
+    state: FSMContext | None = None,
+) -> None:
     if callback.message is None:
         await _answer_callback(callback, action=callback_data.action)
         return
@@ -67,12 +78,41 @@ async def recommendation_action(callback: CallbackQuery, callback_data: RecCB) -
             await _answer_callback(callback, action=callback_data.action)
             await send_text(callback.message, _render_note(recommendation))
             return
-        if callback_data.action in {"bought", "skipped"}:
+        if callback_data.action == "bought":
+            await _answer_callback(callback, action=callback_data.action)
+            if state is None:
+                await send_text(
+                    callback.message,
+                    "I could not start position tracking from this button. Try again in a moment.",
+                )
+                return
+            existing = await OpenPositionRepository(session).get_active_for_recommendation(
+                recommendation.id
+            )
+            if existing is not None:
+                await send_text(
+                    callback.message,
+                    "I am already tracking this position.",
+                )
+                return
+            await state.clear()
+            await state.update_data(
+                bought_recommendation_id=str(recommendation.id),
+                default_quantity=max(recommendation.suggested_quantity, 1),
+            )
+            await state.set_state(BoughtPositionStates.entry_price)
+            await send_text(
+                callback.message,
+                "What was your fill price per contract?",
+                reply_markup=cancel_keyboard(),
+            )
+            return
+        if callback_data.action == "skipped":
             await FeedbackEventRepository(session).add(
                 FeedbackEvent(
                     recommendation_id=recommendation.id,
                     user_id=user.id,
-                    user_action="bought" if callback_data.action == "bought" else "skipped",
+                    user_action="skipped",
                 )
             )
             await _answer_callback(callback, action=callback_data.action, text="Saved")
@@ -83,6 +123,104 @@ async def recommendation_action(callback: CallbackQuery, callback_data: RecCB) -
             return
 
     await _answer_callback(callback, action=callback_data.action)
+
+
+@router.message(BoughtPositionStates.entry_price, F.text == CANCEL_BTN)
+async def cancel_bought_position(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    await send_text(message, "Cancelled.", reply_markup=main_menu_keyboard())
+
+
+@router.message(BoughtPositionStates.entry_price)
+async def capture_entry_price(message: Message, state: FSMContext) -> None:
+    entry_price = _parse_positive_decimal(message.text)
+    if entry_price is None:
+        await send_text(message, "Send the fill price as a positive number, for example 1.25.")
+        return
+    await state.update_data(entry_price=str(entry_price))
+    data = await state.get_data()
+    default_quantity = int(data.get("default_quantity", 1))
+    await state.set_state(BoughtPositionStates.entry_quantity)
+    await send_text(
+        message,
+        f"How many contracts? Default: {default_quantity}.",
+        reply_markup=cancel_keyboard(),
+    )
+
+
+@router.message(BoughtPositionStates.entry_quantity, F.text == CANCEL_BTN)
+async def cancel_bought_quantity(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    await send_text(message, "Cancelled.", reply_markup=main_menu_keyboard())
+
+
+@router.message(BoughtPositionStates.entry_quantity)
+async def capture_entry_quantity(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    default_quantity = int(data.get("default_quantity", 1))
+    entry_quantity = _parse_quantity(message.text, default_quantity=default_quantity)
+    if entry_quantity is None:
+        await send_text(message, "Send the contract count as a whole number, or send default.")
+        return
+
+    recommendation_id = str(data.get("bought_recommendation_id", ""))
+    entry_price = _parse_positive_decimal(str(data.get("entry_price", "")))
+    if not recommendation_id or entry_price is None:
+        await state.clear()
+        await send_text(
+            message,
+            "I lost track of that recommendation. Please open Last Recommendation and try again.",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+
+    async with session_scope() as session:
+        user = await UserService(session).get_by_chat_id(str(message.chat.id))
+        if user is None:
+            await state.clear()
+            await send_text(
+                message,
+                "Send /start to finish setup first.",
+                reply_markup=main_menu_keyboard(),
+            )
+            return
+        recommendation = await RecommendationRepository(session).get(UUID(recommendation_id))
+        if recommendation is None or recommendation.user_id != user.id:
+            await state.clear()
+            await send_text(
+                message,
+                "That recommendation is unavailable.",
+                reply_markup=main_menu_keyboard(),
+            )
+            return
+
+        position_repo = OpenPositionRepository(session)
+        existing = await position_repo.get_active_for_recommendation(recommendation.id)
+        if existing is None:
+            await FeedbackEventRepository(session).add(
+                FeedbackEvent(
+                    recommendation_id=recommendation.id,
+                    user_id=user.id,
+                    user_action="bought",
+                    entry_price=entry_price,
+                )
+            )
+            await position_repo.add(
+                OpenPosition(
+                    recommendation_id=recommendation.id,
+                    user_id=user.id,
+                    entry_price=entry_price,
+                    entry_quantity=entry_quantity,
+                    status="active",
+                )
+            )
+
+    await state.clear()
+    await send_text(
+        message,
+        "Tracking this position. I will alert you on target, stop, exit date, and expiry.",
+        reply_markup=main_menu_keyboard(),
+    )
 
 
 @router.callback_query(AltRecCB.filter())
@@ -200,6 +338,27 @@ def _normalize_string_list(value: Any) -> list[str]:
         if isinstance(items, list):
             return [str(item) for item in items]
     return []
+
+
+def _parse_positive_decimal(value: str | None) -> Decimal | None:
+    if value is None:
+        return None
+    try:
+        parsed = Decimal(value.strip())
+    except (InvalidOperation, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+def _parse_quantity(value: str | None, *, default_quantity: int) -> int | None:
+    text = "" if value is None else value.strip().lower()
+    if text == "default":
+        return default_quantity
+    try:
+        parsed = int(text)
+    except ValueError:
+        return None
+    return parsed if parsed > 0 else None
 
 
 async def _answer_callback(

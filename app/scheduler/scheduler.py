@@ -19,6 +19,7 @@ from app.db.models.cron_job import CronJob
 from app.db.repositories.cron_repo import CronJobRepository
 from app.db.session import get_sessionmaker
 from app.scheduler.jobs import run_workflow
+from app.services.positions.monitor import poll_open_positions
 
 DAY_OPTIONS: tuple[tuple[str, str], ...] = (
     ("Monday", "monday"),
@@ -90,6 +91,7 @@ class SchedulerService:
     async def start(self) -> None:
         if not self.scheduler.running:
             self.scheduler.start()
+        self.sync_position_monitor_job()
         await self.sync_from_database()
 
     async def shutdown(self) -> None:
@@ -124,6 +126,22 @@ class SchedulerService:
                 max_instances=1,
                 misfire_grace_time=300,
             )
+
+    def sync_position_monitor_job(self) -> None:
+        self.scheduler.add_job(
+            poll_open_positions,
+            trigger=CronTrigger(
+                day_of_week="mon-fri",
+                hour="9-15",
+                minute="*/15",
+                timezone=ZoneInfo("America/New_York"),
+            ),
+            id="poll_open_positions",
+            replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+            misfire_grace_time=300,
+        )
 
     def get_job(self, cron: CronJob) -> Job | None:
         return self.scheduler.get_job(cron_job_id(cron))

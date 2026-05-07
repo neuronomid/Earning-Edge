@@ -38,6 +38,30 @@ class YFinanceOptionsClient:
 
         raise RuntimeError("unreachable")
 
+    async def fetch_premium(
+        self,
+        ticker: str,
+        *,
+        strike: Decimal,
+        expiry: date,
+        option_type: str,
+        today: date | None = None,
+    ) -> Decimal | None:
+        days_to_expiry = max((expiry - (today or date.today())).days, 1)
+        contracts = await self.fetch_chain(
+            ticker,
+            expiry_window_days=days_to_expiry,
+            today=today,
+        )
+        for contract in contracts:
+            if (
+                contract.option_type == option_type.lower()
+                and contract.expiry == expiry
+                and contract.strike == Decimal(str(strike))
+            ):
+                return contract.mid or contract.last_trade_price or contract.ask or contract.bid
+        return None
+
     def _fetch_chain_sync(
         self,
         ticker: str,
