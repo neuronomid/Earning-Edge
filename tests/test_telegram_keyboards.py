@@ -5,7 +5,9 @@ from __future__ import annotations
 from app.telegram.keyboards.main_menu import ALL_MAIN_MENU_BUTTONS, main_menu_keyboard
 from app.telegram.keyboards.settings import (
     AltRecCB,
+    PosCB,
     api_keys_keyboard,
+    position_alert_keyboard,
     recommendation_keyboard,
     settings_keyboard,
 )
@@ -86,3 +88,15 @@ def test_recommendation_keyboard_uses_dedicated_alternative_cursor() -> None:
 
     assert alt_button.text == "📈 Alternatives"
     assert parsed.cursor_rec_id == "rec-456"
+
+
+def test_position_alert_keyboard_includes_close_actions() -> None:
+    markup = position_alert_keyboard("pos-123")
+    labels = _flatten_inline_labels(markup)
+    parsed_sold = PosCB.unpack(markup.inline_keyboard[0][0].callback_data)
+    parsed_holding = PosCB.unpack(markup.inline_keyboard[0][1].callback_data)
+
+    assert labels == ["Sold", "Still holding"]
+    assert parsed_sold.action == "sold"
+    assert parsed_sold.position_id == "pos-123"
+    assert parsed_holding.action == "holding"

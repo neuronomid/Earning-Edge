@@ -36,3 +36,12 @@ class SettingsEdit(StatesGroup):
 class ScheduleEdit(StatesGroup):
     day_of_week = State()
     local_time = State()
+
+
+class BoughtPositionStates(StatesGroup):
+    entry_price = State()
+    entry_quantity = State()
+
+
+class ClosePositionStates(StatesGroup):
+    close_price = State()

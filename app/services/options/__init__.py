@@ -2,6 +2,7 @@ from app.services.options.alpaca_client import (
     AlpacaAuthenticationError,
     AlpacaOptionsClient,
     AlpacaUnavailableError,
+    build_occ_symbol,
 )
 from app.services.options.service import (
     OptionsService,
@@ -20,5 +21,6 @@ __all__ = [
     "OptionsService",
     "OptionsUnavailableError",
     "YFinanceOptionsClient",
+    "build_occ_symbol",
     "get_options_service",
 ]
