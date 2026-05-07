@@ -27,6 +27,20 @@ class OpenPositionRepository(BaseRepository[OpenPosition]):
         )
         return list(result.scalars().all())
 
+    async def get_active_for_user(
+        self,
+        user_id: UUID,
+        position_id: UUID,
+    ) -> OpenPosition | None:
+        result = await self.session.execute(
+            select(OpenPosition).where(
+                OpenPosition.id == position_id,
+                OpenPosition.user_id == user_id,
+                OpenPosition.status == "active",
+            )
+        )
+        return result.scalar_one_or_none()
+
     async def get_for_user(self, user_id: UUID, position_id: UUID) -> OpenPosition | None:
         result = await self.session.execute(
             select(OpenPosition).where(

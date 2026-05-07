@@ -22,6 +22,7 @@ from app.telegram.keyboards.main_menu import main_menu_keyboard
 from app.telegram.keyboards.settings import PosCB
 
 router = Router(name="position")
+POSITION_INACTIVE_TEXT = "That position is no longer active."
 
 
 @router.callback_query(PosCB.filter())
@@ -39,12 +40,12 @@ async def position_action(
         if user is None:
             await callback.answer("Finish setup first.")
             return
-        position = await OpenPositionRepository(session).get_for_user(
+        position = await OpenPositionRepository(session).get_active_for_user(
             user.id,
             UUID(callback_data.position_id),
         )
         if position is None:
-            await callback.answer("That position is unavailable.")
+            await callback.answer(POSITION_INACTIVE_TEXT)
             return
 
     if callback_data.action == "holding":
@@ -103,12 +104,12 @@ async def capture_close_price(message: Message, state: FSMContext) -> None:
             return
 
         position_repo = OpenPositionRepository(session)
-        position = await position_repo.get_for_user(user.id, UUID(position_id))
+        position = await position_repo.get_active_for_user(user.id, UUID(position_id))
         if position is None:
             await state.clear()
             await send_text(
                 message,
-                "That position is unavailable.",
+                POSITION_INACTIVE_TEXT,
                 reply_markup=main_menu_keyboard(),
             )
             return
