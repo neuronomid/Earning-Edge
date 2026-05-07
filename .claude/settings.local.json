@@ -23,7 +23,14 @@
       "Bash(./dev.sh)",
       "Bash(docker exec *)",
       "Bash(pkill -f 'dev.sh')",
-      "Bash(pkill -f 'app.telegram.bot')"
+      "Bash(pkill -f 'app.telegram.bot')",
+      "Bash(uv run *)",
+      "Bash(git stash *)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('app/telegram/handlers/position.py'\\).read\\(\\)\\); ast.parse\\(open\\('app/telegram/keyboards/settings.py'\\).read\\(\\)\\); ast.parse\\(open\\('app/db/repositories/feedback_repo.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(rm /Users/omid/Documents/Projects/Earning-Edge/app/telegram/handlers/logs.py /Users/omid/Documents/Projects/Earning-Edge/tests/test_logs_handler.py)"
+    ],
+    "additionalDirectories": [
+      "/Users/omid/Documents/Projects/Earning-Edge/app/telegram/handlers"
     ]
   }
 }

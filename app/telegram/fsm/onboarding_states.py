@@ -45,3 +45,13 @@ class BoughtPositionStates(StatesGroup):
 
 class ClosePositionStates(StatesGroup):
     close_price = State()
+
+
+class HistoryModifyStates(StatesGroup):
+    """States used when a user fixes a typo on a closed history row."""
+
+    entry_price = State()
+    exit_price = State()
+    quantity = State()
+    entry_date = State()
+    exit_date = State()

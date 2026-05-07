@@ -12,6 +12,7 @@ from app.db.models.feedback_event import FeedbackEvent
 from app.db.repositories.feedback_repo import FeedbackEventRepository
 from app.db.repositories.open_position_repo import OpenPositionRepository
 from app.db.repositories.recommendation_repo import RecommendationRepository
+from app.services.positions.account import apply_pnl_to_account
 from app.services.positions.monitor import position_pnl
 from app.services.user_service import UserService
 from app.telegram.deps import session_scope
@@ -40,12 +41,27 @@ async def position_action(
         if user is None:
             await callback.answer("Finish setup first.")
             return
-        position = await OpenPositionRepository(session).get_active_for_user(
+        position_repo = OpenPositionRepository(session)
+        position = await position_repo.get_active_for_user(
             user.id,
             UUID(callback_data.position_id),
         )
         if position is None:
             await callback.answer(POSITION_INACTIVE_TEXT)
+            return
+
+        if callback_data.action == "delete":
+            recommendation_id = position.recommendation_id
+            await FeedbackEventRepository(session).delete_for_recommendation_user(
+                recommendation_id,
+                user.id,
+            )
+            await position_repo.delete(position)
+            await callback.answer("Deleted")
+            await send_text(
+                callback.message,
+                "Position deleted. It will not count toward P/L or account size.",
+            )
             return
 
     if callback_data.action == "holding":
@@ -132,6 +148,7 @@ async def capture_close_price(message: Message, state: FSMContext) -> None:
         position.status = "closed_sold"
         position.close_price = close_price
         position.close_at = datetime.now(UTC)
+        apply_pnl_to_account(user, position, recommendation)
         await FeedbackEventRepository(session).add(
             FeedbackEvent(
                 recommendation_id=position.recommendation_id,

@@ -172,7 +172,7 @@ async def test_capture_close_price_closes_active_position_and_logs_feedback(
     send_recorder: SendRecorder,
     patch_session_scope: None,
 ) -> None:
-    user = SimpleNamespace(id=uuid4())
+    user = SimpleNamespace(id=uuid4(), account_size=Decimal("10000"))
     recommendation = SimpleNamespace(id=uuid4(), position_side="long")
     position = SimpleNamespace(
         id=uuid4(),
@@ -183,6 +183,7 @@ async def test_capture_close_price_closes_active_position_and_logs_feedback(
         status="active",
         close_price=None,
         close_at=None,
+        pnl_applied=False,
     )
     feedback_events: list[object] = []
     _patch_handler_deps(

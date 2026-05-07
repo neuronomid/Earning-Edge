@@ -118,7 +118,7 @@ class AltRecCB(CallbackData, prefix="alt"):
 
 
 class PosCB(CallbackData, prefix="pos"):
-    action: str  # sold, holding
+    action: str  # sold, holding, delete
     position_id: str
 
 
@@ -183,6 +183,23 @@ def position_alert_keyboard(position_id: str) -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     text="Still holding",
                     callback_data=PosCB(action="holding", position_id=position_id).pack(),
+                ),
+            ]
+        ]
+    )
+
+
+def position_list_keyboard(position_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🔒 Close",
+                    callback_data=PosCB(action="sold", position_id=position_id).pack(),
+                ),
+                InlineKeyboardButton(
+                    text="🗑 Delete",
+                    callback_data=PosCB(action="delete", position_id=position_id).pack(),
                 ),
             ]
         ]

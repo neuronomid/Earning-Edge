@@ -28,7 +28,7 @@ from app.telegram.handlers import (
     help as help_handlers,
 )
 from app.telegram.handlers import (
-    logs as logs_handlers,
+    history as history_handlers,
 )
 from app.telegram.handlers import (
     menu as menu_handlers,
@@ -137,7 +137,7 @@ def build_dispatcher(storage: BaseStorage | None = None) -> Dispatcher:
     dp.include_router(schedule_handlers.router)
     dp.include_router(position_handlers.router)
     dp.include_router(recommendation_handlers.router)
-    dp.include_router(logs_handlers.router)
+    dp.include_router(history_handlers.router)
     dp.include_router(menu_handlers.router)
     dp.include_router(help_handlers.router)
     return dp

@@ -75,6 +75,9 @@ class PositionMonitor:
         if today > recommendation.expiry:
             position.status = "closed_expired"
             position.close_at = datetime.now(UTC)
+            from app.services.positions.account import apply_pnl_to_account
+
+            apply_pnl_to_account(user, position, recommendation)
             await session.flush()
             return
 

@@ -6,21 +6,27 @@ still remain placeholders until their phases land.
 
 from __future__ import annotations
 
+from datetime import date
+
 from aiogram import F, Router
 from aiogram.types import Message
 
+from app.db.repositories.open_position_repo import OpenPositionRepository
 from app.db.repositories.recommendation_repo import RecommendationRepository
 from app.scheduler.jobs import RUN_ALREADY_ACTIVE_TEXT, get_workflow_runner
+from app.services.positions.quotes import fetch_bid_ask
 from app.services.user_service import UserService
 from app.telegram.deps import session_scope, user_service_scope
 from app.telegram.handlers._common import send_text
 from app.telegram.keyboards.main_menu import (
     BTN_LAST_RECOMMENDATION,
+    BTN_POSITIONS,
     BTN_RUN_SCAN,
     main_menu_keyboard,
 )
-from app.telegram.keyboards.settings import recommendation_keyboard
+from app.telegram.keyboards.settings import position_list_keyboard, recommendation_keyboard
 from app.telegram.templates.main_recommendation import render_main_recommendation
+from app.telegram.templates.positions import render_position_card
 
 router = Router(name="menu")
 
@@ -112,6 +118,42 @@ async def last_recommendation(message: Message) -> None:
         ),
         reply_markup=recommendation_keyboard(str(recommendation.id)),
     )
+
+@router.message(F.text == BTN_POSITIONS)
+async def show_positions(message: Message) -> None:
+    chat_id = str(message.chat.id)
+    today = date.today()
+    async with session_scope() as session:
+        user = await UserService(session).get_by_chat_id(chat_id)
+        if user is None:
+            await send_text(
+                message,
+                "Looks like you haven't finished setup. Send /start to begin.",
+                reply_markup=main_menu_keyboard(),
+            )
+            return
+
+        repo = OpenPositionRepository(session)
+        await repo.expire_past_due_for_user(user.id, today)
+        rows = await repo.list_active_with_recommendations_for_user(user.id)
+        await session.commit()
+
+    if not rows:
+        await send_text(
+            message,
+            "📂 No active positions.",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+
+    for position, recommendation in rows:
+        quote = await fetch_bid_ask(user=user, recommendation=recommendation, today=today)
+        await send_text(
+            message,
+            render_position_card(position, recommendation, quote),
+            reply_markup=position_list_keyboard(str(position.id)),
+        )
+
 
 # BTN_MANAGE_SCHEDULE is handled by app/telegram/handlers/schedule.py.
 # BTN_API_KEYS and BTN_SETTINGS are handled by app/telegram/handlers/settings.py.

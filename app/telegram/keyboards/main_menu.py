@@ -10,19 +10,21 @@ from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
 # Button labels are constants because handlers route on exact text equality.
 BTN_RUN_SCAN = "🚀 Run Scan Now"
 BTN_LAST_RECOMMENDATION = "📊 Last Recommendation"
+BTN_POSITIONS = "📂 Positions"
+BTN_HISTORY = "📜 History"
 BTN_MANAGE_SCHEDULE = "🗓 Manage Schedule"
 BTN_SETTINGS = "⚙️ Settings"
 BTN_API_KEYS = "🔑 API Keys"
-BTN_LOGS = "📘 Logs"
 BTN_HELP = "❓ Help"
 
 ALL_MAIN_MENU_BUTTONS: tuple[str, ...] = (
     BTN_RUN_SCAN,
     BTN_LAST_RECOMMENDATION,
+    BTN_POSITIONS,
+    BTN_HISTORY,
     BTN_MANAGE_SCHEDULE,
     BTN_SETTINGS,
     BTN_API_KEYS,
-    BTN_LOGS,
     BTN_HELP,
 )
 
@@ -31,9 +33,9 @@ def main_menu_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text=BTN_RUN_SCAN), KeyboardButton(text=BTN_LAST_RECOMMENDATION)],
-            [KeyboardButton(text=BTN_MANAGE_SCHEDULE), KeyboardButton(text=BTN_LOGS)],
-            [KeyboardButton(text=BTN_SETTINGS), KeyboardButton(text=BTN_API_KEYS)],
-            [KeyboardButton(text=BTN_HELP)],
+            [KeyboardButton(text=BTN_POSITIONS), KeyboardButton(text=BTN_HISTORY)],
+            [KeyboardButton(text=BTN_MANAGE_SCHEDULE), KeyboardButton(text=BTN_SETTINGS)],
+            [KeyboardButton(text=BTN_API_KEYS), KeyboardButton(text=BTN_HELP)],
         ],
         resize_keyboard=True,
         is_persistent=True,
