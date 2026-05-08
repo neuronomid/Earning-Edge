@@ -44,9 +44,9 @@ class OptionsService:
     ) -> tuple[OptionContractInput, ...]:
         as_of_date = today or date.today()
         use_alpaca = bool(alpaca_api_key and alpaca_api_secret)
-        cache_source = "alpaca" if use_alpaca else "yfinance"
-        cache_key = (ticker.upper(), as_of_date, cache_source)
-        chain = self._cache.get(cache_key)
+        chain: OptionsChain | None = None
+        if not use_alpaca:
+            chain = self._cache.get((ticker.upper(), as_of_date, "yfinance"))
         if chain is None:
             chain = await self._fetch_chain(
                 ticker=ticker,
@@ -57,7 +57,8 @@ class OptionsService:
                 today=as_of_date,
             )
             resolved_source = "alpaca" if "alpaca" in chain.sources else "yfinance"
-            self._cache[(ticker.upper(), as_of_date, resolved_source)] = chain
+            if resolved_source == "yfinance":
+                self._cache[(ticker.upper(), as_of_date, "yfinance")] = chain
 
         expanded = _expand_contracts(
             _normalize_ticker(chain.contracts, ticker),

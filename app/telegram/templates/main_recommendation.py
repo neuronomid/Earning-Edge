@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
-from typing import Any, Protocol
+from typing import Protocol
 
 from app.telegram.templates.short_option import contract_label, max_loss_display
 
@@ -25,7 +25,6 @@ class RecommendationLike(Protocol):
     confidence_score: int
     risk_level: str
     reasoning_summary: str
-    key_concerns_json: Any
 
 
 def render_main_recommendation(
@@ -44,49 +43,49 @@ def render_main_recommendation(
         f"<b>{_setup_label(rank_position)}:</b> "
         f"{_rank_medal(rank_position)} {recommendation.ticker}"
     )
+    quantity_text = (
+        "Watchlist only"
+        if watchlist_only
+        else f"{recommendation.suggested_quantity} contract(s)"
+    )
     lines.extend(
         [
             "<b>Weekly Earnings Options Signal</b>",
             "",
             setup_text,
-            f"<b>Direction:</b> {_direction_label(recommendation)}",
-            f"<b>Contract:</b> {contract_label(recommendation)}",
-            f"<b>Strike:</b> ${_money(recommendation.strike)}",
-            f"<b>Expiry:</b> {recommendation.expiry.isoformat()}",
-            f"<b>Suggested entry:</b> {_entry_text(recommendation.suggested_entry)}",
+            "",
+            f"{_direction_emoji(recommendation)} <b>Direction:</b> {_direction_label(recommendation)}",
+            f"📃 <b>Contract:</b> {contract_label(recommendation)}",
+            f"🏷️ <b>Strike:</b> ${_money(recommendation.strike)}",
+            f"💵 <b>Suggested entry:</b> {_entry_text(recommendation.suggested_entry)}",
+            f"📎 <b>Suggested quantity:</b> {quantity_text}",
+            f"🗓️ <b>Expiry:</b> {recommendation.expiry.isoformat()}",
+            "",
+            "",
         ]
     )
     if getattr(recommendation, "target_option_price", None) is not None:
         lines.append(
-            f"<b>Target sell price:</b> ${_money(recommendation.target_option_price)}"
+            f"🟢 <b>Target sell price:</b> ${_money(recommendation.target_option_price)}"
         )
-    if getattr(recommendation, "target_stock_price", None) is not None:
-        lines.append(f"<b>Stock target:</b> ${_money(recommendation.target_stock_price)}")
     if getattr(recommendation, "stop_loss_option_price", None) is not None:
         lines.append(
-            f"<b>Stop loss:</b> ${_money(recommendation.stop_loss_option_price)}"
+            f"🛑 <b>Stop loss:</b> ${_money(recommendation.stop_loss_option_price)}"
         )
+    if getattr(recommendation, "target_stock_price", None) is not None:
+        lines.append(f"🎯 <b>Stock target:</b> ${_money(recommendation.target_stock_price)}")
     if getattr(recommendation, "exit_by_date", None) is not None:
-        lines.append(f"<b>Exit by:</b> {recommendation.exit_by_date.isoformat()}")
-    if watchlist_only:
-        lines.append("<b>Suggested quantity:</b> Watchlist only")
-    else:
-        lines.append(f"<b>Suggested quantity:</b> {recommendation.suggested_quantity} contract(s)")
+        lines.append(f"🗓️ <b>Exit by:</b> {recommendation.exit_by_date.isoformat()}")
     lines.extend(
         [
-            f"<b>Estimated max loss:</b> {max_loss_display(recommendation)}",
+            "",
+            f"<b>Estimated max loss:</b> {_max_loss_text(recommendation)}",
             f"<b>Account risk:</b> {_percent(recommendation.account_risk_percent)}",
             f"<b>Earnings date:</b> {_earnings_date(recommendation).isoformat()}",
             f"<b>Confidence:</b> {recommendation.confidence_score}/100",
             f"<b>Risk level:</b> {recommendation.risk_level}",
             "",
-            "<b>Why this setup:</b>",
-            recommendation.reasoning_summary,
-            "",
-            "<b>Important warning:</b>",
-            _warning_text(recommendation),
-            "",
-            "<b>Action:</b>",
+            f"{_action_emoji(watchlist_only)} <b>Action:</b>",
             _action_text(watchlist_only),
         ]
     )
@@ -117,27 +116,14 @@ def _direction_label(recommendation: RecommendationLike) -> str:
     return "Bearish"
 
 
+def _direction_emoji(recommendation: RecommendationLike) -> str:
+    return "📈" if recommendation.option_type == "call" else "📉"
+
+
 def _entry_text(value: Decimal | None) -> str:
     if value is None:
         return "Review live pricing in your broker"
     return f"up to ${_money(value)} premium"
-
-
-def _warning_text(recommendation: RecommendationLike) -> str:
-    concerns = _normalize_string_list(recommendation.key_concerns_json)
-    if recommendation.position_side == "short":
-        base = (
-            "Short options can be assignment- and margin-sensitive around earnings, "
-            "so confirm the broker treatment before placing anything."
-        )
-    else:
-        base = (
-            "This trade holds through earnings. IV crush can reduce the option value after "
-            "the report even if the stock moves in the expected direction."
-        )
-    if not concerns:
-        return base
-    return f"{base} Main concern: {concerns[0]}"
 
 
 def _action_text(watchlist_only: bool) -> str:
@@ -146,14 +132,13 @@ def _action_text(watchlist_only: bool) -> str:
     return "Manually review the contract in your broker before buying."
 
 
-def _normalize_string_list(value: Any) -> list[str]:
-    if isinstance(value, list):
-        return [str(item) for item in value]
-    if isinstance(value, dict):
-        items = value.get("items")
-        if isinstance(items, list):
-            return [str(item) for item in items]
-    return []
+def _action_emoji(watchlist_only: bool) -> str:
+    return "⚠️" if watchlist_only else "✅"
+
+
+def _max_loss_text(recommendation: RecommendationLike) -> str:
+    raw = max_loss_display(recommendation)
+    return raw.replace(" max loss ", " ")
 
 
 def _earnings_date(recommendation: RecommendationLike) -> date:

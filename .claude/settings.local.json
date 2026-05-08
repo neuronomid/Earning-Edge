@@ -27,7 +27,12 @@
       "Bash(uv run *)",
       "Bash(git stash *)",
       "Bash(python -c \"import ast; ast.parse\\(open\\('app/telegram/handlers/position.py'\\).read\\(\\)\\); ast.parse\\(open\\('app/telegram/keyboards/settings.py'\\).read\\(\\)\\); ast.parse\\(open\\('app/db/repositories/feedback_repo.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
-      "Bash(rm /Users/omid/Documents/Projects/Earning-Edge/app/telegram/handlers/logs.py /Users/omid/Documents/Projects/Earning-Edge/tests/test_logs_handler.py)"
+      "Bash(rm /Users/omid/Documents/Projects/Earning-Edge/app/telegram/handlers/logs.py /Users/omid/Documents/Projects/Earning-Edge/tests/test_logs_handler.py)",
+      "Bash(python -m pytest tests/test_options_service.py -x -q)",
+      "Bash(python -m pytest tests/test_recommendation_pipeline.py -x -q)",
+      "Bash(python -m pytest tests/test_recommendation_pipeline.py -x -q -k \"template\")",
+      "Bash(ls ~/.claude/commands/ 2>/dev/null || echo \"directory does not exist\")",
+      "Read(//Users/omid/.claude/commands/**)"
     ],
     "additionalDirectories": [
       "/Users/omid/Documents/Projects/Earning-Edge/app/telegram/handlers"

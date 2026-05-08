@@ -945,28 +945,28 @@ def test_main_recommendation_template_matches_prd_structure() -> None:
     ordered_labels = [
         "<b>Weekly Earnings Options Signal</b>",
         "<b>Best setup:</b> 🥇 AMD",
-        "<b>Direction:</b> Bullish",
-        "<b>Contract:</b> AMD Call",
-        "<b>Strike:</b> $104.00",
-        "<b>Expiry:</b> 2026-05-16",
-        "<b>Suggested entry:</b> up to $1.25 premium",
-        "<b>Target sell price:</b> $4.20",
-        "<b>Stock target:</b> $108.00",
-        "<b>Stop loss:</b> $0.63",
-        "<b>Exit by:</b> 2026-05-08",
-        "<b>Suggested quantity:</b> 2 contract(s)",
-        "<b>Estimated max loss:</b> $125.00 max loss per contract",
+        "📈 <b>Direction:</b> Bullish",
+        "📃 <b>Contract:</b> AMD Call",
+        "🏷️ <b>Strike:</b> $104.00",
+        "💵 <b>Suggested entry:</b> up to $1.25 premium",
+        "📎 <b>Suggested quantity:</b> 2 contract(s)",
+        "🗓️ <b>Expiry:</b> 2026-05-16",
+        "🟢 <b>Target sell price:</b> $4.20",
+        "🛑 <b>Stop loss:</b> $0.63",
+        "🎯 <b>Stock target:</b> $108.00",
+        "🗓️ <b>Exit by:</b> 2026-05-08",
+        "<b>Estimated max loss:</b> $125.00 per contract",
         "<b>Account risk:</b> 2.00%",
         "<b>Earnings date:</b> 2026-05-08",
         "<b>Confidence:</b> 82/100",
         "<b>Risk level:</b> High",
-        "<b>Why this setup:</b>",
-        "<b>Important warning:</b>",
-        "<b>Action:</b>",
+        "✅ <b>Action:</b>",
     ]
 
     indexes = [text.index(label) for label in ordered_labels]
     assert indexes == sorted(indexes)
+    assert "<b>Why this setup:</b>" not in text
+    assert "<b>Important warning:</b>" not in text
 
 
 def test_ranked_recommendation_template_uses_bronze_for_third_setup() -> None:
