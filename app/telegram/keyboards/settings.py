@@ -7,7 +7,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 
 class SettingsCB(CallbackData, prefix="set"):
-    field: str  # account_size, risk_profile, timezone, broker, strategy, max_contracts
+    field: str  # account_size, risk_profile, timezone, broker, strategy, max_contracts, alert_mute_duration
 
 
 class ApiKeyCB(CallbackData, prefix="key"):
@@ -51,6 +51,12 @@ def settings_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     text="🔢 Max Contracts",
                     callback_data=SettingsCB(field="max_contracts").pack(),
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔔 Alert Mute Duration",
+                    callback_data=SettingsCB(field="alert_mute_duration").pack(),
                 )
             ],
         ]
@@ -118,7 +124,7 @@ class AltRecCB(CallbackData, prefix="alt"):
 
 
 class PosCB(CallbackData, prefix="pos"):
-    action: str  # sold, holding, delete
+    action: str  # sold, holding, delete, mute_tp, mute_sl, okay_tp, okay_sl
     position_id: str
 
 
@@ -172,21 +178,45 @@ def recommendation_keyboard(
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def position_alert_keyboard(position_id: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="Sold",
-                    callback_data=PosCB(action="sold", position_id=position_id).pack(),
-                ),
-                InlineKeyboardButton(
-                    text="Still holding",
-                    callback_data=PosCB(action="holding", position_id=position_id).pack(),
-                ),
+def position_alert_keyboard(position_id: str, alert_type: str | None = None) -> InlineKeyboardMarkup:
+    if alert_type in ("tp", "sl"):
+        # Price-level alert: show Sold, Mute, Okay buttons
+        mute_action = f"mute_{alert_type}"
+        okay_action = f"okay_{alert_type}"
+        return InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="Sold",
+                        callback_data=PosCB(action="sold", position_id=position_id).pack(),
+                    ),
+                    InlineKeyboardButton(
+                        text="Mute",
+                        callback_data=PosCB(action=mute_action, position_id=position_id).pack(),
+                    ),
+                    InlineKeyboardButton(
+                        text="Okay",
+                        callback_data=PosCB(action=okay_action, position_id=position_id).pack(),
+                    ),
+                ]
             ]
-        ]
-    )
+        )
+    else:
+        # Date-based alert: show original Sold and Still holding buttons
+        return InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="Sold",
+                        callback_data=PosCB(action="sold", position_id=position_id).pack(),
+                    ),
+                    InlineKeyboardButton(
+                        text="Still holding",
+                        callback_data=PosCB(action="holding", position_id=position_id).pack(),
+                    ),
+                ]
+            ]
+        )
 
 
 def position_list_keyboard(position_id: str) -> InlineKeyboardMarkup:

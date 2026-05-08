@@ -61,7 +61,6 @@ def render_main_recommendation(
             f"📎 <b>Suggested quantity:</b> {quantity_text}",
             f"🗓️ <b>Expiry:</b> {recommendation.expiry.isoformat()}",
             "",
-            "",
         ]
     )
     if getattr(recommendation, "target_option_price", None) is not None:

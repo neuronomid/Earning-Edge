@@ -47,4 +47,42 @@ class OpenPosition(Base):
         nullable=False,
     )
 
+    # Alert frequency tracking: count how many times alert has fired (0 = first crossing logic)
+    target_alert_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        server_default=text("0"),
+        nullable=False,
+    )
+    stop_alert_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        server_default=text("0"),
+        nullable=False,
+    )
+
+    # Alert dismissal: user pressed "Okay" — no more alerts for this level
+    target_dismissed: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default=text("false"),
+        nullable=False,
+    )
+    stop_dismissed: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default=text("false"),
+        nullable=False,
+    )
+
+    # Alert mute: suppress alerts until this time expires
+    target_muted_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    stop_muted_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
     created_at: Mapped[CreatedAt]

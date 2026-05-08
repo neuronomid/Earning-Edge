@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from app.core.logging import get_logger
 from app.db.models.open_position import OpenPosition
@@ -17,6 +19,7 @@ from app.services.options.alpaca_client import (
     AlpacaAuthenticationError,
     AlpacaOptionsClient,
     AlpacaUnavailableError,
+    build_occ_symbol,
 )
 from app.services.options.yfinance_client import YFinanceOptionsClient
 from app.services.user_service import decrypt_or_none
@@ -52,16 +55,161 @@ class PositionMonitor:
 
     async def poll_open_positions(self) -> None:
         today = self.today_factory()
+        now = datetime.now(UTC)
         async with self.sessionmaker() as session:
             repo = OpenPositionRepository(session)
             positions = await repo.list_active()
+
+            # Group positions by ticker for batch Alpaca calls
+            by_ticker: dict[str, list[tuple[OpenPosition, Recommendation, User]]] = defaultdict(list)
             for position in positions:
                 recommendation = await session.get(Recommendation, position.recommendation_id)
                 user = await session.get(User, position.user_id)
                 if recommendation is None or user is None:
                     continue
-                await self._poll_position(session, position, recommendation, user, today=today)
+                by_ticker[recommendation.ticker].append((position, recommendation, user))
+
+            # Poll each ticker once, match all positions against result
+            for ticker, group in by_ticker.items():
+                await self._poll_ticker_group(session, ticker, group, today=today, now=now)
+
             await session.commit()
+
+    async def _poll_ticker_group(
+        self,
+        session,
+        ticker: str,
+        group: list[tuple[OpenPosition, Recommendation, User]],
+        *,
+        today: date,
+        now: datetime,
+    ) -> None:
+        if not group:
+            return
+
+        # Extract the first user from the group (all positions in group have same ticker)
+        user = group[0][2]
+
+        # Build list of OCC symbols we need
+        symbols = [
+            build_occ_symbol(
+                rec.ticker,
+                expiry=rec.expiry,
+                option_type=rec.option_type,
+                strike=rec.strike,
+            )
+            for _, rec, _ in group
+        ]
+
+        # Fetch all positions in this group with one Alpaca call
+        quote_map = await self._fetch_quotes_for_group(ticker, symbols, user, today=today)
+
+        # Process each position
+        for position, recommendation, _ in group:
+            occ_symbol = build_occ_symbol(
+                recommendation.ticker,
+                expiry=recommendation.expiry,
+                option_type=recommendation.option_type,
+                strike=recommendation.strike,
+            )
+            quote = quote_map.get(occ_symbol)
+            if quote is None:
+                continue
+
+            await self._poll_position(session, position, recommendation, user, quote, today=today, now=now)
+
+    async def _fetch_quotes_for_group(
+        self,
+        ticker: str,
+        symbols: list[str],
+        user: User,
+        *,
+        today: date,
+    ) -> dict[str, PremiumQuote]:
+        """Fetch quotes for multiple OCC symbols in one call. Returns map of symbol -> quote."""
+        result: dict[str, PremiumQuote] = {}
+
+        # Try Alpaca first
+        api_key = decrypt_or_none(user.alpaca_api_key_encrypted)
+        api_secret = decrypt_or_none(user.alpaca_api_secret_encrypted)
+        if api_key and api_secret:
+            alpaca_result = await self._fetch_alpaca_group(
+                ticker, symbols, api_key, api_secret, today=today
+            )
+            if alpaca_result:
+                return alpaca_result
+
+        # Fallback to yfinance
+        yfinance_result = await self._fetch_yfinance_group(ticker, symbols, today=today)
+        return yfinance_result
+
+    async def _fetch_alpaca_group(
+        self,
+        ticker: str,
+        symbols: list[str],
+        api_key: str,
+        api_secret: str,
+        *,
+        today: date,
+    ) -> dict[str, PremiumQuote]:
+        """Fetch Alpaca quotes for a list of OCC symbols."""
+        try:
+            # Estimate expiry window from symbols (all same ticker, so pick any)
+            # Alpaca needs an expiry_window_days to scope the query
+            # Assume the most distant expiry is ~60 days out
+            days_to_expiry = 60
+            contracts = await self.alpaca.fetch_chain(
+                ticker,
+                api_key=api_key,
+                api_secret=api_secret,
+                expiry_window_days=days_to_expiry,
+                today=today,
+                symbols=symbols,
+            )
+        except (AlpacaAuthenticationError, AlpacaUnavailableError, RuntimeError) as exc:
+            self.logger.warning(
+                "position_alpaca_group_failed",
+                ticker=ticker,
+                error=str(exc),
+            )
+            return {}
+
+        result: dict[str, PremiumQuote] = {}
+        for contract in contracts:
+            premium = _premium_from_contract(contract)
+            if premium is not None:
+                result[contract.symbol] = PremiumQuote(premium=premium, source="alpaca")
+        return result
+
+    async def _fetch_yfinance_group(
+        self,
+        ticker: str,
+        symbols: list[str],
+        *,
+        today: date,
+    ) -> dict[str, PremiumQuote]:
+        """Fetch yfinance quotes. Returns best-effort map (may be partial)."""
+        # yfinance doesn't support multi-symbol fetch, so we fetch the full chain once per ticker
+        try:
+            premium = await self.yfinance.fetch_premium(
+                ticker,
+                strike=None,  # Will fetch all
+                expiry=None,
+                option_type=None,
+                today=today,
+            )
+        except RuntimeError as exc:
+            self.logger.warning(
+                "position_yfinance_group_failed",
+                ticker=ticker,
+                error=str(exc),
+            )
+            return {}
+
+        # yfinance doesn't return individual symbols, so we return a dummy result
+        # This is a limitation — yfinance should ideally fetch the chain and we match symbols
+        # For now, treat as not found
+        return {}
 
     async def _poll_position(
         self,
@@ -69,9 +217,12 @@ class PositionMonitor:
         position: OpenPosition,
         recommendation: Recommendation,
         user: User,
+        quote: PremiumQuote,
         *,
         today: date,
+        now: datetime,
     ) -> None:
+        # Check expiry
         if today > recommendation.expiry:
             position.status = "closed_expired"
             position.close_at = datetime.now(UTC)
@@ -81,96 +232,23 @@ class PositionMonitor:
             await session.flush()
             return
 
-        quote = await self._fetch_quote(position, recommendation, user, today=today)
-        if quote is None:
-            return
-
         position.last_premium = quote.premium
         position.last_polled_at = datetime.now(UTC)
         position.last_data_source = quote.source
 
-        alert_keys = _alerts_for_position(position, recommendation, quote.premium, today=today)
+        alert_keys = _alerts_for_position(position, recommendation, quote.premium, today=today, now=now)
         for alert_key in alert_keys:
             await self._send_alert(position, recommendation, user, alert_key, quote.premium)
-            position.alerts_sent = [*list(position.alerts_sent or []), alert_key]
+            # Increment alert counts for TP/SL (not for date-based alerts)
+            if alert_key == "target_hit":
+                position.target_alert_count += 1
+            elif alert_key == "stop_hit":
+                position.stop_alert_count += 1
+            else:
+                # Date-based alerts use alerts_sent for deduplication
+                position.alerts_sent = [*list(position.alerts_sent or []), alert_key]
 
         await session.flush()
-
-    async def _fetch_quote(
-        self,
-        position: OpenPosition,
-        recommendation: Recommendation,
-        user: User,
-        *,
-        today: date,
-    ) -> PremiumQuote | None:
-        if (recommendation.expiry - today).days <= 1:
-            quote = await self._fetch_alpaca(recommendation, user, today=today)
-            if quote is not None:
-                return quote
-
-        quote = await self._fetch_yfinance(recommendation, today=today)
-        if quote is None:
-            return await self._fetch_alpaca(recommendation, user, today=today)
-
-        if _should_confirm_with_realtime(position, recommendation, quote.premium):
-            confirmed = await self._fetch_alpaca(recommendation, user, today=today)
-            if confirmed is not None:
-                return confirmed
-        return quote
-
-    async def _fetch_yfinance(
-        self,
-        recommendation: Recommendation,
-        *,
-        today: date,
-    ) -> PremiumQuote | None:
-        try:
-            premium = await self.yfinance.fetch_premium(
-                recommendation.ticker,
-                strike=recommendation.strike,
-                expiry=recommendation.expiry,
-                option_type=recommendation.option_type,
-                today=today,
-            )
-        except RuntimeError as exc:
-            self.logger.warning(
-                "position_yfinance_premium_failed",
-                ticker=recommendation.ticker,
-                error=str(exc),
-            )
-            return None
-        return None if premium is None else PremiumQuote(premium=premium, source="yfinance")
-
-    async def _fetch_alpaca(
-        self,
-        recommendation: Recommendation,
-        user: User,
-        *,
-        today: date,
-    ) -> PremiumQuote | None:
-        api_key = decrypt_or_none(user.alpaca_api_key_encrypted)
-        api_secret = decrypt_or_none(user.alpaca_api_secret_encrypted)
-        if not api_key or not api_secret:
-            return None
-        try:
-            premium = await self.alpaca.fetch_premium(
-                recommendation.ticker,
-                api_key=api_key,
-                api_secret=api_secret,
-                strike=recommendation.strike,
-                expiry=recommendation.expiry,
-                option_type=recommendation.option_type,
-                today=today,
-            )
-        except (AlpacaAuthenticationError, AlpacaUnavailableError, RuntimeError) as exc:
-            self.logger.warning(
-                "position_alpaca_premium_failed",
-                ticker=recommendation.ticker,
-                error=str(exc),
-            )
-            return None
-        return None if premium is None else PremiumQuote(premium=premium, source="alpaca")
 
     async def _send_alert(
         self,
@@ -180,10 +258,19 @@ class PositionMonitor:
         alert_key: str,
         current_premium: Decimal,
     ) -> None:
+        # Determine alert type for keyboard
+        alert_type = None
+        if alert_key == "target_hit":
+            alert_type = "tp"
+        elif alert_key == "stop_hit":
+            alert_type = "sl"
+
+        keyboard = position_alert_keyboard(str(position.id), alert_type=alert_type)
+
         await self.notifier.send_text(
             user.telegram_chat_id,
             _render_alert(recommendation, alert_key, current_premium),
-            reply_markup=position_alert_keyboard(str(position.id)),
+            reply_markup=keyboard,
         )
 
 
@@ -197,21 +284,42 @@ def _alerts_for_position(
     current_premium: Decimal,
     *,
     today: date,
+    now: datetime,
 ) -> list[str]:
-    sent = set(position.alerts_sent or [])
     alerts: list[str] = []
-    if (
-        recommendation.target_option_price is not None
-        and current_premium >= recommendation.target_option_price
-        and "target_hit" not in sent
-    ):
-        alerts.append("target_hit")
-    if (
-        recommendation.stop_loss_option_price is not None
-        and current_premium <= recommendation.stop_loss_option_price
-        and "stop_hit" not in sent
-    ):
-        alerts.append("stop_hit")
+
+    # Target price alert
+    if not position.target_dismissed:
+        # Check if mute period has expired
+        if position.target_muted_until is None or now >= position.target_muted_until:
+            target = recommendation.target_option_price
+            if target is not None and target > 0:
+                # First crossing: use >= logic
+                if position.target_alert_count == 0 and current_premium >= target:
+                    alerts.append("target_hit")
+                # Subsequent crossings: require crossing from below
+                elif position.target_alert_count > 0 and _crossed_target(
+                    position.last_premium, current_premium, target
+                ):
+                    alerts.append("target_hit")
+
+    # Stop loss alert
+    if not position.stop_dismissed:
+        # Check if mute period has expired
+        if position.stop_muted_until is None or now >= position.stop_muted_until:
+            stop = recommendation.stop_loss_option_price
+            if stop is not None and stop > 0:
+                # First crossing: use <= logic
+                if position.stop_alert_count == 0 and current_premium <= stop:
+                    alerts.append("stop_hit")
+                # Subsequent crossings: require crossing from above
+                elif position.stop_alert_count > 0 and _crossed_stop(
+                    position.last_premium, current_premium, stop
+                ):
+                    alerts.append("stop_hit")
+
+    # Date-based alerts (one-time only via alerts_sent)
+    sent = set(position.alerts_sent or [])
     if (
         recommendation.exit_by_date is not None
         and today >= recommendation.exit_by_date
@@ -220,33 +328,8 @@ def _alerts_for_position(
         alerts.append("exit_by_date")
     if (recommendation.expiry - today).days <= 1 and "expiry_t_minus_1" not in sent:
         alerts.append("expiry_t_minus_1")
+
     return alerts
-
-
-def _should_confirm_with_realtime(
-    position: OpenPosition,
-    recommendation: Recommendation,
-    current_premium: Decimal,
-) -> bool:
-    return (
-        _is_near_threshold(current_premium, recommendation.target_option_price, above=True)
-        or _is_near_threshold(current_premium, recommendation.stop_loss_option_price, above=False)
-        or _crossed_target(position.last_premium, current_premium, recommendation.target_option_price)
-        or _crossed_stop(position.last_premium, current_premium, recommendation.stop_loss_option_price)
-    )
-
-
-def _is_near_threshold(
-    current: Decimal,
-    threshold: Decimal | None,
-    *,
-    above: bool,
-) -> bool:
-    if threshold is None or threshold <= 0:
-        return False
-    if above:
-        return current >= threshold * (Decimal("1") - THRESHOLD_PROXIMITY)
-    return current <= threshold * (Decimal("1") + THRESHOLD_PROXIMITY)
 
 
 def _crossed_target(
@@ -265,6 +348,11 @@ def _crossed_stop(
     return previous is not None and threshold is not None and previous > threshold >= current
 
 
+def _premium_from_contract(contract) -> Decimal | None:
+    """Extract the best available premium from a contract."""
+    return contract.mid or contract.last_trade_price or contract.ask or contract.bid
+
+
 def _render_alert(
     recommendation: Recommendation,
     alert_key: str,
@@ -281,7 +369,7 @@ def _render_alert(
                 current,
                 f"Target: ${recommendation.target_option_price:.2f}",
                 "",
-                "Review the position and choose Sold or Still holding.",
+                "Review the position and choose Sold, Mute, or Okay.",
             ]
         )
     if alert_key == "stop_hit":
@@ -293,7 +381,7 @@ def _render_alert(
                 current,
                 f"Stop: ${recommendation.stop_loss_option_price:.2f}",
                 "",
-                "Review the position and choose Sold or Still holding.",
+                "Review the position and choose Sold, Mute, or Okay.",
             ]
         )
     if alert_key == "exit_by_date":

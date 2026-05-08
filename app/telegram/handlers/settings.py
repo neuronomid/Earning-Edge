@@ -32,6 +32,14 @@ from app.telegram.handlers.onboarding import (
     STRATEGY_OPTIONS,
     TIMEZONE_OPTIONS,
 )
+
+MUTE_DURATION_OPTIONS = [
+    ("2 Hours", "2h"),
+    ("1 Day", "1d"),
+    ("1 Day Before Expiry", "1d_before_expire"),
+    ("3 Days Before Expiry", "3d_before_expire"),
+    ("Forever", "forever"),
+]
 from app.telegram.keyboards.confirm import (
     CANCEL_BTN,
     ChoiceCB,
@@ -158,6 +166,13 @@ async def on_settings_button(
             callback.message,
             "🔢 Send the new <b>max contracts per trade</b> (1–20):",
             reply_markup=cancel_keyboard(),
+        )
+    elif field == "alert_mute_duration":
+        await state.set_state(SettingsEdit.alert_mute_duration)
+        await send_text(
+            callback.message,
+            "🔔 Pick how long to mute alert notifications when you press the Mute button:",
+            reply_markup=choice_keyboard("set_mute", MUTE_DURATION_OPTIONS),
         )
 
 
@@ -447,6 +462,32 @@ async def edit_strategy_permission(
             callback.message,
             f"✅ Strategy permission set to <b>{callback_data.value}</b>.",
             reply_markup=ReplyKeyboardRemove(),
+        )
+
+
+@router.callback_query(SettingsEdit.alert_mute_duration, ChoiceCB.filter(F.group == "set_mute"))
+async def edit_alert_mute_duration(
+    callback: CallbackQuery, callback_data: ChoiceCB, state: FSMContext
+) -> None:
+    duration_values = {v for _, v in MUTE_DURATION_OPTIONS}
+    if callback_data.value not in duration_values:
+        await callback.answer("Invalid.")
+        return
+    async with user_service_scope() as (_, service):
+        user = await _user_by_id(service, str(callback.from_user.id))
+        if user is None:
+            await callback.answer()
+            return
+        await service.update_alert_mute_duration(user, callback_data.value)
+    await callback.answer("Saved.")
+    await state.clear()
+    # Find the display label
+    display_label = next((label for label, v in MUTE_DURATION_OPTIONS if v == callback_data.value), callback_data.value)
+    if callback.message:
+        await send_text(
+            callback.message,
+            f"✅ Alert mute duration set to <b>{display_label}</b>.",
+            reply_markup=main_menu_keyboard(),
         )
 
 

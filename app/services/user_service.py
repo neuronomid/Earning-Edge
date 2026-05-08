@@ -180,6 +180,10 @@ class UserService:
         user.max_contracts = n
         await self.session.flush()
 
+    async def update_alert_mute_duration(self, user: User, duration: str) -> None:
+        user.alert_mute_duration = duration
+        await self.session.flush()
+
     # ---------- API-key edits (Settings UI) ----------
 
     async def replace_openrouter_key(self, user: User, api_key: str) -> None:

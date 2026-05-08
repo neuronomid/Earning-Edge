@@ -132,8 +132,8 @@ class SchedulerService:
             poll_open_positions,
             trigger=CronTrigger(
                 day_of_week="mon-fri",
-                hour="9-15",
-                minute="*/15",
+                hour="9-16",
+                minute="*/2",
                 timezone=ZoneInfo("America/New_York"),
             ),
             id="poll_open_positions",

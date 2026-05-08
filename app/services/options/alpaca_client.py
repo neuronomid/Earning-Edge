@@ -50,6 +50,7 @@ class AlpacaOptionsClient:
         api_secret: str,
         expiry_window_days: int,
         today: date | None = None,
+        symbols: list[str] | None = None,
     ) -> tuple[OptionContract, ...]:
         if not api_key.strip() or not api_secret.strip():
             raise AlpacaAuthenticationError("Alpaca API key or secret is missing.")
@@ -63,6 +64,8 @@ class AlpacaOptionsClient:
                 today + timedelta(days=max(expiry_window_days, 1))
             ).isoformat(),
         }
+        if symbols:
+            params["symbols"] = ",".join(symbols)
 
         async for attempt in AsyncRetrying(
             stop=stop_after_attempt(self.max_attempts),

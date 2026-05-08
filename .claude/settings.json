@@ -1,4 +1,14 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(python -m py_compile app/services/positions/monitor.py app/telegram/keyboards/settings.py app/telegram/handlers/position.py app/telegram/handlers/settings.py app/services/user_service.py app/db/models/open_position.py app/db/models/user.py app/scheduler/scheduler.py)",
+      "Bash(find . -name \"*.py\" -newer /tmp 2>/dev/null | head -20)",
+      "Read(//private/tmp/**)",
+      "Bash(python -c \"from app.services.positions.monitor import PositionMonitor; from app.telegram.handlers.position import _calculate_muted_until; print\\('✓ Imports OK'\\)\")",
+      "Bash(docker compose *)",
+      "Bash(bash -n dev.sh)"
+    ]
+  },
   "enabledPlugins": {
     "telegram@claude-plugins-official": true
   }

@@ -27,6 +27,7 @@ class SettingsEdit(StatesGroup):
     broker = State()
     strategy_permission = State()
     max_contracts = State()
+    alert_mute_duration = State()
     openrouter_key = State()
     alpaca_key = State()
     alpaca_secret = State()

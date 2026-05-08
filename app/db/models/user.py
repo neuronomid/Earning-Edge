@@ -34,6 +34,11 @@ class User(Base):
     max_contracts: Mapped[int] = mapped_column(Integer, default=1)
     max_option_premium: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
 
+    alert_mute_duration: Mapped[str] = mapped_column(
+        String(32),
+        default="1d",
+    )
+
     openrouter_api_key_encrypted: Mapped[str] = mapped_column(Text)
     alpaca_api_key_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
     alpaca_api_secret_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)

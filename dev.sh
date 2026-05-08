@@ -111,9 +111,13 @@ database_tables() {
     'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select tablename from pg_tables where schemaname='\''public'\'' order by tablename;"'
 }
 
-ensure_database_schema() {
-  local tables=""
-  local unexpected_tables=""
+recover_stamped_but_uninitialized_db() {
+  # Reset alembic_version when the DB is "stamped" (alembic_version row exists)
+  # but the actual schema tables are missing. This can happen after volume
+  # wipes that preserved alembic_version, or when migrations were applied
+  # against a different schema. Detect early so `alembic upgrade head` does
+  # not fail trying to ALTER tables that do not exist.
+  local tables="" unexpected_tables=""
 
   tables="$(database_tables)"
   if printf '%s\n' "$tables" | grep -qx 'cron_jobs'; then
@@ -123,14 +127,18 @@ ensure_database_schema() {
   unexpected_tables="$(
     printf '%s\n' "$tables" | grep -v -e '^$' -e '^alembic_version$' -e '^apscheduler_jobs$' || true
   )"
-  if [ -z "$unexpected_tables" ]; then
-    echo "Detected a stamped-but-uninitialized local database. Rebuilding schema from migrations..."
+  if [ -z "$unexpected_tables" ] && printf '%s\n' "$tables" | grep -qx 'alembic_version'; then
+    echo "Detected a stamped-but-uninitialized local database. Resetting alembic version to base..."
     docker compose run --rm --no-deps app alembic stamp base
-    docker compose run --rm --no-deps app alembic upgrade head
-    tables="$(database_tables)"
-    if printf '%s\n' "$tables" | grep -qx 'cron_jobs'; then
-      return 0
-    fi
+  fi
+}
+
+ensure_database_schema() {
+  local tables=""
+
+  tables="$(database_tables)"
+  if printf '%s\n' "$tables" | grep -qx 'cron_jobs'; then
+    return 0
   fi
 
   echo "Database schema is inconsistent after migrations. cron_jobs is still missing." >&2
@@ -189,6 +197,7 @@ wait_for_container_health "earning-edge-postgres"
 wait_for_container_health "earning-edge-redis"
 
 echo "Applying database migrations..."
+recover_stamped_but_uninitialized_db
 docker compose run --rm --no-deps app alembic upgrade head
 ensure_database_schema
 

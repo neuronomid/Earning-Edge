@@ -1,2 +1,0 @@
-ticker,strategy,target_method,target_stock_price,target_option_price,target_gain_percent,stop_loss_option_price,exit_by_date,expected_holding_days,delta,gamma,theta,vega,implied_volatility
-CSCO,long_call,full_greeks,103.69,4.27,241.60,0.66,2026-05-10,5,0.2411,0.0338,-0.1459,0.0478,0.6014
