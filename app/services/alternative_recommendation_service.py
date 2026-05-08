@@ -7,6 +7,7 @@ from decimal import Decimal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.logging import get_logger
 from app.db.models.candidate import Candidate
 from app.db.models.option_contract import OptionContract
 from app.db.models.recommendation import Recommendation
@@ -49,6 +50,7 @@ from app.services.user_service import decrypt_or_none
 
 ZERO = Decimal("0")
 FINALIST_LIMIT = 4
+logger = get_logger(__name__)
 
 
 @dataclass(slots=True, frozen=True)
@@ -91,6 +93,13 @@ class AlternativeRecommendationService:
                 current_recommendation.run_id
             )
         }
+        logger.info(
+            "alternative_build_next_start",
+            run_id=str(current_recommendation.run_id),
+            user_id=str(user.id),
+            shown_count=len(shown),
+            shown_tickers=list(shown),
+        )
         next_rank_position = len(shown) + 1
         ranked = sorted(
             await self.candidates.list_for_run(current_recommendation.run_id),
@@ -102,11 +111,37 @@ class AlternativeRecommendationService:
             reverse=True,
         )[:FINALIST_LIMIT]
 
-        for candidate in ranked:
+        logger.info(
+            "alternative_ranked_candidates",
+            run_id=str(current_recommendation.run_id),
+            ranked_count=len(ranked),
+            ranked_tickers=[
+                f"{c.ticker}(score={c.final_opportunity_score})" for c in ranked
+            ],
+        )
+
+        for i, candidate in enumerate(ranked):
+            logger.info(
+                "alternative_processing_candidate",
+                run_id=str(current_recommendation.run_id),
+                candidate_ticker=candidate.ticker,
+                candidate_index=i + 1,
+                already_shown=candidate.ticker in shown,
+            )
             if candidate.ticker in shown:
+                logger.info(
+                    "alternative_candidate_already_shown",
+                    run_id=str(current_recommendation.run_id),
+                    candidate_ticker=candidate.ticker,
+                )
                 continue
             pipeline_candidate = await self._pipeline_candidate(candidate, user)
             if pipeline_candidate is None:
+                logger.info(
+                    "alternative_candidate_failed_pipeline_conversion",
+                    run_id=str(current_recommendation.run_id),
+                    candidate_ticker=candidate.ticker,
+                )
                 shown.add(candidate.ticker)
                 continue
             result = await self._decide_and_persist(
@@ -116,9 +151,26 @@ class AlternativeRecommendationService:
                 rank_position=next_rank_position,
             )
             if result.recommendation is not None or result.terminal:
+                logger.info(
+                    "alternative_recommendation_created",
+                    run_id=str(current_recommendation.run_id),
+                    candidate_ticker=candidate.ticker,
+                    is_terminal=result.terminal,
+                )
                 return result
+            logger.info(
+                "alternative_candidate_rejected_by_decision",
+                run_id=str(current_recommendation.run_id),
+                candidate_ticker=candidate.ticker,
+            )
             shown.add(candidate.ticker)
 
+        logger.info(
+            "alternative_no_qualified_found",
+            run_id=str(current_recommendation.run_id),
+            total_processed=len(shown),
+            shown_tickers=list(shown),
+        )
         return AlternativeRecommendationResult(
             recommendation=None,
             message="No additional qualified alternatives are available for this run.",
@@ -130,6 +182,11 @@ class AlternativeRecommendationService:
         user: User,
     ) -> PipelineCandidate | None:
         contracts = await self.contracts.list_for_candidate(candidate.id)
+        logger.info(
+            "alternative_pipeline_contracts_loaded",
+            candidate_ticker=candidate.ticker,
+            contract_count=len(contracts),
+        )
         scored_contracts = tuple(
             sorted(
                 (_contract_score(contract) for contract in contracts),
@@ -143,6 +200,11 @@ class AlternativeRecommendationService:
         )
         chosen = next((contract for contract in scored_contracts if contract.is_viable), None)
         if chosen is None:
+            logger.info(
+                "alternative_pipeline_no_viable_contract",
+                candidate_ticker=candidate.ticker,
+                scored_count=len(scored_contracts),
+            )
             return None
 
         record = _candidate_record(candidate)
@@ -207,13 +269,27 @@ class AlternativeRecommendationService:
             openrouter_api_key=decrypt_or_none(user.openrouter_api_key_encrypted) or "",
         )
         decision = decision_result.decision
+        logger.info(
+            "alternative_decision_result",
+            candidate_ticker=candidate.record.ticker,
+            decision_action=decision.action,
+            decision_engine=decision_result.trace.engine,
+        )
         if decision_result.trace.engine == "llm_blocked":
+            logger.info(
+                "alternative_decision_llm_blocked",
+                candidate_ticker=candidate.record.ticker,
+            )
             return AlternativeRecommendationResult(
                 recommendation=None,
                 message=decision.reasoning,
                 terminal=True,
             )
         if decision.action == "no_trade":
+            logger.info(
+                "alternative_decision_no_trade",
+                candidate_ticker=candidate.record.ticker,
+            )
             return AlternativeRecommendationResult(
                 recommendation=None,
             )
