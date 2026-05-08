@@ -6,7 +6,12 @@
       "Read(//private/tmp/**)",
       "Bash(python -c \"from app.services.positions.monitor import PositionMonitor; from app.telegram.handlers.position import _calculate_muted_until; print\\('✓ Imports OK'\\)\")",
       "Bash(docker compose *)",
-      "Bash(bash -n dev.sh)"
+      "Bash(bash -n dev.sh)",
+      "Bash(git commit -m ' *)",
+      "Bash(python3 -c \"import sys; sys.path.insert\\(0, '/Users/omid/Documents/Projects/Earning-Edge'\\); from app.main import app; print\\('✓ app.main imports OK'\\)\")",
+      "Bash(python3 -m py_compile /Users/omid/Documents/Projects/Earning-Edge/app/db/models/open_position.py)",
+      "Bash(xargs python3 -m py_compile)",
+      "Bash(git check-ignore *)"
     ]
   },
   "enabledPlugins": {
