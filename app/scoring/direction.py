@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Literal
 
 from app.scoring.types import (
     CandidateContext,
@@ -16,11 +17,25 @@ ONE = Decimal("1")
 HALF = Decimal("0.5")
 MISSING_UNIT = Decimal("0.45")
 
+# Structural direction tier thresholds (PLAN_News §5.1).
+# < bearish_max → bearish, > bullish_min → bullish, otherwise neutral.
+_STRUCTURAL_BEARISH_MAX = 40
+_STRUCTURAL_BULLISH_MIN = 60
+
+StructuralDirectionTier = Literal["bullish", "neutral", "bearish"]
+
+
+def structural_direction_tier(score: int) -> StructuralDirectionTier:
+    if score < _STRUCTURAL_BEARISH_MAX:
+        return "bearish"
+    if score > _STRUCTURAL_BULLISH_MIN:
+        return "bullish"
+    return "neutral"
+
 _DIRECTION_WEIGHTS: dict[str, int] = {
     "trend alignment": 20,
     "relative strength": 15,
     "volume confirmation": 10,
-    "news/catalyst quality": 15,
     "earnings expectation context": 15,
     "market/sector environment": 10,
     "price structure": 10,
@@ -35,7 +50,6 @@ def score_direction(
         "trend alignment": _trend_signal(candidate),
         "relative strength": _relative_strength_signal(candidate),
         "volume confirmation": _volume_signal(candidate),
-        "news/catalyst quality": _news_signal(candidate),
         "earnings expectation context": _earnings_signal(candidate),
         "market/sector environment": _market_signal(candidate),
         "price structure": _price_structure_signal(candidate),
@@ -173,21 +187,10 @@ def _volume_signal(candidate: CandidateContext) -> Decimal | None:
     return movement * participation
 
 
-def _news_signal(candidate: CandidateContext) -> Decimal:
-    bullish = Decimal(len(candidate.news_brief.bullish_evidence))
-    bearish = Decimal(len(candidate.news_brief.bearish_evidence))
-    total = bullish + bearish
-    if total == 0:
-        return ZERO
-    balance = (bullish - bearish) / total
-    confidence = Decimal(candidate.news_brief.news_confidence) / Decimal("100")
-    return max(Decimal("-1"), min(Decimal("1"), balance * confidence))
-
-
 def _earnings_signal(candidate: CandidateContext) -> Decimal:
     previous_move = candidate.previous_earnings_move_percent
     if previous_move is None:
-        return _news_signal(candidate) * Decimal("0.35")
+        return ZERO
 
     signal = _signed_strength(previous_move, Decimal("0.05")) or ZERO
     expected_move = candidate.expected_move_percent

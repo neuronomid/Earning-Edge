@@ -56,7 +56,6 @@ def _strong_orchestrator(*, batch, notifier: FakeNotifier, archive_root) -> Pipe
                     action="recommend",
                     final_score=82,
                     direction="bullish",
-                    direction_score=80,
                     contract_score=84,
                     reasoning=("AMD had the strongest momentum and the cleanest contract.",),
                 ),

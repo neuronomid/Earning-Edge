@@ -36,6 +36,8 @@ class OpenRouterValidator:
     async def validate(self, api_key: str) -> ValidationResult:
         if not api_key or not api_key.strip():
             return ValidationResult(False, "Empty API key.")
+        if not api_key.strip().isascii():
+            return ValidationResult(False, "Key must be ASCII — no emojis or special characters.")
 
         headers = {"Authorization": f"Bearer {api_key.strip()}"}
         try:
@@ -71,6 +73,10 @@ class AlpacaValidator:
     async def validate(self, api_key: str, api_secret: str) -> ValidationResult:
         if not api_key or not api_secret:
             return ValidationResult(False, "Both Alpaca key and secret are required.")
+        if not api_key.strip().isascii() or not api_secret.strip().isascii():
+            return ValidationResult(
+                False, "Keys must be ASCII — no emojis or special characters."
+            )
         headers = {
             "APCA-API-KEY-ID": api_key.strip(),
             "APCA-API-SECRET-KEY": api_secret.strip(),

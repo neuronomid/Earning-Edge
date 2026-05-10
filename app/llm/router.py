@@ -108,7 +108,8 @@ class LLMRouter:
         response_schema: type[T],
         system_prompt: str,
         max_tokens: int = 4096,
-        temperature: float = 0.1,
+        temperature: float = 0.0,
+        seed: int | None = 0,
     ) -> T:
         """Run the heavy model and parse the response into ``response_schema``.
 
@@ -138,6 +139,7 @@ class LLMRouter:
             temperature=temperature,
             response_format={"type": "json_object"},
             reasoning=self._heavy_reasoning_param(),
+            seed=seed,
         )
         text = _extract_text(payload)
         try:
@@ -184,6 +186,7 @@ class LLMRouter:
         temperature: float,
         response_format: dict[str, Any] | None,
         reasoning: dict[str, Any] | None = None,
+        seed: int | None = None,
     ) -> dict[str, Any]:
         if not api_key or not api_key.strip():
             raise LLMAuthenticationError("OpenRouter API key is empty.")
@@ -199,6 +202,8 @@ class LLMRouter:
             body["response_format"] = response_format
         if reasoning is not None:
             body["reasoning"] = reasoning
+        if seed is not None:
+            body["seed"] = seed
 
         headers = {
             "Authorization": f"Bearer {api_key.strip()}",

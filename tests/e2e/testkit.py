@@ -423,6 +423,9 @@ def make_news_bundle(
     key_uncertainty: str = "Guidance tone still matters.",
     news_confidence: int = 72,
 ) -> NewsBundle:
+    del news_confidence
+    summary_parts = list(bullish or (f"{record.ticker} had supportive setup notes.",))
+    summary_parts.extend(bearish or ())
     return NewsBundle(
         ticker=record.ticker,
         company_name=record.company_name,
@@ -430,15 +433,12 @@ def make_news_bundle(
         search_results=(),
         articles=(),
         brief=NewsBrief(
-            bullish_evidence=list(
-                bullish or (f"{record.ticker} had supportive setup notes.",)
-            ),
-            bearish_evidence=list(bearish or ()),
             neutral_contextual_evidence=list(
                 neutral or ("Sector context stayed constructive.",)
             ),
             key_uncertainty=key_uncertainty,
-            news_confidence=news_confidence,
+            summary=" ".join(summary_parts),
+            key_facts=summary_parts,
         ),
         used_ir_fallback=False,
     )

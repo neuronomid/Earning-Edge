@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Protocol
 
 from app.services.candidate_models import CandidateRecord
@@ -13,6 +14,7 @@ class NewsStep(Protocol):
         record: CandidateRecord,
         *,
         openrouter_api_key: str,
+        reference_dt: datetime | None = None,
     ) -> NewsBundle: ...
 
 
@@ -25,9 +27,11 @@ class NewsBriefStep:
         record: CandidateRecord,
         *,
         openrouter_api_key: str,
+        reference_dt: datetime | None = None,
     ) -> NewsBundle:
         return await self.service.bundle(
             record.ticker,
             company_name=record.company_name,
             api_key=openrouter_api_key,
+            reference_dt=reference_dt,
         )

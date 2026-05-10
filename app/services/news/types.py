@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+NewsCoverage = Literal["none", "sparse", "adequate", "rich"]
 
 
 class _FrozenModel(BaseModel):
@@ -41,11 +44,12 @@ class NewsArticle(_FrozenModel):
 
 
 class NewsBrief(_FrozenModel):
-    bullish_evidence: list[str] = Field(default_factory=list)
-    bearish_evidence: list[str] = Field(default_factory=list)
     neutral_contextual_evidence: list[str] = Field(default_factory=list)
     key_uncertainty: str
-    news_confidence: int = Field(ge=0, le=100)
+    summary: str = ""
+    key_facts: list[str] = Field(default_factory=list)
+    quoted_statements: list[str] = Field(default_factory=list)
+    named_actions: list[str] = Field(default_factory=list)
 
 
 class NewsBundle(_FrozenModel):
@@ -57,3 +61,5 @@ class NewsBundle(_FrozenModel):
     brief: NewsBrief
     used_ir_fallback: bool = False
     used_llm_summary: bool = False
+    news_coverage: NewsCoverage = "adequate"
+    stale_news: bool = False

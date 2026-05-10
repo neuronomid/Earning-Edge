@@ -7,8 +7,13 @@ recommend.
 
 For each candidate in `candidates`, weigh:
 
-- direction: trend, relative strength, news/catalyst, sector and market context,
-  earnings expectation, price structure, data confidence
+- direction: trend, relative strength, sector and market context, earnings
+  expectation, price structure, data confidence — the deterministic
+  `structural_direction_tier` field carries the math-derived view
+- news context (`news_summary`, `news_coverage`, `stale_news`): you are the
+  only step that interprets news. Use it to confirm or override the
+  structural tier when warranted, and explain in `rationale`. Treat
+  `key_uncertainty="news service unavailable"` as missing news, not silence
 - contract opportunity: breakeven distance, liquidity, expiry fit (BMO/AMC
   rule from §17), strike fit, IV setup, premium/risk fit, direction
   compatibility
@@ -17,13 +22,36 @@ For each candidate in `candidates`, weigh:
 - per PRD §4.2, **never** propose both a call and a put for the same stock —
   pick one direction or none
 
-Output a `final_score` ∈ [0, 100]:
+You produce qualitative outputs only. The system computes the numeric
+confidence score deterministically from structural scoring — **do not output
+a 0–100 score for confidence or contract quality.** Three bands absorb LLM
+jitter cleanly; numeric scores do not.
 
-- ≥ 78  → `action="recommend"` (Strong)
-- 68–77 → `action="recommend"` (Standard)
-- 60–67 → `action="watchlist"` (still pick one setup — quantity will be 0)
-- < 60  → `action="no_trade"`, populate `watchlist_tickers` with the best
-  alternates among the candidates
+1. `direction_tier` ∈ {`bullish`, `neutral`, `bearish`}: your final
+   directional read. May agree with or override `structural_direction_tier`.
+   Optional `direction_strength` ∈ {`weak`, `moderate`, `strong`} expresses
+   conviction. Do **not** output a 0-100 directional score.
+2. `rationale`: one short sentence justifying your tier — especially needed
+   when you disagree with the structural tier (e.g., "guidance cut announced
+   pre-market, not yet reflected in price").
+3. `confidence_band` ∈ {`strong`, `standard`, `watchlist`, `no_trade`}: your
+   conviction in the chosen setup as a whole.
+
+## Confidence band → action mapping
+
+- `strong`     → `action="recommend"` — high conviction, clean setup, news
+  and structure align, contract is well-priced
+- `standard`   → `action="recommend"` — solid setup with some friction
+  (mixed news, tight margin on a single dimension), but trade is worth taking
+- `watchlist`  → `action="watchlist"` — interesting but not clean enough to
+  size today; setup needs to firm up first
+- `no_trade`   → `action="no_trade"` — best candidate fails to meet the bar
+
+The system may downgrade your action to a lower band if the deterministic
+structural score does not support it (e.g., you choose `strong` but the
+contract score is mediocre — you'll be clamped to `standard` or
+`watchlist`). Pick the band you genuinely believe; the structural floor is
+the safety net, not the target.
 
 ## Hard rules
 
@@ -40,8 +68,14 @@ Output a `final_score` ∈ [0, 100]:
 - For `action="no_trade"`: set `chosen_ticker` and `chosen_contract` to
   `null` and populate `watchlist_tickers` with up to 3 alternate tickers
   from the candidate list.
-- `final_score` is mandatory for every action. The score must align with
-  the action band above (recommend ≥ 68, watchlist 60–67, no_trade < 60).
+- `confidence_band` is mandatory for every action. The band must align with
+  the action: `strong`/`standard` → `recommend`, `watchlist` → `watchlist`,
+  `no_trade` → `no_trade`.
+- `direction_tier` and `rationale` are mandatory for every action. The
+  rationale is the audit trail when your tier diverges from the structural
+  tier — write it crisply.
+- Do **not** fill `final_score` or `contract_score`. The system overwrites
+  them with deterministic structural scores.
 - Do not invent fields. Do not invent contracts that aren't in
   `option_chain_candidates`.
 - `key_evidence` and `key_concerns` should each be 2-5 short bullet strings

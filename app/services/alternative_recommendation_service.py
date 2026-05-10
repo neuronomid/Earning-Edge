@@ -305,10 +305,8 @@ class AlternativeRecommendationService:
 
         sizing = _size_or_fallback(user_context, selected_contract.contract)
         quantity = 0 if decision.action == "watchlist" else sizing.quantity
-        confidence_score = (
-            decision.final_score
-            if decision.final_score is not None
-            else combine_scores(candidate.evaluation.direction.score, selected_contract.score)
+        confidence_score = combine_scores(
+            candidate.evaluation.direction.score, selected_contract.score
         )
         exit_target = selected_contract.exit_target
         recommendation = await self.recommendations.add(
@@ -541,13 +539,10 @@ def _stored_news_bundle(candidate: Candidate, *, error: str | None = None) -> Ne
         search_results=(),
         articles=(),
         brief=NewsBrief(
-            bullish_evidence=[],
-            bearish_evidence=[],
             neutral_contextual_evidence=[
                 f"Stored alternative candidate ranked {candidate.final_opportunity_score}/100."
             ],
             key_uncertainty=error or "Fresh news was not re-fetched for this alternative.",
-            news_confidence=candidate.data_confidence_score,
         ),
         used_ir_fallback=False,
         used_llm_summary=False,

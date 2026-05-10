@@ -40,13 +40,20 @@ class FinnhubNewsSource:
         ticker: str,
         *,
         company_name: str | None = None,
+        as_of_date: date | None = None,
     ) -> tuple[NewsArticle, ...]:
         del company_name
         normalized = ticker.strip().upper()
-        if not normalized or not self.api_key.strip():
+        if not normalized:
+            return ()
+        if not self.api_key.strip():
+            self.logger.warning(
+                "finnhub_news_skipped_missing_api_key",
+                ticker=normalized,
+            )
             return ()
 
-        end = self.today_provider()
+        end = as_of_date or self.today_provider()
         start = end - timedelta(days=self.lookback_days)
         payload = await self._request_json(
             "/company-news",
@@ -57,6 +64,11 @@ class FinnhubNewsSource:
             },
         )
         if not isinstance(payload, list):
+            self.logger.info(
+                "finnhub_news_unexpected_payload",
+                ticker=normalized,
+                payload_type=type(payload).__name__,
+            )
             return ()
 
         articles: list[NewsArticle] = []
@@ -81,6 +93,13 @@ class FinnhubNewsSource:
                     is_ir_fallback=False,
                 )
             )
+        self.logger.info(
+            "finnhub_news_fetched",
+            ticker=normalized,
+            raw_rows=len(payload),
+            article_count=len(articles),
+            window_days=self.lookback_days,
+        )
         return tuple(articles)
 
     async def _request_json(self, path: str, *, params: dict[str, str]) -> Any:
@@ -119,6 +138,7 @@ class SecEdgarNewsSource:
         ticker: str,
         *,
         company_name: str | None = None,
+        as_of_date: date | None = None,
     ) -> tuple[NewsArticle, ...]:
         normalized = ticker.strip().upper()
         if not normalized:
@@ -126,10 +146,19 @@ class SecEdgarNewsSource:
 
         cik = await self._resolve_cik(normalized)
         if cik is None:
+            self.logger.info(
+                "sec_edgar_cik_not_found",
+                ticker=normalized,
+            )
             return ()
 
         payload = await self._request_json(_SEC_SUBMISSIONS_URL.format(cik=cik))
         if not isinstance(payload, dict):
+            self.logger.info(
+                "sec_edgar_unexpected_payload",
+                ticker=normalized,
+                payload_type=type(payload).__name__,
+            )
             return ()
 
         company_label = _to_text(payload.get("name")) or company_name or normalized
@@ -150,7 +179,8 @@ class SecEdgarNewsSource:
             len(documents),
         )
 
-        start_of_year = date(self.today_provider().year, 1, 1)
+        reference_date = as_of_date or self.today_provider()
+        start_of_year = date(reference_date.year, 1, 1)
         articles: list[NewsArticle] = []
         for index in range(count):
             form = _to_text(forms[index])
@@ -183,6 +213,14 @@ class SecEdgarNewsSource:
                     is_ir_fallback=False,
                 )
             )
+        self.logger.info(
+            "sec_edgar_filings_fetched",
+            ticker=normalized,
+            cik=cik,
+            recent_rows=count,
+            article_count=len(articles),
+            year_start=start_of_year.isoformat(),
+        )
         return tuple(articles)
 
     async def _resolve_cik(self, ticker: str) -> str | None:
@@ -203,7 +241,15 @@ class SecEdgarNewsSource:
 
     async def _request_json(self, url: str) -> Any:
         async with self._client() as client:
-            response = await client.get(url, headers={"User-Agent": self.user_agent})
+            response = await client.get(
+                url,
+                headers={
+                    "User-Agent": self.user_agent,
+                    "Accept": "application/json",
+                    "Accept-Encoding": "gzip, deflate",
+                    "Host": "data.sec.gov" if "data.sec.gov" in url else "www.sec.gov",
+                },
+            )
             response.raise_for_status()
             return response.json()
 

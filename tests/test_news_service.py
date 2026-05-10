@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pytest
@@ -76,8 +76,9 @@ class FakeStructuredSource:
         ticker: str,
         *,
         company_name: str | None = None,
+        as_of_date: date | None = None,
     ) -> tuple[NewsArticle, ...]:
-        del ticker, company_name
+        del ticker, company_name, as_of_date
         self.calls += 1
         return self.articles
 
@@ -85,12 +86,12 @@ class FakeStructuredSource:
 @dataclass
 class FakeRedis:
     values: dict[str, str] = field(default_factory=dict)
-    ttl_by_key: dict[str, int] = field(default_factory=dict)
+    ttl_by_key: dict[str, int | None] = field(default_factory=dict)
 
     async def get(self, key: str) -> str | None:
         return self.values.get(key)
 
-    async def set(self, key: str, value: str, *, ex: int) -> bool:
+    async def set(self, key: str, value: str, *, ex: int | None = None) -> bool:
         self.values[key] = value
         self.ttl_by_key[key] = ex
         return True
@@ -134,11 +135,10 @@ async def test_news_service_uses_cache_on_repeat_requests() -> None:
     fetcher = FakeFetcher(articles=(_article("Primary article"),))
     summarizer = FakeSummarizer(
         brief=NewsBrief(
-            bullish_evidence=["Backlog improved"],
-            bearish_evidence=[],
             neutral_contextual_evidence=["Sector demand is steady"],
             key_uncertainty="Guidance still matters.",
-            news_confidence=72,
+            summary="Backlog improved across the data center segment.",
+            key_facts=["Order backlog up double digits year-over-year."],
         )
     )
     redis = FakeRedis()
@@ -154,10 +154,11 @@ async def test_news_service_uses_cache_on_repeat_requests() -> None:
     second = await service.bundle("AMD", api_key="test-key")
 
     assert first == second
-    assert search.calls["AMD"] == 1
-    assert fetcher.calls == 1
+    # Articles are now fetched on every call (cache key needs them) but the
+    # Gemini summarizer is called only once thanks to content-addressed caching.
+    assert search.calls["AMD"] == 2
+    assert fetcher.calls == 2
     assert summarizer.calls == 1
-    assert redis.ttl_by_key["news:AMD"] == 3600
 
 
 async def test_news_service_returns_low_confidence_brief_when_no_articles_are_available() -> None:
@@ -174,11 +175,9 @@ async def test_news_service_returns_low_confidence_brief_when_no_articles_are_av
         fetcher=FakeFetcher(articles=()),
         summarizer=FakeSummarizer(
             brief=NewsBrief(
-                bullish_evidence=["Should not be used"],
-                bearish_evidence=[],
                 neutral_contextual_evidence=[],
                 key_uncertainty="unused",
-                news_confidence=99,
+                summary="Should not be used.",
             )
         ),
         cache=None,
@@ -186,47 +185,8 @@ async def test_news_service_returns_low_confidence_brief_when_no_articles_are_av
 
     brief = await service.brief("AMD")
 
-    assert brief.news_confidence == 25
+    assert brief.summary == ""
     assert brief.neutral_contextual_evidence == ["Recent company-specific reporting was sparse."]
-
-
-async def test_news_service_caps_confidence_when_coverage_is_thin() -> None:
-    service = NewsService(
-        structured_sources=(),
-        search=FakeSearchClient(
-            response=SearchResponse(
-                ticker="AMD",
-                company_name="Advanced Micro Devices",
-                primary_results=(),
-                fallback_results=(
-                    SearchResult(
-                        query="fallback",
-                        title="IR page",
-                        url="https://ir.example.com/amd",
-                        snippet="IR",
-                        source="IR",
-                        is_ir_fallback=True,
-                    ),
-                ),
-            )
-        ),
-        fetcher=FakeFetcher(articles=(_article("IR article", is_ir_fallback=True),)),
-        summarizer=FakeSummarizer(
-            brief=NewsBrief(
-                bullish_evidence=["Official update was constructive"],
-                bearish_evidence=[],
-                neutral_contextual_evidence=[],
-                key_uncertainty="Independent confirmation is limited.",
-                news_confidence=92,
-            )
-        ),
-        cache=None,
-    )
-
-    brief = await service.brief("AMD", api_key="test-key")
-
-    assert brief.news_confidence == 45
-    assert "company IR" in brief.neutral_contextual_evidence[-1]
 
 
 async def test_news_service_offline_fixture_run_builds_bundle_end_to_end() -> None:
@@ -269,12 +229,13 @@ async def test_news_service_offline_fixture_run_builds_bundle_end_to_end() -> No
         summarizer=NewsSummarizer(
             router=FakeRouter(
                 response_text=(
-                    '{"bullish_evidence":["New accelerator roadmap supports sentiment"],'
-                    '"bearish_evidence":["Higher expectations raise the bar for guidance"],'
-                    '"neutral_contextual_evidence":["Sector demand remains constructive"],'
+                    '{"neutral_contextual_evidence":["Sector demand remains constructive"],'
                     '"key_uncertainty":'
                     '"Execution on large customer deployments still needs proof.",'
-                    '"news_confidence":68}'
+                    '"summary":"New accelerator roadmap supports sentiment.",'
+                    '"key_facts":["Roadmap update extends product cycle by twelve months."],'
+                    '"quoted_statements":[],'
+                    '"named_actions":[]}'
                 )
             )
         ),
@@ -291,8 +252,8 @@ async def test_news_service_offline_fixture_run_builds_bundle_end_to_end() -> No
     assert bundle.used_ir_fallback is True
     assert len(bundle.search_results) == 3
     assert len(bundle.articles) == 3
-    assert bundle.brief.bullish_evidence == ["New accelerator roadmap supports sentiment"]
-    assert bundle.brief.news_confidence == 68
+    assert bundle.brief.summary == "New accelerator roadmap supports sentiment."
+    assert bundle.brief.key_facts == ["Roadmap update extends product cycle by twelve months."]
 
 
 async def test_news_service_prefers_structured_sources_before_open_web_fallback() -> None:
@@ -322,11 +283,10 @@ async def test_news_service_prefers_structured_sources_before_open_web_fallback(
         fetcher=fetcher,
         summarizer=FakeSummarizer(
             brief=NewsBrief(
-                bullish_evidence=["AI demand stayed supportive."],
-                bearish_evidence=[],
                 neutral_contextual_evidence=[],
                 key_uncertainty="Need earnings confirmation.",
-                news_confidence=78,
+                summary="AI demand stayed supportive.",
+                key_facts=["Backlog disclosure shows steady AI demand."],
             )
         ),
         cache=None,
@@ -346,40 +306,6 @@ async def test_news_service_prefers_structured_sources_before_open_web_fallback(
         "Evercore ISI Says Cisco's Silicon One Is An Underappreciated Driver Of Upside",
     }
     assert bundle.search_results == ()
-
-
-async def test_news_service_caps_confidence_when_only_sec_filings_are_available() -> None:
-    service = NewsService(
-        structured_sources=(
-            FakeStructuredSource(
-                articles=(
-                    _article(
-                        "Cisco Systems 8-K filed on 2026-05-01",
-                        snippet="Official filing",
-                        source="SEC EDGAR",
-                        url="https://www.sec.gov/Archives/edgar/data/858877/filing.htm",
-                    ),
-                )
-            ),
-        ),
-        search=FakeSearchClient(response=SearchResponse(ticker="CSCO", company_name="Cisco Systems")),
-        fetcher=FakeFetcher(articles=()),
-        summarizer=FakeSummarizer(
-            brief=NewsBrief(
-                bullish_evidence=["Official filing looked constructive."],
-                bearish_evidence=[],
-                neutral_contextual_evidence=[],
-                key_uncertainty="Need broader market reaction.",
-                news_confidence=88,
-            )
-        ),
-        cache=None,
-    )
-
-    brief = await service.brief("CSCO", company_name="Cisco Systems", api_key="test-key")
-
-    assert brief.news_confidence == 45
-    assert "SEC filings" in brief.neutral_contextual_evidence[-1]
 
 
 def _search_response() -> SearchResponse:

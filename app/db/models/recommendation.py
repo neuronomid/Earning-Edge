@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-from sqlalchemy import Date, ForeignKey, Index, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, Date, ForeignKey, Index, Integer, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -67,6 +67,9 @@ class Recommendation(Base):
     key_concerns_json: Mapped[dict[str, Any] | list[Any]] = mapped_column(JSONB)
 
     telegram_message_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    news_coverage: Mapped[str] = mapped_column(String(16), default="adequate", server_default="adequate")
+    stale_news: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
     created_at: Mapped[CreatedAt]
 

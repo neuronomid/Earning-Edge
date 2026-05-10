@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     finnhub_news_lookback_days: int = 120
     sec_edgar_user_agent: str = "Earning-Edge/1.0 (contact: ops@example.com)"
 
+    news_brief_schema_version: str = "v3"
+    news_prompt_version: str = "v3"
+
     @property
     def database_url(self) -> str:
         return (
