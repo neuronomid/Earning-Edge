@@ -160,15 +160,45 @@ class PipelineOrchestrator:
             user,
             has_valid_openrouter_api_key=bool(secrets.openrouter_api_key),
         )
-        candidates = list(
+        preliminary_candidates = list(
             await asyncio.gather(
                 *[
-                    self._analyze_candidate(record, user, user_context, secrets)
+                    self._analyze_candidate(
+                        record,
+                        user,
+                        user_context,
+                        secrets,
+                        live_news=False,
+                    )
                     for record in batch.candidates
                 ]
             )
         )
-        decision_candidates = _select_decision_finalists(candidates)
+        preliminary_finalists = _select_decision_finalists(preliminary_candidates)
+        refreshed_candidates = list(
+            await asyncio.gather(
+                *[
+                    self._analyze_candidate(
+                        candidate.record,
+                        user,
+                        user_context,
+                        secrets,
+                        live_news=True,
+                    )
+                    for candidate in preliminary_finalists
+                ]
+            )
+        )
+        refreshed_by_ticker = {
+            candidate.record.ticker: candidate for candidate in refreshed_candidates
+        }
+        candidates = [
+            refreshed_by_ticker.get(candidate.record.ticker, candidate)
+            for candidate in preliminary_candidates
+        ]
+        decision_candidates = _select_decision_finalists(
+            refreshed_candidates or preliminary_finalists
+        )
         decision_result = await self.decision_step.execute(
             decision_candidates,
             user_context,
@@ -194,6 +224,8 @@ class PipelineOrchestrator:
         user: User,
         user_context: UserContext,
         secrets: _UserSecrets,
+        *,
+        live_news: bool,
     ) -> PipelineCandidate:
         calculation_errors: list[str] = []
         effective_user_context = user_context
@@ -207,21 +239,24 @@ class PipelineOrchestrator:
             calculation_errors.append(f"Market data fallback used: {exc}")
             market_snapshot = _fallback_market_snapshot(record, error=str(exc))
 
-        try:
-            news_bundle = await self.news_step.execute(
-                record,
-                openrouter_api_key=secrets.openrouter_api_key,
-            )
-        except LLMAuthenticationError as exc:
-            calculation_errors.append(f"News fallback used: {exc}")
-            news_bundle = _fallback_news_bundle(record, error=str(exc))
-            effective_user_context = replace(
-                user_context,
-                has_valid_openrouter_api_key=False,
-            )
-        except Exception as exc:
-            calculation_errors.append(f"News fallback used: {exc}")
-            news_bundle = _fallback_news_bundle(record, error=str(exc))
+        if live_news:
+            try:
+                news_bundle = await self.news_step.execute(
+                    record,
+                    openrouter_api_key=secrets.openrouter_api_key,
+                )
+            except LLMAuthenticationError as exc:
+                calculation_errors.append(f"News fallback used: {exc}")
+                news_bundle = _fallback_news_bundle(record, error=str(exc))
+                effective_user_context = replace(
+                    user_context,
+                    has_valid_openrouter_api_key=False,
+                )
+            except Exception as exc:
+                calculation_errors.append(f"News fallback used: {exc}")
+                news_bundle = _fallback_news_bundle(record, error=str(exc))
+        else:
+            news_bundle = _deferred_news_bundle(record)
 
         try:
             option_chain = await self.options_step.execute(
@@ -612,6 +647,27 @@ def _fallback_market_snapshot(record: CandidateRecord, *, error: str) -> MarketS
                 score_delta=-20,
             ),
         ),
+    )
+
+
+def _deferred_news_bundle(record: CandidateRecord) -> NewsBundle:
+    return NewsBundle(
+        ticker=record.ticker,
+        company_name=record.company_name,
+        generated_at=datetime.now(tz=timezone.utc),
+        search_results=(),
+        articles=(),
+        brief=NewsBrief(
+            bullish_evidence=[],
+            bearish_evidence=[],
+            neutral_contextual_evidence=[
+                "News was not fetched for preliminary ranking because this candidate did not reach the finalist stage yet."
+            ],
+            key_uncertainty="Finalist-only news refresh was deferred for this candidate.",
+            news_confidence=25,
+        ),
+        used_ir_fallback=False,
+        used_llm_summary=False,
     )
 
 

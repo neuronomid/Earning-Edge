@@ -1,12 +1,16 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import asyncio
+from datetime import UTC, datetime, timezone
 from functools import lru_cache
 from typing import Any, Protocol
+from urllib.parse import urlsplit, urlunsplit
 
+from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.services.news.fetcher import ArticleFetcher
 from app.services.news.search import NewsSearchService
+from app.services.news.sources import FinnhubNewsSource, SecEdgarNewsSource
 from app.services.news.summarizer import NewsSummarizer
 from app.services.news.types import NewsArticle, NewsBrief, NewsBundle, SearchResponse
 from app.services.run_lock import get_redis_client
@@ -27,6 +31,15 @@ class ArticleClient(Protocol):
         results: tuple[Any, ...] | list[Any],
         *,
         limit: int | None = None,
+    ) -> tuple[NewsArticle, ...]: ...
+
+
+class StructuredSource(Protocol):
+    async def fetch_ticker(
+        self,
+        ticker: str,
+        *,
+        company_name: str | None = None,
     ) -> tuple[NewsArticle, ...]: ...
 
 
@@ -82,20 +95,35 @@ class NewsService:
     def __init__(
         self,
         *,
+        structured_sources: tuple[StructuredSource, ...] | list[StructuredSource] | None = None,
         search: SearchClient | None = None,
         fetcher: ArticleClient | None = None,
         summarizer: BriefSummarizer | None = None,
         cache: BundleCache | None = None,
         default_api_key: str | None = None,
-        max_articles: int = 6,
+        max_articles: int = 8,
+        min_structured_articles: int = 3,
         logger: Any | None = None,
     ) -> None:
+        settings = get_settings()
+        self.structured_sources = tuple(
+            structured_sources
+            if structured_sources is not None
+            else (
+                FinnhubNewsSource(
+                    api_key=settings.finnhub_api_key,
+                    lookback_days=settings.finnhub_news_lookback_days,
+                ),
+                SecEdgarNewsSource(user_agent=settings.sec_edgar_user_agent),
+            )
+        )
         self.search = search or NewsSearchService()
         self.fetcher = fetcher or ArticleFetcher()
         self.summarizer = summarizer or NewsSummarizer()
         self.cache = cache
         self.default_api_key = default_api_key
         self.max_articles = max_articles
+        self.min_structured_articles = min_structured_articles
         self.logger = logger or get_logger(__name__)
 
     async def brief(
@@ -132,10 +160,9 @@ class NewsService:
             if cached is not None:
                 return cached
 
-        search_response = await self.search.search_ticker(normalized, company_name=company_name)
-        articles = await self.fetcher.fetch_many(
-            search_response.all_results,
-            limit=self.max_articles,
+        articles, search_response = await self._collect_articles(
+            normalized,
+            company_name=company_name,
         )
         used_llm_summary = False
 
@@ -171,6 +198,104 @@ class NewsService:
         if self.cache is not None:
             await self.cache.store(bundle)
         return bundle
+
+    async def _collect_articles(
+        self,
+        ticker: str,
+        *,
+        company_name: str | None,
+    ) -> tuple[tuple[NewsArticle, ...], SearchResponse]:
+        structured = await self._load_structured_articles(
+            ticker,
+            company_name=company_name,
+        )
+        if len(structured) >= self.min_structured_articles:
+            return structured[: self.max_articles], SearchResponse(
+                ticker=ticker,
+                company_name=company_name,
+            )
+
+        fallback_articles, search_response = await self._load_fallback_articles(
+            ticker,
+            company_name=company_name,
+        )
+        merged = _rank_and_dedupe_articles(
+            (*structured, *fallback_articles),
+            ticker=ticker,
+            company_name=company_name,
+        )
+        return merged[: self.max_articles], search_response
+
+    async def _load_structured_articles(
+        self,
+        ticker: str,
+        *,
+        company_name: str | None,
+    ) -> tuple[NewsArticle, ...]:
+        fetched = await self._gather_structured_articles(
+            ticker,
+            company_name=company_name,
+        )
+        return _rank_and_dedupe_articles(
+            fetched,
+            ticker=ticker,
+            company_name=company_name,
+        )
+
+    async def _gather_structured_articles(
+        self,
+        ticker: str,
+        *,
+        company_name: str | None,
+    ) -> tuple[NewsArticle, ...]:
+        if not self.structured_sources:
+            return ()
+        collected = await asyncio.gather(
+            *[
+                source.fetch_ticker(ticker, company_name=company_name)
+                for source in self.structured_sources
+            ],
+            return_exceptions=True,
+        )
+        articles: list[NewsArticle] = []
+        for source, payload in zip(self.structured_sources, collected, strict=True):
+            if isinstance(payload, BaseException):
+                self.logger.warning(
+                    "structured_news_source_failed",
+                    ticker=ticker,
+                    source=type(source).__name__,
+                    error=str(payload),
+                )
+                continue
+            articles.extend(payload)
+        return tuple(articles)
+
+    async def _load_fallback_articles(
+        self,
+        ticker: str,
+        *,
+        company_name: str | None,
+    ) -> tuple[tuple[NewsArticle, ...], SearchResponse]:
+        try:
+            fallback_response = await self.search.search_ticker(
+                ticker,
+                company_name=company_name,
+            )
+        except Exception as exc:
+            self.logger.warning(
+                "news_fallback_search_failed",
+                ticker=ticker,
+                error=str(exc),
+            )
+            return (), SearchResponse(ticker=ticker, company_name=company_name)
+
+        return (
+            await self.fetcher.fetch_many(
+                fallback_response.all_results,
+                limit=self.max_articles,
+            ),
+            fallback_response,
+        )
 
 
 def _empty_brief(search_response: SearchResponse) -> NewsBrief:
@@ -212,6 +337,11 @@ def _apply_coverage_policy(
     elif search_response.fallback_results:
         confidence_cap = min(confidence_cap, 70)
         coverage_note = "Coverage was thin enough to require company IR fallback results."
+    elif articles and all(_is_sec_article(article) for article in articles):
+        confidence_cap = min(confidence_cap, 55)
+        coverage_note = (
+            "Coverage relied entirely on SEC filings, so broader market sentiment may be missing."
+        )
 
     adjusted_confidence = min(brief.news_confidence, confidence_cap)
     neutral_evidence = list(brief.neutral_contextual_evidence)
@@ -229,3 +359,188 @@ def _apply_coverage_policy(
 @lru_cache(maxsize=1)
 def get_news_service() -> NewsService:
     return NewsService(cache=NewsBundleCache(get_redis_client()))
+
+
+def _rank_and_dedupe_articles(
+    articles: tuple[NewsArticle, ...] | list[NewsArticle],
+    *,
+    ticker: str,
+    company_name: str | None,
+) -> tuple[NewsArticle, ...]:
+    ranked = sorted(
+        articles,
+        key=lambda article: _article_sort_key(article, ticker=ticker, company_name=company_name),
+    )
+    deduped: list[NewsArticle] = []
+    seen_keys: set[tuple[str, str, str]] = set()
+    for article in ranked:
+        dedupe_key = _article_dedupe_key(article)
+        if dedupe_key in seen_keys:
+            continue
+        seen_keys.add(dedupe_key)
+        deduped.append(article)
+    return tuple(deduped)
+
+
+def _article_sort_key(
+    article: NewsArticle,
+    *,
+    ticker: str,
+    company_name: str | None,
+) -> tuple[int, int, str, str, str]:
+    published_at = article.published_at or datetime(1970, 1, 1, tzinfo=UTC)
+    return (
+        -_article_priority(article, ticker=ticker, company_name=company_name),
+        -int(published_at.timestamp()),
+        (article.source or "").lower(),
+        _normalized_url(article.url),
+        article.title.lower(),
+    )
+
+
+def _article_priority(
+    article: NewsArticle,
+    *,
+    ticker: str,
+    company_name: str | None,
+) -> int:
+    title = article.title.lower()
+    summary = f"{article.snippet} {article.content[:400]}".lower()
+    title_direct = _contains_company_reference(title, ticker=ticker, company_name=company_name)
+    summary_direct = _contains_company_reference(summary, ticker=ticker, company_name=company_name)
+
+    score = 0
+    if title_direct:
+        score += 90
+    elif summary_direct:
+        score += 55
+    else:
+        score -= 35
+
+    score += _recency_score(article.published_at)
+    score += _source_quality_score(article)
+    if _is_thesis_changing(article):
+        score += 35
+    if article.is_ir_fallback:
+        score -= 15
+    return score
+
+
+def _recency_score(published_at: datetime | None) -> int:
+    if published_at is None:
+        return 0
+    age_days = max((datetime.now(tz=UTC) - published_at).days, 0)
+    if age_days <= 7:
+        return 80
+    if age_days <= 30:
+        return 45
+    if age_days <= 120:
+        return 15
+    return 0
+
+
+def _source_quality_score(article: NewsArticle) -> int:
+    source = (article.source or "").lower()
+    url = article.url.lower()
+    if "sec edgar" in source or "sec.gov" in url:
+        return 45
+    if any(token in source for token in ("reuters", "cnbc", "bloomberg", "wsj", "marketwatch")):
+        return 25
+    if article.is_ir_fallback:
+        return 10
+    return 18
+
+
+def _is_thesis_changing(article: NewsArticle) -> bool:
+    haystack = f"{article.title} {article.snippet} {article.content[:400]}".lower()
+    terms = (
+        "earnings",
+        "guidance",
+        "acquisition",
+        "merger",
+        "lawsuit",
+        "investigation",
+        "downgrade",
+        "upgrade",
+        "target",
+        "launch",
+        "restructuring",
+        "contract",
+        "customer",
+        "buyback",
+        "dividend",
+        "silicon one",
+    )
+    return any(term in haystack for term in terms)
+
+
+def _contains_company_reference(
+    text: str,
+    *,
+    ticker: str,
+    company_name: str | None,
+) -> bool:
+    normalized_ticker = ticker.strip().lower()
+    if normalized_ticker and normalized_ticker in text.split():
+        return True
+    if normalized_ticker and f"({normalized_ticker})" in text:
+        return True
+
+    for token in _company_tokens(company_name):
+        if token in text:
+            return True
+    return False
+
+
+def _company_tokens(company_name: str | None) -> tuple[str, ...]:
+    if not company_name:
+        return ()
+    raw = company_name.lower()
+    cleaned = "".join(char if char.isalnum() or char.isspace() else " " for char in raw)
+    blocked = {
+        "inc",
+        "incorporated",
+        "corp",
+        "corporation",
+        "company",
+        "co",
+        "systems",
+        "group",
+        "holdings",
+        "limited",
+        "ltd",
+        "plc",
+    }
+    tokens = [
+        token
+        for token in cleaned.split()
+        if len(token) >= 4 and token not in blocked
+    ]
+    return tuple(tokens)
+
+
+def _article_dedupe_key(article: NewsArticle) -> tuple[str, str, str]:
+    published = (
+        article.published_at.astimezone(UTC).isoformat()
+        if article.published_at is not None
+        else ""
+    )
+    normalized_url = _normalized_url(article.url)
+    return (
+        normalized_url,
+        article.title.strip().lower(),
+        published,
+    )
+
+
+def _normalized_url(url: str) -> str:
+    parts = urlsplit(url.strip())
+    if not parts.scheme or not parts.netloc:
+        return url.strip().lower()
+    path = parts.path.rstrip("/") or "/"
+    return urlunsplit((parts.scheme.lower(), parts.netloc.lower(), path, parts.query, ""))
+
+
+def _is_sec_article(article: NewsArticle) -> bool:
+    source = (article.source or "").lower()
+    return "sec edgar" in source or "sec.gov" in article.url.lower()

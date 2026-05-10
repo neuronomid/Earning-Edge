@@ -87,7 +87,7 @@ class NewsSummarizer:
                 f"ARTICLES_JSON: {article_payload}"
             ),
             max_tokens=1200,
-            temperature=0.2,
+            temperature=0,
         )
 
         payload = _parse_json_payload(text)

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from types import SimpleNamespace
@@ -85,6 +85,7 @@ class FakeMarketDataStep:
 @dataclass(slots=True)
 class FakeNewsStep:
     bundles: dict[str, NewsBundle]
+    calls: list[str] = field(default_factory=list)
 
     async def execute(
         self,
@@ -93,6 +94,7 @@ class FakeNewsStep:
         openrouter_api_key: str,
     ) -> NewsBundle:
         del openrouter_api_key
+        self.calls.append(record.ticker)
         return self.bundles[record.ticker]
 
 
@@ -546,6 +548,39 @@ async def test_pipeline_watchlist_path_sets_zero_quantity(
     assert run.status == "success"
     assert "watching, but not sizing yet" in notifier.calls[1].text
     assert "Watchlist only" in notifier.calls[2].text
+
+
+@pytest.mark.asyncio
+async def test_pipeline_fetches_live_news_only_for_top_finalists(
+    db_session: AsyncSession,
+) -> None:
+    batch = _batch()
+    news_step = FakeNewsStep({record.ticker: _bundle(record) for record in batch.candidates})
+    orchestrator = PipelineOrchestrator(
+        candidate_step=FakeCandidateStep(batch),
+        market_data_step=FakeMarketDataStep(
+            {record.ticker: _snapshot(record) for record in batch.candidates}
+        ),
+        news_step=news_step,
+        options_step=FakeOptionsStep({"AMD": (_long_call("AMD", strike="104"),)}),
+        scoring_step=FakeScoringStep(
+            {
+                "AMD": ScoringPlan("recommend", 82, "bullish", 80, 84),
+                "AAPL": ScoringPlan("watchlist", 64, "bullish", 70, 66),
+                "MSFT": ScoringPlan("watchlist", 62, "bullish", 68, 64),
+                "NFLX": ScoringPlan("watchlist", 60, "bullish", 65, 62),
+                "JPM": ScoringPlan("no_trade", 45, "neutral", 46),
+            }
+        ),
+        sizing_step=FakeSizingStep(),
+        notifier=FakeNotifier(),
+    )
+    user = await _make_user(db_session, telegram_chat_id="92345")
+
+    await orchestrator.evaluate_batch(batch, user)
+
+    assert set(news_step.calls) == {"AMD", "AAPL", "MSFT", "NFLX"}
+    assert "JPM" not in news_step.calls
 
 
 @pytest.mark.asyncio

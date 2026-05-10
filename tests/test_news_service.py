@@ -67,6 +67,22 @@ class FakeSummarizer:
 
 
 @dataclass
+class FakeStructuredSource:
+    articles: tuple[NewsArticle, ...]
+    calls: int = 0
+
+    async def fetch_ticker(
+        self,
+        ticker: str,
+        *,
+        company_name: str | None = None,
+    ) -> tuple[NewsArticle, ...]:
+        del ticker, company_name
+        self.calls += 1
+        return self.articles
+
+
+@dataclass
 class FakeRedis:
     values: dict[str, str] = field(default_factory=dict)
     ttl_by_key: dict[str, int] = field(default_factory=dict)
@@ -127,6 +143,7 @@ async def test_news_service_uses_cache_on_repeat_requests() -> None:
     )
     redis = FakeRedis()
     service = NewsService(
+        structured_sources=(),
         search=search,
         fetcher=fetcher,
         summarizer=summarizer,
@@ -145,6 +162,7 @@ async def test_news_service_uses_cache_on_repeat_requests() -> None:
 
 async def test_news_service_returns_low_confidence_brief_when_no_articles_are_available() -> None:
     service = NewsService(
+        structured_sources=(),
         search=FakeSearchClient(
             response=SearchResponse(
                 ticker="AMD",
@@ -174,6 +192,7 @@ async def test_news_service_returns_low_confidence_brief_when_no_articles_are_av
 
 async def test_news_service_caps_confidence_when_coverage_is_thin() -> None:
     service = NewsService(
+        structured_sources=(),
         search=FakeSearchClient(
             response=SearchResponse(
                 ticker="AMD",
@@ -244,6 +263,7 @@ async def test_news_service_offline_fixture_run_builds_bundle_end_to_end() -> No
         }
     )
     service = NewsService(
+        structured_sources=(),
         search=NewsSearchService(provider=provider, max_results_per_query=3, min_primary_results=3),
         fetcher=ArticleFetcher(),
         summarizer=NewsSummarizer(
@@ -275,6 +295,93 @@ async def test_news_service_offline_fixture_run_builds_bundle_end_to_end() -> No
     assert bundle.brief.news_confidence == 68
 
 
+async def test_news_service_prefers_structured_sources_before_open_web_fallback() -> None:
+    structured = FakeStructuredSource(
+        articles=(
+            _article(
+                "Cisco Stock Finds New Growth In AI Infrastructure",
+                snippet="Cisco kept showing direct AI demand momentum ahead of earnings.",
+            ),
+            _article(
+                "Cisco Systems 8-K filed on 2026-05-01",
+                snippet="Official SEC filing.",
+                source="SEC EDGAR",
+                url="https://www.sec.gov/Archives/edgar/data/858877/filing.htm",
+            ),
+            _article(
+                "Evercore ISI Says Cisco's Silicon One Is An Underappreciated Driver Of Upside",
+                snippet="Cisco was named directly in the outlook update.",
+            ),
+        )
+    )
+    search = FakeSearchClient(response=_search_response())
+    fetcher = FakeFetcher(articles=(_article("Should not be used"),))
+    service = NewsService(
+        structured_sources=(structured,),
+        search=search,
+        fetcher=fetcher,
+        summarizer=FakeSummarizer(
+            brief=NewsBrief(
+                bullish_evidence=["AI demand stayed supportive."],
+                bearish_evidence=[],
+                neutral_contextual_evidence=[],
+                key_uncertainty="Need earnings confirmation.",
+                news_confidence=78,
+            )
+        ),
+        cache=None,
+    )
+
+    bundle = await service.bundle("CSCO", company_name="Cisco Systems", api_key="test-key")
+
+    assert structured.calls == 1
+    assert search.calls["CSCO"] == 0
+    assert fetcher.calls == 0
+    assert len(bundle.articles) == 3
+    assert {
+        article.title for article in bundle.articles
+    } == {
+        "Cisco Stock Finds New Growth In AI Infrastructure",
+        "Cisco Systems 8-K filed on 2026-05-01",
+        "Evercore ISI Says Cisco's Silicon One Is An Underappreciated Driver Of Upside",
+    }
+    assert bundle.search_results == ()
+
+
+async def test_news_service_caps_confidence_when_only_sec_filings_are_available() -> None:
+    service = NewsService(
+        structured_sources=(
+            FakeStructuredSource(
+                articles=(
+                    _article(
+                        "Cisco Systems 8-K filed on 2026-05-01",
+                        snippet="Official filing",
+                        source="SEC EDGAR",
+                        url="https://www.sec.gov/Archives/edgar/data/858877/filing.htm",
+                    ),
+                )
+            ),
+        ),
+        search=FakeSearchClient(response=SearchResponse(ticker="CSCO", company_name="Cisco Systems")),
+        fetcher=FakeFetcher(articles=()),
+        summarizer=FakeSummarizer(
+            brief=NewsBrief(
+                bullish_evidence=["Official filing looked constructive."],
+                bearish_evidence=[],
+                neutral_contextual_evidence=[],
+                key_uncertainty="Need broader market reaction.",
+                news_confidence=88,
+            )
+        ),
+        cache=None,
+    )
+
+    brief = await service.brief("CSCO", company_name="Cisco Systems", api_key="test-key")
+
+    assert brief.news_confidence == 45
+    assert "SEC filings" in brief.neutral_contextual_evidence[-1]
+
+
 def _search_response() -> SearchResponse:
     return SearchResponse(
         ticker="AMD",
@@ -292,17 +399,24 @@ def _search_response() -> SearchResponse:
     )
 
 
-def _article(title: str, *, is_ir_fallback: bool = False) -> NewsArticle:
+def _article(
+    title: str,
+    *,
+    snippet: str = "snippet",
+    source: str = "example.com",
+    url: str = "https://example.com/article",
+    is_ir_fallback: bool = False,
+) -> NewsArticle:
     return NewsArticle(
         title=title,
-        url="https://example.com/article",
-        snippet="snippet",
+        url=url,
+        snippet=snippet,
         content=(
             "This article discusses AMD demand trends, guidance expectations, margin "
             "questions, and broader semiconductor sentiment in enough detail to "
             "support a structured news summary."
         ),
-        source="example.com",
+        source=source,
         published_at=datetime(2026, 5, 1, 12, 0, tzinfo=UTC),
         is_ir_fallback=is_ir_fallback,
     )

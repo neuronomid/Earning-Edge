@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 import httpx
@@ -11,6 +12,25 @@ from app.services.news.summarizer import NewsSummarizer, NewsSummaryValidationEr
 from app.services.news.types import NewsArticle
 
 pytestmark = pytest.mark.asyncio
+
+
+@dataclass
+class RecordingRouter:
+    response_text: str
+    captured_temperature: float | None = None
+
+    async def summarize(
+        self,
+        *,
+        api_key: str,
+        system: str,
+        user: str,
+        max_tokens: int = 1024,
+        temperature: float = 0.3,
+    ) -> str:
+        del api_key, system, user, max_tokens
+        self.captured_temperature = temperature
+        return self.response_text
 
 
 async def test_news_summarizer_parses_valid_openrouter_response() -> None:
@@ -85,6 +105,26 @@ async def test_news_summarizer_rejects_schema_invalid_openrouter_response() -> N
                     articles=(_sample_article(),),
                     api_key="test-openrouter-key",
                 )
+
+
+async def test_news_summarizer_uses_zero_temperature() -> None:
+    router = RecordingRouter(
+        response_text=(
+            '{"bullish_evidence":["Supportive note"],'
+            '"bearish_evidence":[],"neutral_contextual_evidence":[],'
+            '"key_uncertainty":"Need guidance.","news_confidence":70}'
+        )
+    )
+    summarizer = NewsSummarizer(router=router)
+
+    await summarizer.summarize(
+        ticker="AMD",
+        company_name="Advanced Micro Devices",
+        articles=(_sample_article(),),
+        api_key="test-openrouter-key",
+    )
+
+    assert router.captured_temperature == 0
 
 
 def _sample_article() -> NewsArticle:
