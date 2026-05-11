@@ -3,10 +3,11 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from functools import lru_cache
 from typing import Any, Protocol
+from uuid import UUID
 
 from aiogram import Bot
 from aiogram.client.default import DefaultBotProperties
@@ -39,11 +40,15 @@ from app.pipeline.steps.sizing import PositionSizingStep, SizingStep
 from app.pipeline.types import PipelineCandidate, PipelineOutcome
 from app.scoring.types import (
     CandidateContext,
+    CandidateEvaluation,
+    ContractScoreResult,
+    OptionContractInput,
     UserContext,
     breakeven_price,
     option_mid,
     option_premium,
     spread_percent,
+    uncovered_call_margin_requirement,
 )
 from app.services.candidate_models import CandidateBatch, CandidateRecord
 from app.services.logging_service import LoggingService, get_logging_service
@@ -139,7 +144,7 @@ class PipelineOrchestrator:
         if run.trigger_type == "manual":
             await self.notifier.send_text(user.telegram_chat_id, render_scan_started())
 
-        reference_dt = datetime.now(timezone.utc)
+        reference_dt = datetime.now(UTC)
 
         batch = await self.candidate_step.execute()
         run.screener_status = batch.screener_status
@@ -163,7 +168,7 @@ class PipelineOrchestrator:
         *,
         reference_dt: datetime | None = None,
     ) -> PipelineOutcome:
-        effective_reference_dt = reference_dt or datetime.now(timezone.utc)
+        effective_reference_dt = reference_dt or datetime.now(UTC)
         secrets = _decrypt_user_secrets(user)
         user_context = _build_user_context(
             user,
@@ -241,7 +246,7 @@ class PipelineOrchestrator:
     ) -> PipelineCandidate:
         calculation_errors: list[str] = []
         effective_user_context = user_context
-        effective_reference_dt = reference_dt or datetime.now(timezone.utc)
+        effective_reference_dt = reference_dt or datetime.now(UTC)
 
         try:
             market_snapshot = await self.market_data_step.execute(
@@ -294,18 +299,30 @@ class PipelineOrchestrator:
             calculation_errors.append(f"Option chain unavailable: {exc}")
             option_chain = ()
 
+        option_chain = _option_chain_with_underlying_price(
+            option_chain,
+            market_snapshot.current_price,
+        )
+        expected_move_percent = _expected_move_percent(
+            option_chain,
+            market_snapshot.current_price,
+            market_snapshot.as_of_date,
+        )
+        strategy_source = record.strategy_source or "catalyst_confluence"
         context = CandidateContext(
             ticker=record.ticker,
             company_name=record.company_name or market_snapshot.company_name or record.ticker,
-            earnings_date=record.earnings_date or datetime.now(timezone.utc).date(),
+            earnings_date=record.earnings_date,
             earnings_timing="unknown",
             market_snapshot=market_snapshot,
             news_brief=news_bundle.brief,
             option_chain=option_chain,
+            strategy_source=strategy_source,
             verified_earnings_date=record.earnings_date_verified,
             identity_verified=bool(
                 record.ticker and (record.company_name or market_snapshot.company_name)
             ),
+            expected_move_percent=expected_move_percent,
             source_conflicts=(),
             calculation_errors=tuple(calculation_errors),
         )
@@ -322,7 +339,7 @@ class PipelineOrchestrator:
     async def _size_candidate(
         self,
         user_context: UserContext,
-        evaluation,
+        evaluation: CandidateEvaluation,
     ) -> SizingResult | None:
         if evaluation.chosen_contract is None:
             return None
@@ -331,7 +348,7 @@ class PipelineOrchestrator:
     async def _size_contract(
         self,
         user_context: UserContext,
-        contract,
+        contract: OptionContractInput,
     ) -> SizingResult | None:
         try:
             return await self.sizing_step.execute(user_context, contract)
@@ -364,6 +381,7 @@ class PipelineOrchestrator:
                     current_price=item.context.market_snapshot.current_price
                     or item.record.current_price
                     or ZERO,
+                    expected_move_percent=item.context.expected_move_percent,
                     direction_classification=item.evaluation.direction.classification,
                     candidate_direction_score=item.evaluation.direction.score,
                     best_strategy=(
@@ -419,6 +437,11 @@ class PipelineOrchestrator:
                             if contract.exit_target is None
                             else contract.exit_target.stop_loss_option_price
                         ),
+                        underlying_stop_price=(
+                            None
+                            if contract.exit_target is None
+                            else contract.exit_target.underlying_stop_price
+                        ),
                         exit_by_date=(
                             None
                             if contract.exit_target is None
@@ -434,6 +457,10 @@ class PipelineOrchestrator:
                             if contract.exit_target is None
                             else contract.exit_target.target_method
                         ),
+                        expected_move_percent=item.context.expected_move_percent,
+                        margin_requirement=uncovered_call_margin_requirement(contract.contract)
+                        if contract.strategy == "short_call"
+                        else None,
                         spread_percent=ZERO if spread is None else spread * Decimal("100"),
                         liquidity_score=contract.liquidity_score,
                         contract_opportunity_score=contract.score,
@@ -454,7 +481,7 @@ class PipelineOrchestrator:
             update_run=True,
         )
         if recommendation is None and run.finished_at is None:
-            run.finished_at = datetime.now(timezone.utc)
+            run.finished_at = datetime.now(UTC)
         return recommendation
 
     async def persist_recommendation(
@@ -464,14 +491,14 @@ class PipelineOrchestrator:
         user: User,
         outcome: PipelineOutcome,
         *,
-        parent_recommendation_id=None,
+        parent_recommendation_id: UUID | None = None,
         update_run: bool,
     ) -> Recommendation | None:
         recommendation_repo = RecommendationRepository(session)
         if outcome.decision.action == "no_trade" or outcome.selected is None:
             if update_run:
                 run.status = "no_trade"
-                run.finished_at = datetime.now(timezone.utc)
+                run.finished_at = datetime.now(UTC)
                 run.final_recommendation_id = None
             return None
 
@@ -479,7 +506,7 @@ class PipelineOrchestrator:
         if chosen_contract is None:
             if update_run:
                 run.status = "no_trade"
-                run.finished_at = datetime.now(timezone.utc)
+                run.finished_at = datetime.now(UTC)
                 run.final_recommendation_id = None
             return None
 
@@ -502,6 +529,8 @@ class PipelineOrchestrator:
                 parent_recommendation_id=parent_recommendation_id,
                 ticker=outcome.selected.record.ticker,
                 company_name=outcome.selected.context.company_name,
+                earnings_date=outcome.selected.context.earnings_date,
+                strategy_source=outcome.selected.context.strategy_source,
                 strategy=chosen_contract.strategy,
                 option_type=chosen_contract.contract.option_type,
                 position_side=chosen_contract.contract.position_side,
@@ -528,6 +557,11 @@ class PipelineOrchestrator:
                     if chosen_contract.exit_target is None
                     else chosen_contract.exit_target.stop_loss_option_price
                 ),
+                underlying_stop_price=(
+                    None
+                    if chosen_contract.exit_target is None
+                    else chosen_contract.exit_target.underlying_stop_price
+                ),
                 exit_by_date=(
                     None
                     if chosen_contract.exit_target is None
@@ -543,6 +577,8 @@ class PipelineOrchestrator:
                     if chosen_contract.exit_target is None
                     else chosen_contract.exit_target.target_method
                 ),
+                expected_move_percent=outcome.selected.context.expected_move_percent,
+                margin_requirement=sizing.margin_requirement_per_contract,
                 suggested_quantity=quantity,
                 estimated_max_loss=sizing.max_loss_text,
                 account_risk_percent=sizing.account_risk_pct * Decimal("100"),
@@ -555,10 +591,9 @@ class PipelineOrchestrator:
                 stale_news=outcome.selected.news_bundle.stale_news,
             )
         )
-        recommendation.earnings_date = outcome.selected.context.earnings_date
         if update_run:
             run.status = "success"
-            run.finished_at = datetime.now(timezone.utc)
+            run.finished_at = datetime.now(UTC)
             run.final_recommendation_id = recommendation.id
         return recommendation
 
@@ -589,8 +624,6 @@ class PipelineOrchestrator:
             return final_message
 
         action = outcome.decision.action
-        if outcome.selected is not None:
-            recommendation.earnings_date = outcome.selected.context.earnings_date
         final_message = render_main_recommendation(
             recommendation,
             warning_text=outcome.batch.warning_text,
@@ -639,6 +672,65 @@ def _build_user_context(user: User, *, has_valid_openrouter_api_key: bool) -> Us
     )
 
 
+def _option_chain_with_underlying_price(
+    option_chain: tuple[OptionContractInput, ...],
+    current_price: Decimal | None,
+) -> tuple[OptionContractInput, ...]:
+    if current_price is None or current_price <= ZERO:
+        return option_chain
+    return tuple(
+        contract
+        if contract.underlying_price is not None
+        else replace(contract, underlying_price=current_price)
+        for contract in option_chain
+    )
+
+
+def _expected_move_percent(
+    option_chain: tuple[OptionContractInput, ...],
+    current_price: Decimal | None,
+    valuation_date: date | None,
+) -> Decimal | None:
+    if current_price is None or current_price <= ZERO or not option_chain:
+        return None
+
+    expiries = sorted(
+        {
+            contract.expiry
+            for contract in option_chain
+            if valuation_date is None or contract.expiry > valuation_date
+        }
+    )
+    if not expiries:
+        return None
+
+    front_expiry = expiries[0]
+    pairs: dict[Decimal, dict[str, Decimal]] = {}
+    for contract in option_chain:
+        if contract.expiry != front_expiry:
+            continue
+        mid = option_mid(contract)
+        if mid is None or mid <= ZERO:
+            continue
+        by_type = pairs.setdefault(contract.strike, {})
+        by_type.setdefault(contract.option_type, mid)
+
+    best_strike: Decimal | None = None
+    best_distance: Decimal | None = None
+    for strike, by_type in pairs.items():
+        if "call" not in by_type or "put" not in by_type:
+            continue
+        distance = abs(strike - current_price)
+        if best_distance is None or distance < best_distance:
+            best_strike = strike
+            best_distance = distance
+    if best_strike is None:
+        return None
+
+    straddle = pairs[best_strike]["call"] + pairs[best_strike]["put"]
+    return ((straddle * Decimal("0.85")) / current_price).quantize(Decimal("0.000001"))
+
+
 def _fallback_market_snapshot(record: CandidateRecord, *, error: str) -> MarketSnapshot:
     return MarketSnapshot(
         ticker=record.ticker,
@@ -684,7 +776,8 @@ def _deferred_news_bundle(record: CandidateRecord, *, generated_at: datetime) ->
         articles=(),
         brief=NewsBrief(
             neutral_contextual_evidence=[
-                "News was not fetched for preliminary ranking because this candidate did not reach the finalist stage yet."
+                "News was not fetched for preliminary ranking because this candidate "
+                "did not reach the finalist stage yet."
             ],
             key_uncertainty="Finalist-only news refresh was deferred for this candidate.",
         ),
@@ -756,14 +849,14 @@ def _select_decision_finalists(
 
 def _select_contract(
     candidate: PipelineCandidate | None,
-    chosen_contract,
-):
+    chosen_contract: Any,
+) -> ContractScoreResult | None:
     if candidate is None:
         return None
     return resolve_selected_contract(candidate, chosen_contract)
 
 
-def _risk_level(contract, final_score: int) -> str:
+def _risk_level(contract: ContractScoreResult, final_score: int) -> str:
     if contract.contract.position_side == "short":
         return "High"
     if final_score >= 78:

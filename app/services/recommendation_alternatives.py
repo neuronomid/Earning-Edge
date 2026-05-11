@@ -6,6 +6,7 @@ from typing import Any, Literal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.models.candidate import Candidate
 from app.db.models.recommendation import Recommendation
 from app.db.models.user import User
 from app.db.models.workflow_run import WorkflowRun
@@ -121,16 +122,20 @@ class AlternativeRecommendationService:
         )
         return CandidateBatch(
             candidates=tuple(records),
-            screener_status=_run_summary_value(run.run_summary_json, "screener_status", run.screener_status)
+            screener_status=_run_summary_value(
+                run.run_summary_json, "screener_status", run.screener_status
+            )
             or "success",
             fallback_used=bool(_run_summary_value(run.run_summary_json, "fallback_used", False)),
             warning_text=_run_summary_value(run.run_summary_json, "warning_text", None),
         )
 
 
-def _candidate_record_from_stored(row, card: dict[str, Any] | None) -> CandidateRecord:
+def _candidate_record_from_stored(row: Candidate, card: dict[str, Any] | None) -> CandidateRecord:
     company_name = row.company_name if row.company_name else _card_str(card, "company_name")
-    earnings_date = row.earnings_date if row.earnings_date is not None else _card_date(card, "earnings_date")
+    earnings_date = (
+        row.earnings_date if row.earnings_date is not None else _card_date(card, "earnings_date")
+    )
     return CandidateRecord(
         ticker=row.ticker,
         company_name=company_name,
@@ -141,6 +146,7 @@ def _candidate_record_from_stored(row, card: dict[str, Any] | None) -> Candidate
         screener_rank=_card_int(card, "screener_rank"),
         sources=_card_tuple(card, "data_sources_used", default=("stored_run",)),
         validation_notes=_card_tuple(card, "validation_notes", default=()),
+        strategy_source=(row.strategy_source or _card_str(card, "strategy_source")),  # type: ignore[arg-type]
     )
 
 
@@ -149,9 +155,7 @@ def _candidate_cards_by_ticker(
 ) -> dict[str, dict[str, Any]]:
     cards = candidate_cards_json or []
     return {
-        str(card["ticker"]): card
-        for card in cards
-        if isinstance(card, dict) and card.get("ticker")
+        str(card["ticker"]): card for card in cards if isinstance(card, dict) and card.get("ticker")
     }
 
 

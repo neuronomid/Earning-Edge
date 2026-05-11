@@ -150,6 +150,42 @@ def test_expiry_rule_for_bmo_and_amc(
     assert fit == expected_fit
 
 
+def test_coiled_setup_without_earnings_date_uses_dte_expiry_window() -> None:
+    contract = OptionContractInput(
+        ticker="XYZ",
+        option_type="call",
+        position_side="long",
+        strike=Decimal("102"),
+        expiry=date(2026, 5, 16),
+        bid=Decimal("1.20"),
+        ask=Decimal("1.30"),
+        volume=120,
+        open_interest=300,
+        implied_volatility=Decimal("0.42"),
+        delta=Decimal("0.55"),
+    )
+    candidate = replace(
+        _strong_bullish_candidate(),
+        ticker="XYZ",
+        company_name="XYZ Inc.",
+        earnings_date=None,
+        strategy_source="coiled_setup",
+        option_chain=(contract,),
+        verified_earnings_date=True,
+    )
+    user = _user(account_size="20000")
+    direction = score_direction(candidate, data_confidence_score=83)
+
+    vetoes = evaluate_hard_vetoes(candidate, user, contract)
+    result = score_contract(candidate, user, contract, direction)
+
+    assert "earnings_missing" not in {veto.code for veto in vetoes}
+    assert "earnings_unverified" not in {veto.code for veto in vetoes}
+    assert "invalid_expiry" not in {veto.code for veto in vetoes}
+    assert result.expiry_days_after_earnings is None
+    assert result.score > 0
+
+
 @pytest.mark.parametrize(
     ("candidate", "contract", "user", "expected_code"),
     [

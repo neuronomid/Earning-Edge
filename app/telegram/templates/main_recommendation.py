@@ -18,9 +18,12 @@ class RecommendationLike(Protocol):
     target_stock_price: Decimal | None
     target_option_price: Decimal | None
     stop_loss_option_price: Decimal | None
+    underlying_stop_price: Decimal | None
     exit_by_date: date | None
+    earnings_date: date | None
     suggested_quantity: int
     estimated_max_loss: str
+    margin_requirement: Decimal | None
     account_risk_percent: Decimal
     confidence_score: int
     risk_level: str
@@ -44,9 +47,7 @@ def render_main_recommendation(
         f"{_rank_medal(rank_position)} {recommendation.ticker}"
     )
     quantity_text = (
-        "Watchlist only"
-        if watchlist_only
-        else f"{recommendation.suggested_quantity} contract(s)"
+        "Watchlist only" if watchlist_only else f"{recommendation.suggested_quantity} contract(s)"
     )
     lines.extend(
         [
@@ -54,37 +55,45 @@ def render_main_recommendation(
             "",
             setup_text,
             "",
-            f"{_direction_emoji(recommendation)} <b>Direction:</b> {_direction_label(recommendation)}",
+            (
+                f"{_direction_emoji(recommendation)} <b>Direction:</b> "
+                f"{_direction_label(recommendation)}"
+            ),
             f"📃 <b>Contract:</b> {contract_label(recommendation)}",
             f"🏷️ <b>Strike:</b> ${_money(recommendation.strike)}",
-            f"💵 <b>Suggested entry:</b> {_entry_text(recommendation.suggested_entry)}",
+            f"💵 <b>Suggested entry:</b> {_entry_text(recommendation)}",
             f"📎 <b>Suggested quantity:</b> {quantity_text}",
             f"🗓️ <b>Expiry:</b> {recommendation.expiry.isoformat()}",
             "",
         ]
     )
-    if getattr(recommendation, "target_option_price", None) is not None:
-        lines.append(
-            f"🟢 <b>Target sell price:</b> ${_money(recommendation.target_option_price)}"
-        )
-    if getattr(recommendation, "stop_loss_option_price", None) is not None:
-        lines.append(
-            f"🛑 <b>Stop loss:</b> ${_money(recommendation.stop_loss_option_price)}"
-        )
-    if getattr(recommendation, "target_stock_price", None) is not None:
-        lines.append(f"🎯 <b>Stock target:</b> ${_money(recommendation.target_stock_price)}")
-    if getattr(recommendation, "exit_by_date", None) is not None:
-        lines.append(f"🗓️ <b>Exit by:</b> {recommendation.exit_by_date.isoformat()}")
+    target_option_price = getattr(recommendation, "target_option_price", None)
+    if target_option_price is not None:
+        lines.append(f"🟢 <b>{_target_label(recommendation)}:</b> ${_money(target_option_price)}")
+    stop_loss_option_price = getattr(recommendation, "stop_loss_option_price", None)
+    if stop_loss_option_price is not None:
+        lines.append(f"🛑 <b>{_stop_label(recommendation)}:</b> ${_money(stop_loss_option_price)}")
+    underlying_stop_price = getattr(recommendation, "underlying_stop_price", None)
+    if underlying_stop_price is not None:
+        lines.append(f"<b>Underlying stop alert:</b> ${_money(underlying_stop_price)}")
+    target_stock_price = getattr(recommendation, "target_stock_price", None)
+    if target_stock_price is not None:
+        lines.append(f"🎯 <b>Stock target:</b> ${_money(target_stock_price)}")
+    exit_by_date = getattr(recommendation, "exit_by_date", None)
+    if exit_by_date is not None:
+        lines.append(f"🗓️ <b>Exit by:</b> {exit_by_date.isoformat()}")
     lines.extend(
         [
             "",
             f"<b>Estimated max loss:</b> {_max_loss_text(recommendation)}",
+            *_margin_lines(recommendation),
             f"<b>Account risk:</b> {_percent(recommendation.account_risk_percent)}",
-            f"<b>Earnings date:</b> {_earnings_date(recommendation).isoformat()}",
+            f"<b>Earnings date:</b> {_earnings_date_text(recommendation)}",
             f"<b>Confidence:</b> {recommendation.confidence_score}/100",
             f"<b>Risk level:</b> {recommendation.risk_level}",
         ]
     )
+    lines.extend(_risk_disclosures(recommendation))
     news_coverage = getattr(recommendation, "news_coverage", None)
     if news_coverage in {"none", "sparse"}:
         lines.append(f"📰 <b>News:</b> {news_coverage}")
@@ -128,9 +137,12 @@ def _direction_emoji(recommendation: RecommendationLike) -> str:
     return "📈" if recommendation.option_type == "call" else "📉"
 
 
-def _entry_text(value: Decimal | None) -> str:
+def _entry_text(recommendation: RecommendationLike) -> str:
+    value = recommendation.suggested_entry
     if value is None:
         return "Review live pricing in your broker"
+    if recommendation.position_side == "short":
+        return f"at least ${_money(value)} credit"
     return f"up to ${_money(value)} premium"
 
 
@@ -149,9 +161,43 @@ def _max_loss_text(recommendation: RecommendationLike) -> str:
     return raw.replace(" max loss ", " ")
 
 
-def _earnings_date(recommendation: RecommendationLike) -> date:
+def _earnings_date_text(recommendation: RecommendationLike) -> str:
     value = getattr(recommendation, "earnings_date", None)
-    return recommendation.expiry if value is None else value
+    return "No earnings catalyst" if value is None else value.isoformat()
+
+
+def _target_label(recommendation: RecommendationLike) -> str:
+    if recommendation.position_side == "short":
+        return "Target buyback"
+    return "Target sell price"
+
+
+def _stop_label(recommendation: RecommendationLike) -> str:
+    if recommendation.position_side == "short":
+        return "Stop buyback alert"
+    return "Stop loss"
+
+
+def _risk_disclosures(recommendation: RecommendationLike) -> list[str]:
+    lines: list[str] = []
+    if getattr(recommendation, "stop_loss_option_price", None) is not None:
+        lines.append(
+            "<b>Stop note:</b> Mental alert only, not a broker order. "
+            "Earnings or overnight gaps can move past this stop before you can act."
+        )
+    if recommendation.position_side == "short" and recommendation.option_type == "call":
+        lines.append(
+            "<b>Naked short call risk:</b> Undefined gap risk; broker margin "
+            "can differ from this estimate."
+        )
+    return lines
+
+
+def _margin_lines(recommendation: RecommendationLike) -> list[str]:
+    margin_requirement = getattr(recommendation, "margin_requirement", None)
+    if margin_requirement is None:
+        return []
+    return [f"<b>Estimated broker buying power:</b> ${_money(margin_requirement)}"]
 
 
 def _money(value: Decimal) -> str:

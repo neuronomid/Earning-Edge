@@ -39,6 +39,10 @@ class Recommendation(Base):
 
     ticker: Mapped[str] = mapped_column(String(16))
     company_name: Mapped[str] = mapped_column(String(255))
+    earnings_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    strategy_source: Mapped[str] = mapped_column(
+        String(32), default="catalyst_confluence", server_default="catalyst_confluence"
+    )
 
     strategy: Mapped[str] = mapped_column(String(32))
     option_type: Mapped[str] = mapped_column(String(8))  # call/put
@@ -52,9 +56,12 @@ class Recommendation(Base):
     target_option_price: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)
     target_gain_percent: Mapped[Decimal | None] = mapped_column(Numeric(8, 4), nullable=True)
     stop_loss_option_price: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)
+    underlying_stop_price: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)
     exit_by_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     expected_holding_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     target_method: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    expected_move_percent: Mapped[Decimal | None] = mapped_column(Numeric(10, 6), nullable=True)
+    margin_requirement: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)
     suggested_quantity: Mapped[int] = mapped_column(Integer)
     estimated_max_loss: Mapped[str] = mapped_column(Text)  # text, e.g. "Undefined for naked..."
     account_risk_percent: Mapped[Decimal] = mapped_column(Numeric(7, 4))
@@ -68,7 +75,9 @@ class Recommendation(Base):
 
     telegram_message_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
-    news_coverage: Mapped[str] = mapped_column(String(16), default="adequate", server_default="adequate")
+    news_coverage: Mapped[str] = mapped_column(
+        String(16), default="adequate", server_default="adequate"
+    )
     stale_news: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
     created_at: Mapped[CreatedAt]

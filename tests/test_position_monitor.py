@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -18,7 +19,7 @@ from app.db.repositories.open_position_repo import OpenPositionRepository
 from app.db.repositories.user_repo import UserRepository
 from app.services.options.alpaca_client import build_occ_symbol
 from app.services.options.types import OptionContract
-from app.services.positions.monitor import PositionMonitor
+from app.services.positions.monitor import PositionMonitor, _alerts_for_position
 
 pytestmark = pytest.mark.asyncio
 
@@ -64,9 +65,7 @@ class FakeNotifier:
         *,
         reply_markup: Any | None = None,
     ) -> str | None:
-        self.calls.append(
-            {"chat_id": chat_id, "text": text, "reply_markup": reply_markup}
-        )
+        self.calls.append({"chat_id": chat_id, "text": text, "reply_markup": reply_markup})
         return "message-1"
 
 
@@ -238,3 +237,41 @@ async def test_build_occ_symbol_formats_standard_contract_symbol() -> None:
         )
         == "AAPL250620P00095500"
     )
+
+
+async def test_short_position_alerts_invert_premium_thresholds() -> None:
+    position = SimpleNamespace(
+        target_dismissed=False,
+        target_muted_until=None,
+        target_alert_count=0,
+        stop_dismissed=False,
+        stop_muted_until=None,
+        stop_alert_count=0,
+        alerts_sent=[],
+        last_premium=None,
+    )
+    recommendation = SimpleNamespace(
+        position_side="short",
+        target_option_price=Decimal("0.60"),
+        stop_loss_option_price=Decimal("3.60"),
+        exit_by_date=None,
+        expiry=date(2026, 5, 16),
+    )
+
+    target_alerts = _alerts_for_position(
+        position,
+        recommendation,
+        Decimal("0.55"),
+        today=date(2026, 5, 10),
+        now=datetime(2026, 5, 10, tzinfo=UTC),
+    )
+    stop_alerts = _alerts_for_position(
+        position,
+        recommendation,
+        Decimal("3.75"),
+        today=date(2026, 5, 10),
+        now=datetime(2026, 5, 10, tzinfo=UTC),
+    )
+
+    assert "target_hit" in target_alerts
+    assert "stop_hit" in stop_alerts

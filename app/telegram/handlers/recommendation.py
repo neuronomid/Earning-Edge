@@ -310,7 +310,7 @@ def _render_risk(recommendation) -> str:
         "",
         (
             "Contract: "
-            f"{recommendation.position_side.capitalize()} "
+            f"{'Short' if recommendation.position_side == 'short' else 'Buy'} "
             f"{recommendation.option_type.capitalize()}"
         ),
         f"Strike: ${recommendation.strike}",

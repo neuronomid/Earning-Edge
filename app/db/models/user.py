@@ -3,7 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, CheckConstraint, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -17,6 +17,13 @@ if TYPE_CHECKING:
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (
+        CheckConstraint(
+            "custom_risk_percent IS NULL OR "
+            "(custom_risk_percent > 0 AND custom_risk_percent <= 0.05)",
+            name="ck_users_custom_risk_percent_0_5",
+        ),
+    )
 
     id: Mapped[UuidPK]
 

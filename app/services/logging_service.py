@@ -16,7 +16,8 @@ from app.db.models.user import User
 from app.db.models.workflow_run import WorkflowRun
 from app.pipeline.types import PipelineCandidate, PipelineOutcome
 from app.scoring.direction import structural_direction_tier
-from app.scoring.types import ContractScoreResult
+from app.scoring.types import ContractScoreResult, uncovered_call_margin_requirement
+from app.services.candidate_models import StrategyRunReport
 from app.services.results_export_service import ResultsExportService
 
 ZERO = Decimal("0")
@@ -44,7 +45,11 @@ class LoggingService:
         if archive_root is None and self.settings.app_env != "test":
             archive_root = Path("var/runs")
         self.archive_root = None if archive_root is None else Path(archive_root)
-        if results_root is None and self.archive_root is not None and self.archive_root != Path("var/runs"):
+        if (
+            results_root is None
+            and self.archive_root is not None
+            and self.archive_root != Path("var/runs")
+        ):
             results_root = self.archive_root.parent / "results"
         self.logger = logger or get_logger(__name__)
         self.results_exporter = ResultsExportService(
@@ -103,7 +108,9 @@ class LoggingService:
             _candidate_card(
                 candidate=item,
                 selected_ticker=selected_ticker,
-                selected_contract=selected_contract_score if selected_ticker == item.record.ticker else None,
+                selected_contract=selected_contract_score
+                if selected_ticker == item.record.ticker
+                else None,
                 top_candidate_ticker=None if top_candidate is None else top_candidate.record.ticker,
                 final_action=outcome.decision.action,
                 final_reasoning=outcome.decision.reasoning,
@@ -136,13 +143,17 @@ class LoggingService:
             else (
                 selected.evaluation.final_score
                 if selected is not None
-                else 0 if top_candidate is None else top_candidate.evaluation.final_score
+                else 0
+                if top_candidate is None
+                else top_candidate.evaluation.final_score
             )
         )
         data_confidence = (
             selected.evaluation.confidence.score
             if selected is not None
-            else 0 if top_candidate is None else top_candidate.evaluation.confidence.score
+            else 0
+            if top_candidate is None
+            else top_candidate.evaluation.confidence.score
         )
         recommendation_card = {
             "card_id": str(recommendation.id) if recommendation is not None else str(run.id),
@@ -154,6 +165,9 @@ class LoggingService:
             "trigger_type": run.trigger_type,
             "selected_ticker": selected_ticker,
             "selected_company": None if selected is None else selected.context.company_name,
+            "selected_strategy_source": (
+                None if selected is None else selected.context.strategy_source
+            ),
             "selected_strategy": _selected_strategy(
                 selected_contract_score,
                 outcome.decision.action,
@@ -179,6 +193,9 @@ class LoggingService:
             "stop_loss_option_price": (
                 None if recommendation is None else _decimal(recommendation.stop_loss_option_price)
             ),
+            "underlying_stop_price": (
+                None if recommendation is None else _decimal(recommendation.underlying_stop_price)
+            ),
             "exit_by_date": (
                 None if recommendation is None else _date(recommendation.exit_by_date)
             ),
@@ -186,6 +203,12 @@ class LoggingService:
                 None if recommendation is None else recommendation.expected_holding_days
             ),
             "target_method": None if recommendation is None else recommendation.target_method,
+            "expected_move_percent": (
+                None if recommendation is None else _decimal(recommendation.expected_move_percent)
+            ),
+            "margin_requirement": (
+                None if recommendation is None else _decimal(recommendation.margin_requirement)
+            ),
             "suggested_quantity": (
                 0 if recommendation is None else recommendation.suggested_quantity
             ),
@@ -193,9 +216,7 @@ class LoggingService:
             "risk_profile": user.risk_profile,
             "account_size_snapshot": _decimal(user.account_size),
             "account_risk_percent": (
-                None
-                if recommendation is None
-                else _decimal(recommendation.account_risk_percent)
+                None if recommendation is None else _decimal(recommendation.account_risk_percent)
             ),
             "risk_level": None if recommendation is None else recommendation.risk_level,
             "estimated_max_loss": (
@@ -439,6 +460,7 @@ def _candidate_card(
         ),
         "earnings_date": _date(candidate.context.earnings_date),
         "earnings_date_verified": candidate.context.verified_earnings_date,
+        "expected_move_percent": _decimal(candidate.context.expected_move_percent),
         "data_confidence_score": candidate.evaluation.confidence.score,
         "direction_classification": candidate.evaluation.direction.classification,
         "candidate_direction_score": candidate.evaluation.direction.score,
@@ -447,7 +469,9 @@ def _candidate_card(
         "best_strategy": None if best_contract is None else best_contract.strategy,
         "strategy_source": candidate.record.strategy_source,
         "candidate_sources": list(candidate.record.sources),
-        "candidate_origin": "finviz_row" if "finviz" in candidate.record.sources else "backup_source",
+        "candidate_origin": "finviz_row"
+        if "finviz" in candidate.record.sources
+        else "backup_source",
         "best_contract": (
             None if best_contract is None else _selected_contract_fields(best_contract)
         ),
@@ -519,16 +543,29 @@ def _contract_card(
         "vega": _decimal(contract.contract.vega),
         "breakeven": _decimal(contract.breakeven),
         "target_stock_price": (
-            None if contract.exit_target is None else _decimal(contract.exit_target.target_stock_price)
+            None
+            if contract.exit_target is None
+            else _decimal(contract.exit_target.target_stock_price)
         ),
         "target_option_price": (
-            None if contract.exit_target is None else _decimal(contract.exit_target.target_option_price)
+            None
+            if contract.exit_target is None
+            else _decimal(contract.exit_target.target_option_price)
         ),
         "target_gain_percent": (
-            None if contract.exit_target is None else _decimal(contract.exit_target.target_gain_percent)
+            None
+            if contract.exit_target is None
+            else _decimal(contract.exit_target.target_gain_percent)
         ),
         "stop_loss_option_price": (
-            None if contract.exit_target is None else _decimal(contract.exit_target.stop_loss_option_price)
+            None
+            if contract.exit_target is None
+            else _decimal(contract.exit_target.stop_loss_option_price)
+        ),
+        "underlying_stop_price": (
+            None
+            if contract.exit_target is None
+            else _decimal(contract.exit_target.underlying_stop_price)
         ),
         "exit_by_date": (
             None if contract.exit_target is None else _date(contract.exit_target.exit_by_date)
@@ -538,6 +575,12 @@ def _contract_card(
         ),
         "target_method": (
             None if contract.exit_target is None else contract.exit_target.target_method
+        ),
+        "expected_move_percent": _decimal(candidate.context.expected_move_percent),
+        "margin_requirement": (
+            _decimal(uncovered_call_margin_requirement(contract.contract))
+            if contract.strategy == "short_call"
+            else None
         ),
         "spread_percent": _decimal(contract_spread_percent(contract)),
         "liquidity_score": contract.liquidity_score,
@@ -574,18 +617,36 @@ def _selected_contract_fields(contract: ContractScoreResult) -> dict[str, Any]:
         "option_type": contract.contract.option_type,
         "position_side": contract.contract.position_side,
         "target_stock_price": (
-            None if contract.exit_target is None else _decimal(contract.exit_target.target_stock_price)
+            None
+            if contract.exit_target is None
+            else _decimal(contract.exit_target.target_stock_price)
         ),
         "target_option_price": (
-            None if contract.exit_target is None else _decimal(contract.exit_target.target_option_price)
+            None
+            if contract.exit_target is None
+            else _decimal(contract.exit_target.target_option_price)
         ),
         "stop_loss_option_price": (
-            None if contract.exit_target is None else _decimal(contract.exit_target.stop_loss_option_price)
+            None
+            if contract.exit_target is None
+            else _decimal(contract.exit_target.stop_loss_option_price)
+        ),
+        "underlying_stop_price": (
+            None
+            if contract.exit_target is None
+            else _decimal(contract.exit_target.underlying_stop_price)
         ),
         "exit_by_date": (
             None if contract.exit_target is None else _date(contract.exit_target.exit_by_date)
         ),
-        "target_method": None if contract.exit_target is None else contract.exit_target.target_method,
+        "target_method": None
+        if contract.exit_target is None
+        else contract.exit_target.target_method,
+        "margin_requirement": (
+            _decimal(uncovered_call_margin_requirement(contract.contract))
+            if contract.strategy == "short_call"
+            else None
+        ),
     }
 
 
@@ -599,7 +660,7 @@ def _title_strategy(strategy: str) -> str:
     return strategy.replace("_", " ").capitalize()
 
 
-def _strategy_report_card(report) -> dict[str, Any]:
+def _strategy_report_card(report: StrategyRunReport) -> dict[str, Any]:
     return {
         "strategy_source": report.strategy_source,
         "strategy_label": report.strategy_label,
@@ -630,9 +691,9 @@ def _data_sources(candidate: PipelineCandidate) -> list[str]:
     for item in candidate.news_bundle.search_results:
         if item.source and item.source not in ordered:
             ordered.append(item.source)
-    for item in candidate.news_bundle.articles:
-        if item.source and item.source not in ordered:
-            ordered.append(item.source)
+    for article in candidate.news_bundle.articles:
+        if article.source and article.source not in ordered:
+            ordered.append(article.source)
     for contract in candidate.context.option_chain:
         if contract.source and contract.source not in ordered:
             ordered.append(contract.source)

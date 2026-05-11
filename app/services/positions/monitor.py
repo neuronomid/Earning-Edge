@@ -3,10 +3,9 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from app.core.logging import get_logger
 from app.db.models.open_position import OpenPosition
@@ -61,7 +60,9 @@ class PositionMonitor:
             positions = await repo.list_active()
 
             # Group positions by ticker for batch Alpaca calls
-            by_ticker: dict[str, list[tuple[OpenPosition, Recommendation, User]]] = defaultdict(list)
+            by_ticker: dict[str, list[tuple[OpenPosition, Recommendation, User]]] = defaultdict(
+                list
+            )
             for position in positions:
                 recommendation = await session.get(Recommendation, position.recommendation_id)
                 user = await session.get(User, position.user_id)
@@ -77,7 +78,7 @@ class PositionMonitor:
 
     async def _poll_ticker_group(
         self,
-        session,
+        session: Any,
         ticker: str,
         group: list[tuple[OpenPosition, Recommendation, User]],
         *,
@@ -113,11 +114,13 @@ class PositionMonitor:
             if quote is None:
                 continue
 
-            await self._poll_position(session, position, recommendation, user, quote, today=today, now=now)
+            await self._poll_position(
+                session, position, recommendation, user, quote, today=today, now=now
+            )
 
     async def _close_expired_position(
         self,
-        session,
+        session: Any,
         position: OpenPosition,
         recommendation: Recommendation,
         user: User,
@@ -190,7 +193,7 @@ class PositionMonitor:
         result: dict[str, PremiumQuote] = {}
         for contract in contracts:
             premium = _premium_from_contract(contract)
-            if premium is not None:
+            if premium is not None and contract.symbol is not None:
                 result[contract.symbol] = PremiumQuote(premium=premium, source="alpaca")
         return result
 
@@ -231,7 +234,7 @@ class PositionMonitor:
 
     async def _poll_position(
         self,
-        session,
+        session: Any,
         position: OpenPosition,
         recommendation: Recommendation,
         user: User,
@@ -240,11 +243,12 @@ class PositionMonitor:
         today: date,
         now: datetime,
     ) -> None:
+        alert_keys = _alerts_for_position(
+            position, recommendation, quote.premium, today=today, now=now
+        )
         position.last_premium = quote.premium
         position.last_polled_at = datetime.now(UTC)
         position.last_data_source = quote.source
-
-        alert_keys = _alerts_for_position(position, recommendation, quote.premium, today=today, now=now)
         for alert_key in alert_keys:
             await self._send_alert(position, recommendation, user, alert_key, quote.premium)
             # Increment alert counts for TP/SL (not for date-based alerts)
@@ -302,12 +306,17 @@ def _alerts_for_position(
         if position.target_muted_until is None or now >= position.target_muted_until:
             target = recommendation.target_option_price
             if target is not None and target > 0:
-                # First crossing: use >= logic
-                if position.target_alert_count == 0 and current_premium >= target:
+                if position.target_alert_count == 0 and _target_reached(
+                    recommendation,
+                    current_premium,
+                    target,
+                ):
                     alerts.append("target_hit")
-                # Subsequent crossings: require crossing from below
                 elif position.target_alert_count > 0 and _crossed_target(
-                    position.last_premium, current_premium, target
+                    recommendation,
+                    position.last_premium,
+                    current_premium,
+                    target,
                 ):
                     alerts.append("target_hit")
 
@@ -317,12 +326,17 @@ def _alerts_for_position(
         if position.stop_muted_until is None or now >= position.stop_muted_until:
             stop = recommendation.stop_loss_option_price
             if stop is not None and stop > 0:
-                # First crossing: use <= logic
-                if position.stop_alert_count == 0 and current_premium <= stop:
+                if position.stop_alert_count == 0 and _stop_reached(
+                    recommendation,
+                    current_premium,
+                    stop,
+                ):
                     alerts.append("stop_hit")
-                # Subsequent crossings: require crossing from above
                 elif position.stop_alert_count > 0 and _crossed_stop(
-                    position.last_premium, current_premium, stop
+                    recommendation,
+                    position.last_premium,
+                    current_premium,
+                    stop,
                 ):
                     alerts.append("stop_hit")
 
@@ -340,25 +354,56 @@ def _alerts_for_position(
     return alerts
 
 
+def _target_reached(
+    recommendation: Recommendation,
+    current: Decimal,
+    threshold: Decimal,
+) -> bool:
+    if recommendation.position_side == "short":
+        return current <= threshold
+    return current >= threshold
+
+
+def _stop_reached(
+    recommendation: Recommendation,
+    current: Decimal,
+    threshold: Decimal,
+) -> bool:
+    if recommendation.position_side == "short":
+        return current >= threshold
+    return current <= threshold
+
+
 def _crossed_target(
+    recommendation: Recommendation,
     previous: Decimal | None,
     current: Decimal,
     threshold: Decimal | None,
 ) -> bool:
-    return previous is not None and threshold is not None and previous < threshold <= current
+    if previous is None or threshold is None:
+        return False
+    if recommendation.position_side == "short":
+        return previous > threshold >= current
+    return previous < threshold <= current
 
 
 def _crossed_stop(
+    recommendation: Recommendation,
     previous: Decimal | None,
     current: Decimal,
     threshold: Decimal | None,
 ) -> bool:
-    return previous is not None and threshold is not None and previous > threshold >= current
+    if previous is None or threshold is None:
+        return False
+    if recommendation.position_side == "short":
+        return previous < threshold <= current
+    return previous > threshold >= current
 
 
-def _premium_from_contract(contract) -> Decimal | None:
+def _premium_from_contract(contract: Any) -> Decimal | None:
     """Extract the best available premium from a contract."""
-    return contract.mid or contract.last_trade_price or contract.ask or contract.bid
+    premium = contract.mid or contract.last_trade_price or contract.ask or contract.bid
+    return premium if isinstance(premium, Decimal) else None
 
 
 def _render_alert(
@@ -369,11 +414,16 @@ def _render_alert(
     header = f"<b>{recommendation.ticker} position alert</b>"
     current = f"Current option premium: ${current_premium:.2f}"
     if alert_key == "target_hit":
+        target_label = (
+            "Target buyback level has been reached."
+            if recommendation.position_side == "short"
+            else "Target price has been reached."
+        )
         return "\n".join(
             [
                 header,
                 "",
-                "Target price has been reached.",
+                target_label,
                 current,
                 f"Target: ${recommendation.target_option_price:.2f}",
                 "",
@@ -381,17 +431,22 @@ def _render_alert(
             ]
         )
     if alert_key == "stop_hit":
-        return "\n".join(
+        stop_lines = [
+            header,
+            "",
+            "Stop level has been reached.",
+            current,
+            f"Stop: ${recommendation.stop_loss_option_price:.2f}",
+        ]
+        if recommendation.underlying_stop_price is not None:
+            stop_lines.append(f"Underlying stop alert: ${recommendation.underlying_stop_price:.2f}")
+        stop_lines.extend(
             [
-                header,
-                "",
-                "Stop level has been reached.",
-                current,
-                f"Stop: ${recommendation.stop_loss_option_price:.2f}",
                 "",
                 "Review the position and choose Sold, Mute, or Okay.",
             ]
         )
+        return "\n".join(stop_lines)
     if alert_key == "exit_by_date":
         return "\n".join(
             [

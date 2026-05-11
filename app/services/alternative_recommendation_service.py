@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import cast
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,19 +25,23 @@ from app.pipeline.steps.market_data import MarketDataFetchStep, MarketDataStep
 from app.pipeline.steps.news import NewsBriefStep, NewsStep
 from app.pipeline.types import PipelineCandidate
 from app.scoring.final import combine_scores
+from app.scoring.final import final_action as structural_action
 from app.scoring.types import (
     CandidateContext,
     CandidateEvaluation,
     ContractScoreResult,
     DataConfidenceResult,
     DirectionResult,
+    EarningsTiming,
     ExitTarget,
     HardVeto,
     OptionContractInput,
     StrategySelection,
     UserContext,
     option_premium,
+    uncovered_call_margin_requirement,
 )
+from app.services.candidate_models import CandidateRecord
 from app.services.market_data.types import ConfidenceNote, MarketSnapshot, ReturnMetrics
 from app.services.news.types import NewsBrief, NewsBundle
 from app.services.sizing import (
@@ -115,9 +120,7 @@ class AlternativeRecommendationService:
             "alternative_ranked_candidates",
             run_id=str(current_recommendation.run_id),
             ranked_count=len(ranked),
-            ranked_tickers=[
-                f"{c.ticker}(score={c.final_opportunity_score})" for c in ranked
-            ],
+            ranked_tickers=[f"{c.ticker}(score={c.final_opportunity_score})" for c in ranked],
         )
 
         for i, candidate in enumerate(ranked):
@@ -189,7 +192,10 @@ class AlternativeRecommendationService:
         )
         scored_contracts = tuple(
             sorted(
-                (_contract_score(contract) for contract in contracts),
+                (
+                    _contract_score(contract, underlying_price=candidate.current_price)
+                    for contract in contracts
+                ),
                 key=lambda result: (
                     result.is_viable,
                     result.score,
@@ -223,7 +229,7 @@ class AlternativeRecommendationService:
     async def _market_snapshot(
         self,
         candidate: Candidate,
-        record,
+        record: CandidateRecord,
         user: User,
     ) -> MarketSnapshot:
         if self.app_env == "test":
@@ -240,7 +246,7 @@ class AlternativeRecommendationService:
     async def _news_bundle(
         self,
         candidate: Candidate,
-        record,
+        record: CandidateRecord,
         user: User,
     ) -> NewsBundle:
         if self.app_env == "test":
@@ -315,6 +321,8 @@ class AlternativeRecommendationService:
                 run_id=current_recommendation.run_id,
                 ticker=candidate.record.ticker,
                 company_name=candidate.context.company_name,
+                earnings_date=candidate.context.earnings_date,
+                strategy_source=candidate.context.strategy_source,
                 strategy=selected_contract.strategy,
                 option_type=selected_contract.contract.option_type,
                 position_side=selected_contract.contract.position_side,
@@ -333,11 +341,16 @@ class AlternativeRecommendationService:
                 stop_loss_option_price=(
                     None if exit_target is None else exit_target.stop_loss_option_price
                 ),
+                underlying_stop_price=(
+                    None if exit_target is None else exit_target.underlying_stop_price
+                ),
                 exit_by_date=None if exit_target is None else exit_target.exit_by_date,
                 expected_holding_days=(
                     None if exit_target is None else exit_target.expected_holding_days
                 ),
                 target_method=None if exit_target is None else exit_target.target_method,
+                expected_move_percent=candidate.context.expected_move_percent,
+                margin_requirement=sizing.margin_requirement_per_contract,
                 suggested_quantity=quantity,
                 estimated_max_loss=sizing.max_loss_text,
                 account_risk_percent=sizing.account_risk_pct * Decimal("100"),
@@ -348,7 +361,6 @@ class AlternativeRecommendationService:
                 key_concerns_json=decision.key_concerns,
             )
         )
-        recommendation.earnings_date = candidate.context.earnings_date
         return AlternativeRecommendationResult(
             recommendation=recommendation,
             watchlist_only=decision.action == "watchlist",
@@ -356,9 +368,7 @@ class AlternativeRecommendationService:
         )
 
 
-def _candidate_record(candidate: Candidate):
-    from app.services.candidate_models import CandidateRecord
-
+def _candidate_record(candidate: Candidate) -> CandidateRecord:
     return CandidateRecord(
         ticker=candidate.ticker,
         company_name=candidate.company_name,
@@ -381,12 +391,18 @@ def _candidate_context(
         ticker=candidate.ticker,
         company_name=candidate.company_name,
         earnings_date=candidate.earnings_date,
-        earnings_timing=candidate.earnings_timing or "unknown",
+        earnings_timing=cast(EarningsTiming, candidate.earnings_timing or "unknown"),
         market_snapshot=market_snapshot,
         news_brief=news_bundle.brief,
         option_chain=tuple(contract.contract for contract in contracts),
-        verified_earnings_date=True,
+        strategy_source=candidate.strategy_source,  # type: ignore[arg-type]
+        verified_earnings_date=(
+            True
+            if candidate.strategy_source == "coiled_setup"
+            else candidate.earnings_date is not None
+        ),
         identity_verified=True,
+        expected_move_percent=candidate.expected_move_percent,
     )
 
 
@@ -424,15 +440,23 @@ def _candidate_evaluation(
         considered_contracts=contracts,
         chosen_contract=chosen,
         final_score=candidate.final_opportunity_score,
-        action=_stored_action(candidate.final_opportunity_score, confidence, chosen),
+        action=structural_action(
+            candidate.final_opportunity_score,
+            confidence,
+            chosen,
+            direction_score=candidate.candidate_direction_score,
+        ),
         reasons=(
-            f"{candidate.ticker} stored final score: "
-            f"{candidate.final_opportunity_score}/100.",
+            f"{candidate.ticker} stored final score: {candidate.final_opportunity_score}/100.",
         ),
     )
 
 
-def _contract_score(contract: OptionContract) -> ContractScoreResult:
+def _contract_score(
+    contract: OptionContract,
+    *,
+    underlying_price: Decimal | None,
+) -> ContractScoreResult:
     option = OptionContractInput(
         ticker=contract.ticker,
         option_type=contract.option_type,  # type: ignore[arg-type]
@@ -449,9 +473,10 @@ def _contract_score(contract: OptionContract) -> ContractScoreResult:
         gamma=contract.gamma,
         theta=contract.theta,
         vega=contract.vega,
+        underlying_price=underlying_price,
         source="stored_run",
     )
-    vetoes = ()
+    vetoes: tuple[HardVeto, ...] = ()
     if not contract.passed_hard_filters:
         vetoes = (
             HardVeto(
@@ -475,7 +500,6 @@ def _contract_score(contract: OptionContract) -> ContractScoreResult:
         exit_target=(
             None
             if contract.target_method is None
-            or contract.target_stock_price is None
             or contract.target_option_price is None
             or contract.stop_loss_option_price is None
             or contract.exit_by_date is None
@@ -488,6 +512,7 @@ def _contract_score(contract: OptionContract) -> ContractScoreResult:
                 exit_by_date=contract.exit_by_date,
                 expected_holding_days=contract.expected_holding_days,
                 target_method=contract.target_method,  # type: ignore[arg-type]
+                underlying_stop_price=contract.underlying_stop_price,
             )
         ),
     )
@@ -496,7 +521,11 @@ def _contract_score(contract: OptionContract) -> ContractScoreResult:
 def _stored_market_snapshot(candidate: Candidate, *, error: str | None = None) -> MarketSnapshot:
     return MarketSnapshot(
         ticker=candidate.ticker,
-        as_of_date=candidate.earnings_date,
+        as_of_date=(
+            candidate.created_at.date()
+            if candidate.created_at is not None
+            else candidate.earnings_date
+        ),
         company_name=candidate.company_name,
         sector=None,
         sector_etf=None,
@@ -555,9 +584,10 @@ def _user_context(user: User) -> UserContext:
         risk_profile=user.risk_profile,  # type: ignore[arg-type]
         strategy_permission=user.strategy_permission,  # type: ignore[arg-type]
         max_contracts=user.max_contracts,
-        has_valid_openrouter_api_key=bool(
-            decrypt_or_none(user.openrouter_api_key_encrypted)
-        ),
+        has_valid_openrouter_api_key=bool(decrypt_or_none(user.openrouter_api_key_encrypted)),
+        custom_risk_percent=None
+        if user.custom_risk_percent is None
+        else Decimal(str(user.custom_risk_percent)),
     )
 
 
@@ -565,6 +595,11 @@ def _size_or_fallback(user: UserContext, contract: OptionContractInput) -> Sizin
     try:
         return size(user, contract)
     except (SizingError, SizingPermissionError):
+        margin_requirement = (
+            uncovered_call_margin_requirement(contract)
+            if contract.strategy == "short_call"
+            else None
+        )
         return SizingResult(
             quantity=0,
             max_loss_text=(
@@ -575,23 +610,8 @@ def _size_or_fallback(user: UserContext, contract: OptionContractInput) -> Sizin
             account_risk_pct=ZERO,
             broker_verification_required=True,
             watch_only=True,
+            margin_requirement_per_contract=margin_requirement,
         )
-
-
-def _stored_action(
-    final_score: int,
-    confidence: DataConfidenceResult,
-    chosen: ContractScoreResult | None,
-) -> str:
-    if chosen is None or confidence.blockers or confidence.score < 40:
-        return "no_trade"
-    if confidence.score < 55:
-        return "watchlist" if final_score >= 60 else "no_trade"
-    if final_score >= 68:
-        return "recommend"
-    if final_score >= 60:
-        return "watchlist"
-    return "no_trade"
 
 
 def _direction_bias(classification: str) -> Decimal:

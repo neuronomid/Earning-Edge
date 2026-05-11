@@ -51,7 +51,7 @@ class CandidateBundle(_Frozen):
 
     ticker: str
     company_name: str
-    earnings_date: date
+    earnings_date: date | None
     earnings_timing: EarningsTiming = "unknown"
     market_cap: Decimal | None = None
     current_price: Decimal | None = None

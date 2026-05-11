@@ -9,6 +9,7 @@ from app.scoring.types import (
     OptionContractInput,
     UserContext,
     risk_percent,
+    uncovered_call_margin_requirement,
 )
 from app.services.sizing_types import SizingResult
 
@@ -69,8 +70,7 @@ def _size_short_put(user: UserContext, contract: OptionContractInput) -> SizingR
     return SizingResult(
         quantity=quantity,
         max_loss_text=(
-            f"Approx. {_format_currency(per_contract_exposure)} "
-            "notional exposure per contract"
+            f"Approx. {_format_currency(per_contract_exposure)} notional exposure per contract"
         ),
         account_risk_pct=SHORT_NOTIONAL_CAP_PCTS[user.risk_profile],
         broker_verification_required=True,
@@ -84,8 +84,15 @@ def _size_short_put(user: UserContext, contract: OptionContractInput) -> SizingR
 
 def _size_short_call(user: UserContext, contract: OptionContractInput) -> SizingResult:
     max_short_notional = _max_short_notional(user, contract)
-    per_contract_exposure = contract.strike * HUNDRED
-    quantity = _bounded_quantity(user, int(max_short_notional // per_contract_exposure))
+    margin_requirement = uncovered_call_margin_requirement(contract)
+    if margin_requirement is None or margin_requirement <= ZERO:
+        raise SizingError(
+            "Short call sizing requires current underlying price and positive premium."
+        )
+    quantity = _bounded_quantity(user, int(max_short_notional // margin_requirement))
+    notional_exposure = (
+        None if contract.underlying_price is None else contract.underlying_price * HUNDRED
+    )
 
     return SizingResult(
         quantity=quantity,
@@ -94,9 +101,10 @@ def _size_short_call(user: UserContext, contract: OptionContractInput) -> Sizing
         broker_verification_required=True,
         watch_only=quantity == 0,
         max_short_notional_exposure=max_short_notional,
-        contract_notional_exposure=per_contract_exposure,
+        contract_notional_exposure=notional_exposure,
         premium_collected=_premium_collected(contract),
         margin_requirement_text=BROKER_MARGIN_DEPENDENT_TEXT,
+        margin_requirement_per_contract=margin_requirement,
     )
 
 

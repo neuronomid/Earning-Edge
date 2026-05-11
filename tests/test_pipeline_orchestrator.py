@@ -4,8 +4,9 @@ from datetime import date
 from decimal import Decimal
 from types import SimpleNamespace
 
-from app.pipeline.orchestrator import _select_decision_finalists
+from app.pipeline.orchestrator import _expected_move_percent, _select_decision_finalists
 from app.pipeline.types import PipelineCandidate
+from app.scoring.types import OptionContractInput
 from app.services.candidate_models import CandidateRecord
 
 
@@ -22,6 +23,27 @@ def test_select_decision_finalists_keeps_top_four_by_scoring_order() -> None:
     finalists = _select_decision_finalists(candidates)
 
     assert [item.record.ticker for item in finalists] == ["BBB", "FFF", "CCC", "DDD"]
+
+
+def test_expected_move_uses_front_expiry_nearest_atm_straddle() -> None:
+    chain = (
+        _option("call", "long", "100", "2026-05-15", mid="4.00"),
+        _option("put", "long", "100", "2026-05-15", mid="3.00"),
+        _option("call", "short", "100", "2026-05-15", mid="4.00"),
+        _option("put", "short", "100", "2026-05-15", mid="3.00"),
+        _option("call", "long", "105", "2026-05-15", mid="1.50"),
+        _option("put", "long", "105", "2026-05-15", mid="7.00"),
+        _option("call", "long", "100", "2026-05-22", mid="6.00"),
+        _option("put", "long", "100", "2026-05-22", mid="5.00"),
+    )
+
+    expected_move = _expected_move_percent(
+        chain,
+        Decimal("101"),
+        date(2026, 5, 11),
+    )
+
+    assert expected_move == Decimal("0.058911")
 
 
 def _candidate(
@@ -47,4 +69,22 @@ def _candidate(
         ),
         news_bundle=SimpleNamespace(),
         sizing=None,
+    )
+
+
+def _option(
+    option_type: str,
+    position_side: str,
+    strike: str,
+    expiry: str,
+    *,
+    mid: str,
+) -> OptionContractInput:
+    return OptionContractInput(
+        ticker="ABC",
+        option_type=option_type,  # type: ignore[arg-type]
+        position_side=position_side,  # type: ignore[arg-type]
+        strike=Decimal(strike),
+        expiry=date.fromisoformat(expiry),
+        mid=Decimal(mid),
     )

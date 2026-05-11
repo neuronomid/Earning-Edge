@@ -5,16 +5,22 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from app.scoring.types import (
+    ZERO,
     CandidateContext,
     DirectionResult,
     ExitTarget,
+    ExtendedTargetMethod,
     OptionContractInput,
-    TargetMethod,
+    option_mid,
+    option_premium,
 )
-from app.scoring.types import ZERO, option_mid, option_premium
 
 ONE = Decimal("1")
 HUNDRED = Decimal("100")
+SHORT_PREMIUM_PROFIT_TARGET = Decimal("0.50")
+SHORT_PREMIUM_STOP_LOSS_MULTIPLE = Decimal("3.00")
+SHORT_CALL_UNDERLYING_STOP_BUFFER = Decimal("1.02")
+DEFAULT_SHORT_CALL_DELTA = Decimal("0.30")
 
 
 @dataclass(slots=True, frozen=True)
@@ -25,9 +31,6 @@ class ExitTargetService:
         contract: OptionContractInput,
         direction: DirectionResult,
     ) -> ExitTarget | None:
-        if contract.position_side != "long":
-            return None
-
         current_price = candidate.market_snapshot.current_price
         current_mid = option_mid(contract)
         entry_price = option_premium(contract)
@@ -44,6 +47,16 @@ class ExitTargetService:
         valuation_date = candidate.market_snapshot.as_of_date or date.today()
         if contract.expiry <= valuation_date:
             return None
+
+        if contract.position_side == "short":
+            return _short_premium_target(
+                candidate=candidate,
+                contract=contract,
+                valuation_date=valuation_date,
+                current_price=current_price,
+                current_mid=current_mid,
+                entry_credit=entry_price,
+            )
 
         days_to_expiry = max((contract.expiry - valuation_date).days, 1)
         planned_holding_days = _planned_holding_days(
@@ -66,16 +79,21 @@ class ExitTargetService:
         else:
             target_stock_price = max(Decimal("0.01"), current_price - stock_move)
 
-        earnings_cross = valuation_date <= candidate.earnings_date <= contract.expiry
+        earnings_cross = (
+            candidate.earnings_date is not None
+            and valuation_date <= candidate.earnings_date <= contract.expiry
+        )
         expected_iv_change = _expected_iv_change(contract, earnings_cross)
 
         target_option_price: Decimal
-        target_method: TargetMethod
+        target_method: ExtendedTargetMethod
         if _has_full_greeks(contract):
             target_option_price = (
                 current_mid
                 + (contract.delta or ZERO) * (target_stock_price - current_price)
-                + Decimal("0.5") * (contract.gamma or ZERO) * (target_stock_price - current_price) ** 2
+                + Decimal("0.5")
+                * (contract.gamma or ZERO)
+                * (target_stock_price - current_price) ** 2
                 + (contract.theta or ZERO) * Decimal(planned_holding_days)
                 + (contract.vega or ZERO) * (expected_iv_change or ZERO)
             )
@@ -157,15 +175,68 @@ def _planned_holding_days(
     *,
     valuation_date: date,
     expiry: date,
-    earnings_date: date,
+    earnings_date: date | None,
 ) -> int:
     latest_safe_exit = expiry - timedelta(days=5)
     if latest_safe_exit <= valuation_date:
         return max((expiry - valuation_date).days - 1, 1)
     max_days = max((latest_safe_exit - valuation_date).days, 1)
-    if valuation_date <= earnings_date <= expiry:
+    if earnings_date is not None and valuation_date <= earnings_date <= expiry:
         return max(1, min(max_days, max((earnings_date - valuation_date).days, 1)))
     return min(max_days, 7)
+
+
+def _short_premium_target(
+    *,
+    candidate: CandidateContext,
+    contract: OptionContractInput,
+    valuation_date: date,
+    current_price: Decimal,
+    current_mid: Decimal,
+    entry_credit: Decimal,
+) -> ExitTarget | None:
+    planned_holding_days = _planned_holding_days(
+        valuation_date=valuation_date,
+        expiry=contract.expiry,
+        earnings_date=candidate.earnings_date,
+    )
+    target_option_price = max(
+        Decimal("0.01"),
+        (entry_credit * SHORT_PREMIUM_PROFIT_TARGET).quantize(Decimal("0.01")),
+    )
+    target_gain_percent = ((entry_credit - target_option_price) / entry_credit * HUNDRED).quantize(
+        Decimal("0.01")
+    )
+    stop_loss_option_price = (entry_credit * SHORT_PREMIUM_STOP_LOSS_MULTIPLE).quantize(
+        Decimal("0.01")
+    )
+    underlying_stop_price = None
+    target_method: ExtendedTargetMethod = "short_premium"
+
+    if contract.strategy == "short_call":
+        underlying_stop_price = (contract.strike * SHORT_CALL_UNDERLYING_STOP_BUFFER).quantize(
+            Decimal("0.01")
+        )
+        adverse_move = max(underlying_stop_price - current_price, ZERO)
+        delta = abs(contract.delta) if contract.delta is not None else DEFAULT_SHORT_CALL_DELTA
+        option_stop = current_mid + (delta * adverse_move)
+        stop_loss_option_price = max(
+            Decimal("0.01"),
+            option_stop.quantize(Decimal("0.01")),
+        )
+        target_method = "short_call_underlying"
+
+    return ExitTarget(
+        target_stock_price=None,
+        target_option_price=target_option_price,
+        target_gain_percent=target_gain_percent,
+        stop_loss_option_price=stop_loss_option_price,
+        exit_by_date=valuation_date + timedelta(days=planned_holding_days),
+        expected_holding_days=planned_holding_days,
+        target_method=target_method,
+        expected_iv_change=Decimal("0.00"),
+        underlying_stop_price=underlying_stop_price,
+    )
 
 
 def _expected_iv_change(contract: OptionContractInput, earnings_cross: bool) -> Decimal | None:
@@ -211,4 +282,4 @@ def _intrinsic_target_price(
 def _decimal_sqrt(value: Decimal) -> Decimal:
     if value <= ZERO:
         return ZERO
-    return (value.sqrt() if hasattr(value, "sqrt") else value ** Decimal("0.5"))
+    return value.sqrt() if hasattr(value, "sqrt") else value ** Decimal("0.5")

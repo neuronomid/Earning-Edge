@@ -20,12 +20,12 @@ _MAX_CALCULATION: int = 10
 
 # Importance weights — sum to 0.97 after removing the 0.03 news weight.
 # Not renormalized: max raw confidence is 97 by design (see PLAN_News §8.2).
-_W_EARNINGS: float = 0.25      # wrong date → wrong trade
-_W_OPTIONS: float = 0.22       # can't select contract without chain
-_W_MARKET: float = 0.20        # price drives all sizing/breakeven math
-_W_IDENTITY: float = 0.13      # fundamental but rarely fails
+_W_EARNINGS: float = 0.25  # wrong date → wrong trade
+_W_OPTIONS: float = 0.22  # can't select contract without chain
+_W_MARKET: float = 0.20  # price drives all sizing/breakeven math
+_W_IDENTITY: float = 0.13  # fundamental but rarely fails
 _W_CROSS_SOURCE: float = 0.10  # data conflicts affect reliability
-_W_CALCULATION: float = 0.07   # errors degrade output quality
+_W_CALCULATION: float = 0.07  # errors degrade output quality
 
 
 def compute_data_confidence(
@@ -56,7 +56,7 @@ def compute_data_confidence(
         + (calculation_score / _MAX_CALCULATION) * _W_CALCULATION
     )
 
-    raw_score = int(round(weighted * 100)) + candidate.market_snapshot.confidence_adjustment
+    raw_score = round(weighted * 100) + candidate.market_snapshot.confidence_adjustment
 
     if require_selected_contract:
         blockers.extend(_contract_blockers(selected_contract))
@@ -96,6 +96,11 @@ def _identity_score(candidate: CandidateContext, blockers: list[str]) -> int:
 
 
 def _earnings_score(candidate: CandidateContext, blockers: list[str]) -> int:
+    if candidate.earnings_date is None:
+        if candidate.strategy_source == "coiled_setup":
+            return 20
+        blockers.append("Earnings date is unavailable.")
+        return 0
     if candidate.verified_earnings_date:
         return 20
     blockers.append("Earnings date could not be verified.")

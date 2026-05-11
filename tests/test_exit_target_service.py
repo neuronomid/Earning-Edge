@@ -107,3 +107,49 @@ def test_exit_target_service_falls_back_to_delta_without_full_greeks() -> None:
     assert target is not None
     assert target.target_method == "delta_fallback"
     assert target.target_option_price > Decimal("1.20")
+
+
+def test_exit_target_service_adds_short_put_buyback_target_and_stop() -> None:
+    service = ExitTargetService()
+    contract = OptionContractInput(
+        ticker="AMD",
+        option_type="put",
+        position_side="short",
+        strike=Decimal("96"),
+        expiry=date(2026, 5, 16),
+        bid=Decimal("1.20"),
+        ask=Decimal("1.35"),
+        mid=Decimal("1.28"),
+    )
+
+    target = service.build(_context(current_price="100"), contract, _direction())
+
+    assert target is not None
+    assert target.target_stock_price is None
+    assert target.target_option_price == Decimal("0.60")
+    assert target.stop_loss_option_price == Decimal("3.60")
+    assert target.target_gain_percent == Decimal("50.00")
+    assert target.target_method == "short_premium"
+
+
+def test_exit_target_service_adds_short_call_underlying_stop() -> None:
+    service = ExitTargetService()
+    contract = OptionContractInput(
+        ticker="AMD",
+        option_type="call",
+        position_side="short",
+        strike=Decimal("105"),
+        expiry=date(2026, 5, 16),
+        bid=Decimal("1.00"),
+        ask=Decimal("1.20"),
+        mid=Decimal("1.10"),
+        delta=Decimal("0.30"),
+    )
+
+    target = service.build(_context(current_price="100"), contract, _direction())
+
+    assert target is not None
+    assert target.target_option_price == Decimal("0.50")
+    assert target.underlying_stop_price == Decimal("107.10")
+    assert target.stop_loss_option_price == Decimal("3.23")
+    assert target.target_method == "short_call_underlying"

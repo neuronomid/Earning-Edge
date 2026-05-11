@@ -21,13 +21,20 @@ def evaluate_hard_vetoes(
 ) -> tuple[HardVeto, ...]:
     vetoes: list[HardVeto] = []
 
-    if not candidate.verified_earnings_date:
+    if candidate.earnings_date is None and candidate.strategy_source != "coiled_setup":
+        vetoes.append(HardVeto("earnings_missing", "Earnings date is unavailable."))
+    if candidate.earnings_date is not None and not candidate.verified_earnings_date:
         vetoes.append(HardVeto("earnings_unverified", "Earnings date cannot be verified."))
     if candidate.market_snapshot.current_price is None:
         vetoes.append(HardVeto("missing_current_price", "Current price is unavailable."))
     if not candidate.option_chain:
         vetoes.append(HardVeto("missing_option_chain", "Option chain unavailable."))
-    if not is_valid_expiry(contract.expiry, candidate.earnings_date, candidate.earnings_timing):
+    if not is_valid_expiry(
+        contract.expiry,
+        candidate.earnings_date,
+        candidate.earnings_timing,
+        valuation_date=candidate.market_snapshot.as_of_date,
+    ):
         vetoes.append(HardVeto("invalid_expiry", "Expiry is outside the valid earnings window."))
 
     premium = option_premium(contract)
@@ -64,4 +71,3 @@ def evaluate_hard_vetoes(
         vetoes.append(HardVeto("long_disabled", "Long options are disabled for this user."))
 
     return tuple(vetoes)
-

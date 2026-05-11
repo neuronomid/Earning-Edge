@@ -14,9 +14,8 @@ class RecommendationLike(Protocol):
 
 def contract_label(recommendation: RecommendationLike) -> str:
     option_name = recommendation.option_type.capitalize()
-    if recommendation.position_side == "short":
-        return f"{recommendation.ticker} Short {option_name}"
-    return f"{recommendation.ticker} {option_name}"
+    action = "Short" if recommendation.position_side == "short" else "Buy"
+    return f"{recommendation.ticker} {action} {option_name}"
 
 
 def max_loss_display(recommendation: RecommendationLike) -> str:

@@ -11,6 +11,7 @@ from app.scoring.strike import select_strike_candidates
 from app.scoring.types import (
     CandidateContext,
     CandidateEvaluation,
+    ContractScoreResult,
     DataConfidenceResult,
     DecisionAction,
     UserContext,
@@ -78,7 +79,12 @@ def score_candidate(candidate: CandidateContext, user: UserContext) -> Candidate
     )
 
     final_score = combine_scores(direction.score, chosen.score) if chosen is not None else 0
-    action = _final_action(final_score, final_confidence, chosen is not None)
+    action = final_action(
+        final_score,
+        final_confidence,
+        chosen,
+        direction_score=direction.score,
+    )
 
     reasons = list(direction.reasons)
     if chosen is not None:
@@ -103,14 +109,22 @@ def score_candidate(candidate: CandidateContext, user: UserContext) -> Candidate
     )
 
 
-def _final_action(
-    final_score: int, confidence: DataConfidenceResult, has_contract: bool
+def final_action(
+    final_score: int,
+    confidence: DataConfidenceResult,
+    chosen: ContractScoreResult | None,
+    *,
+    direction_score: int,
 ) -> DecisionAction:
-    if not has_contract or confidence.blockers or confidence.score < 40:
+    if chosen is None or confidence.blockers or confidence.score < 40:
         return "no_trade"
     if confidence.score < 55:
         return "watchlist" if final_score >= 60 else "no_trade"
     if final_score >= 68:
+        if direction_score < 55 or chosen.score < 60:
+            return "watchlist"
+        if chosen.strategy == "short_call" and (direction_score < 65 or confidence.score < 60):
+            return "watchlist"
         return "recommend"
     if final_score >= 60:
         return "watchlist"
