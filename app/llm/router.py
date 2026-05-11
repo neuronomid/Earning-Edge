@@ -2,7 +2,7 @@
 
 Two routes — and only two — exposed to the rest of the app:
 
-- ``summarize`` → lightweight model (Gemini 3.1 Flash) for browsing / news /
+- ``summarize`` → Gemini 3.1 Pro Preview for browsing / news /
   message drafting (PRD §7.3).
 - ``decide``   → heavy reasoning model (Claude Opus 4.7 Thinking) for the
   final trade decision (PRD §7.2, §7.4).

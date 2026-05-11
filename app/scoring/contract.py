@@ -9,6 +9,7 @@ from app.scoring.types import (
     CandidateContext,
     ContractScoreResult,
     DirectionResult,
+    HardVeto,
     OptionContractInput,
     ScoreFactor,
     UserContext,
@@ -58,7 +59,7 @@ def score_contract(
                 candidate.earnings_timing,
                 contract.strategy,
                 user.risk_profile,
-                valuation_date=candidate.market_snapshot.as_of_date,
+                valuation_date=candidate.valuation_date or candidate.market_snapshot.as_of_date,
             ),
             15,
             "expiry fit checks the earnings timing rule and preferred holding window",
@@ -90,8 +91,17 @@ def score_contract(
     )
 
     base_score = sum(factor.score for factor in factors)
+    exit_target = EXIT_TARGETS.build(candidate, contract, direction)
     penalties = collect_soft_penalties(candidate, user, contract, direction)
     vetoes = evaluate_hard_vetoes(candidate, user, contract)
+    if exit_target is None:
+        vetoes = (
+            *vetoes,
+            HardVeto(
+                "unusable_exit_target",
+                "No realistic target and stop could be calculated for this contract.",
+            ),
+        )
     penalty_total = sum(penalty.score_delta for penalty in penalties)
     final_score = 0 if vetoes else clamp_int(base_score + penalty_total)
 
@@ -111,7 +121,7 @@ def score_contract(
         liquidity_score=liquidity_quality(contract),
         expiry_days_after_earnings=days_after_earnings(contract.expiry, candidate.earnings_date),
         reasons=reasons,
-        exit_target=EXIT_TARGETS.build(candidate, contract, direction),
+        exit_target=exit_target,
     )
 
 

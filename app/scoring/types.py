@@ -112,6 +112,7 @@ class CandidateContext:
     earnings_timing: EarningsTiming
     market_snapshot: MarketSnapshot
     news_brief: NewsBrief
+    valuation_date: date | None = None
     option_chain: tuple[OptionContractInput, ...] = ()
     strategy_source: StrategySource = "catalyst_confluence"
     verified_earnings_date: bool = True

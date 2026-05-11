@@ -119,7 +119,7 @@ def collect_soft_penalties(
         candidate.earnings_timing,
         contract.strategy,
         user.risk_profile,
-        valuation_date=candidate.market_snapshot.as_of_date,
+        valuation_date=candidate.valuation_date or candidate.market_snapshot.as_of_date,
     )
     if 0 < expiry_fit < 10:
         penalties.append(

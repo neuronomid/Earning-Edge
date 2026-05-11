@@ -42,7 +42,7 @@ pytestmark = pytest.mark.asyncio
 
 CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
 HEAVY = "anthropic/claude-opus-4.7-thinking"
-LIGHT = "google/gemini-3.1-flash"
+LIGHT = "google/gemini-3.1-pro-preview"
 
 
 def _settings(*, heavy: str = HEAVY, light: str = LIGHT) -> Settings:

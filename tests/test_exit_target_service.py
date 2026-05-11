@@ -9,7 +9,12 @@ from app.services.market_data.types import MarketSnapshot, ReturnMetrics
 from app.services.news.types import NewsBrief
 
 
-def _context(*, current_price: str, expected_move_percent: str | None = "0.08") -> CandidateContext:
+def _context(
+    *,
+    current_price: str,
+    expected_move_percent: str | None = "0.08",
+    valuation_date: date | None = None,
+) -> CandidateContext:
     return CandidateContext(
         ticker="AMD",
         company_name="AMD Corp.",
@@ -42,6 +47,7 @@ def _context(*, current_price: str, expected_move_percent: str | None = "0.08") 
             neutral_contextual_evidence=[],
             key_uncertainty="None",
         ),
+        valuation_date=valuation_date,
         option_chain=(),
         expected_move_percent=None
         if expected_move_percent is None
@@ -85,6 +91,62 @@ def test_exit_target_service_uses_full_greeks_when_available() -> None:
     assert target.target_option_price > Decimal("1.20")
     assert target.stop_loss_option_price == Decimal("0.65")
     assert target.exit_by_date == date(2026, 5, 8)
+    assert target.target_gain_percent is not None
+
+
+def test_exit_target_service_uses_scan_date_over_stale_market_date() -> None:
+    service = ExitTargetService()
+    contract = OptionContractInput(
+        ticker="AMD",
+        option_type="call",
+        position_side="long",
+        strike=Decimal("104"),
+        expiry=date(2026, 5, 16),
+        bid=Decimal("1.10"),
+        ask=Decimal("1.30"),
+        mid=Decimal("1.20"),
+        implied_volatility=Decimal("0.44"),
+        delta=Decimal("0.52"),
+        gamma=Decimal("0.05"),
+        theta=Decimal("-0.04"),
+        vega=Decimal("0.10"),
+    )
+
+    target = service.build(
+        _context(current_price="100", valuation_date=date(2026, 5, 11)),
+        contract,
+        _direction(),
+    )
+
+    assert target is not None
+    assert target.exit_by_date == date(2026, 5, 15)
+
+
+def test_exit_target_service_rejects_long_targets_below_entry() -> None:
+    service = ExitTargetService()
+    contract = OptionContractInput(
+        ticker="AMD",
+        option_type="put",
+        position_side="long",
+        strike=Decimal("90"),
+        expiry=date(2026, 5, 16),
+        bid=Decimal("1.10"),
+        ask=Decimal("1.30"),
+        mid=Decimal("1.20"),
+        implied_volatility=Decimal("0.44"),
+        delta=Decimal("-0.20"),
+        gamma=Decimal("0.01"),
+        theta=Decimal("-0.40"),
+        vega=Decimal("0.02"),
+    )
+
+    target = service.build(
+        _context(current_price="100", expected_move_percent="0.01"),
+        contract,
+        _direction(score=60),
+    )
+
+    assert target is None
 
 
 def test_exit_target_service_falls_back_to_delta_without_full_greeks() -> None:

@@ -376,7 +376,7 @@ def test_logging_service_records_actual_model_usage(tmp_path) -> None:
         settings=Settings(
             app_encryption_key="x" * 44,
             market_analysis_model="claude-opus-4.7-thinking",
-            lightweight_model="gemini-3.1-flash",
+            lightweight_model="google/gemini-3.1-pro-preview",
         ),
     )
     artifacts = service.build_run_artifacts(
@@ -389,9 +389,12 @@ def test_logging_service_records_actual_model_usage(tmp_path) -> None:
 
     assert artifacts.recommendation_card["decision_engine"] == "llm"
     assert artifacts.recommendation_card["model_used_heavy"] == "claude-opus-4.7-thinking"
-    assert artifacts.recommendation_card["model_used_light"] == "gemini-3.1-flash"
+    assert (
+        artifacts.recommendation_card["model_used_light"]
+        == "google/gemini-3.1-pro-preview"
+    )
     assert artifacts.run_summary["model_used_heavy"] == "claude-opus-4.7-thinking"
-    assert artifacts.run_summary["model_used_light"] == "gemini-3.1-flash"
+    assert artifacts.run_summary["model_used_light"] == "google/gemini-3.1-pro-preview"
 
 
 def _candidate(

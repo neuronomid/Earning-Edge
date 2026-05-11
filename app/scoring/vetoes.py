@@ -33,7 +33,7 @@ def evaluate_hard_vetoes(
         contract.expiry,
         candidate.earnings_date,
         candidate.earnings_timing,
-        valuation_date=candidate.market_snapshot.as_of_date,
+        valuation_date=candidate.valuation_date or candidate.market_snapshot.as_of_date,
     ):
         vetoes.append(HardVeto("invalid_expiry", "Expiry is outside the valid earnings window."))
 

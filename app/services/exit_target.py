@@ -21,6 +21,9 @@ SHORT_PREMIUM_PROFIT_TARGET = Decimal("0.50")
 SHORT_PREMIUM_STOP_LOSS_MULTIPLE = Decimal("3.00")
 SHORT_CALL_UNDERLYING_STOP_BUFFER = Decimal("1.02")
 DEFAULT_SHORT_CALL_DELTA = Decimal("0.30")
+LONG_STOP_LOSS_FRACTION = Decimal("0.50")
+LONG_MIN_TARGET_MULTIPLE = Decimal("1.20")
+LONG_MIN_PROJECTED_MULTIPLE = Decimal("1.08")
 
 
 @dataclass(slots=True, frozen=True)
@@ -44,7 +47,11 @@ class ExitTargetService:
         ):
             return None
 
-        valuation_date = candidate.market_snapshot.as_of_date or date.today()
+        valuation_date = (
+            candidate.valuation_date
+            or candidate.market_snapshot.as_of_date
+            or date.today()
+        )
         if contract.expiry <= valuation_date:
             return None
 
@@ -65,6 +72,7 @@ class ExitTargetService:
             earnings_date=candidate.earnings_date,
         )
         exit_by_date = valuation_date + timedelta(days=planned_holding_days)
+        target_pricing_days = _target_pricing_days(planned_holding_days)
         move_fraction = _expected_move_fraction(candidate, contract, days_to_expiry)
         if move_fraction is None or move_fraction <= ZERO:
             return None
@@ -94,7 +102,7 @@ class ExitTargetService:
                 + Decimal("0.5")
                 * (contract.gamma or ZERO)
                 * (target_stock_price - current_price) ** 2
-                + (contract.theta or ZERO) * Decimal(planned_holding_days)
+                + (contract.theta or ZERO) * Decimal(target_pricing_days)
                 + (contract.vega or ZERO) * (expected_iv_change or ZERO)
             )
             target_method = "full_greeks"
@@ -117,14 +125,20 @@ class ExitTargetService:
             target_method = "intrinsic_fallback"
 
         target_option_price = max(Decimal("0.01"), target_option_price.quantize(Decimal("0.01")))
+        target_option_price = _realistic_long_target(
+            target_option_price=target_option_price,
+            entry_price=entry_price,
+        )
+        if target_option_price is None:
+            return None
         stop_loss_option_price = max(
             Decimal("0.01"),
-            (entry_price * Decimal("0.50")).quantize(Decimal("0.01")),
+            (entry_price * LONG_STOP_LOSS_FRACTION).quantize(Decimal("0.01")),
         )
         target_gain_percent = None
-        if current_mid > ZERO:
+        if entry_price > ZERO:
             target_gain_percent = (
-                ((target_option_price - current_mid) / current_mid) * HUNDRED
+                ((target_option_price - entry_price) / entry_price) * HUNDRED
             ).quantize(Decimal("0.01"))
 
         return ExitTarget(
@@ -184,6 +198,23 @@ def _planned_holding_days(
     if earnings_date is not None and valuation_date <= earnings_date <= expiry:
         return max(1, min(max_days, max((earnings_date - valuation_date).days, 1)))
     return min(max_days, 7)
+
+
+def _target_pricing_days(planned_holding_days: int) -> int:
+    return max(1, min(planned_holding_days, 2))
+
+
+def _realistic_long_target(
+    *,
+    target_option_price: Decimal,
+    entry_price: Decimal,
+) -> Decimal | None:
+    if target_option_price < (entry_price * LONG_MIN_PROJECTED_MULTIPLE):
+        return None
+    return max(
+        target_option_price,
+        (entry_price * LONG_MIN_TARGET_MULTIPLE).quantize(Decimal("0.01")),
+    )
 
 
 def _short_premium_target(

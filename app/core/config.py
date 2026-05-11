@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     telegram_webhook_secret: str = Field(default="")
 
     market_analysis_model: str = "anthropic/claude-opus-4.7"
-    lightweight_model: str = "google/gemini-3.1-flash-lite-preview"
+    lightweight_model: str = "google/gemini-3.1-pro-preview"
     market_analysis_reasoning_effort: Literal["off", "low", "medium", "high"] = "medium"
     finviz_headless: bool = True
     finviz_timeout_ms: int = 30000

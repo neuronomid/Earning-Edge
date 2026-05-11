@@ -394,6 +394,7 @@ def _candidate_context(
         earnings_timing=cast(EarningsTiming, candidate.earnings_timing or "unknown"),
         market_snapshot=market_snapshot,
         news_brief=news_bundle.brief,
+        valuation_date=datetime.now(UTC).date(),
         option_chain=tuple(contract.contract for contract in contracts),
         strategy_source=candidate.strategy_source,  # type: ignore[arg-type]
         verified_earnings_date=(

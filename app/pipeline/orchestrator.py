@@ -303,10 +303,11 @@ class PipelineOrchestrator:
             option_chain,
             market_snapshot.current_price,
         )
+        valuation_date = effective_reference_dt.date()
         expected_move_percent = _expected_move_percent(
             option_chain,
             market_snapshot.current_price,
-            market_snapshot.as_of_date,
+            valuation_date,
         )
         strategy_source = record.strategy_source or "catalyst_confluence"
         context = CandidateContext(
@@ -316,6 +317,7 @@ class PipelineOrchestrator:
             earnings_timing="unknown",
             market_snapshot=market_snapshot,
             news_brief=news_bundle.brief,
+            valuation_date=valuation_date,
             option_chain=option_chain,
             strategy_source=strategy_source,
             verified_earnings_date=record.earnings_date_verified,

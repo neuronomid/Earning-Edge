@@ -31,8 +31,8 @@ pytestmark = pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("strategy", "option_type", "position_side", "strike", "expiry", "expected_text"),
     [
-        ("long_call", "call", "long", "104", date(2026, 5, 16), "AMD Call"),
-        ("long_put", "put", "long", "96", date(2026, 5, 16), "AMD Put"),
+        ("long_call", "call", "long", "104", date(2026, 5, 16), "AMD Buy Call"),
+        ("long_put", "put", "long", "96", date(2026, 5, 16), "AMD Buy Put"),
         ("short_put", "put", "short", "95", date(2026, 5, 16), "AMD Short Put"),
         ("short_call", "call", "short", "110", date(2026, 5, 16), "AMD Short Call"),
     ],

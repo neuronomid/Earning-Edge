@@ -8,6 +8,7 @@ from functools import lru_cache
 from zoneinfo import ZoneInfo
 
 from apscheduler.job import Job
+from apscheduler.jobstores.base import JobLookupError
 from apscheduler.jobstores.memory import MemoryJobStore
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -112,6 +113,8 @@ class SchedulerService:
         for cron in crons:
             if not cron.is_active:
                 continue
+            job_id = cron_job_id(cron)
+            self._remove_job_if_present(job_id)
             self.scheduler.add_job(
                 run_workflow,
                 trigger=build_cron_trigger(
@@ -120,7 +123,7 @@ class SchedulerService:
                     cron.timezone_iana,
                 ),
                 args=[str(cron.user_id), "cron"],
-                id=cron_job_id(cron),
+                id=job_id,
                 replace_existing=True,
                 coalesce=True,
                 max_instances=1,
@@ -128,6 +131,7 @@ class SchedulerService:
             )
 
     def sync_position_monitor_job(self) -> None:
+        self._remove_job_if_present("poll_open_positions")
         self.scheduler.add_job(
             poll_open_positions,
             trigger=CronTrigger(
@@ -145,6 +149,12 @@ class SchedulerService:
 
     def get_job(self, cron: CronJob) -> Job | None:
         return self.scheduler.get_job(cron_job_id(cron))
+
+    def _remove_job_if_present(self, job_id: str) -> None:
+        try:
+            self.scheduler.remove_job(job_id)
+        except JobLookupError:
+            return
 
 
 @lru_cache(maxsize=1)
