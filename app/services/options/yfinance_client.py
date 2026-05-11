@@ -175,14 +175,20 @@ def _to_decimal(value: Any) -> Decimal | None:
     if value in (None, ""):
         return None
     try:
-        return Decimal(str(value))
+        converted = Decimal(str(value))
     except (InvalidOperation, ValueError):
         return None
+    return converted if converted.is_finite() else None
 
 
 def _to_int(value: Any) -> int | None:
     converted = _to_decimal(value)
-    return None if converted is None else int(converted)
+    if converted is None:
+        return None
+    try:
+        return int(converted)
+    except (OverflowError, ValueError):
+        return None
 
 
 def _to_text(value: Any) -> str | None:

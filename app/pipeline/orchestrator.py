@@ -261,16 +261,27 @@ class PipelineOrchestrator:
                 )
             except LLMAuthenticationError as exc:
                 calculation_errors.append(f"News fallback used: {exc}")
-                news_bundle = _fallback_news_bundle(record, error=str(exc))
+                news_bundle = _fallback_news_bundle(
+                    record,
+                    error=str(exc),
+                    generated_at=effective_reference_dt,
+                )
                 effective_user_context = replace(
                     user_context,
                     has_valid_openrouter_api_key=False,
                 )
             except Exception as exc:
                 calculation_errors.append(f"News fallback used: {exc}")
-                news_bundle = _fallback_news_bundle(record, error=str(exc))
+                news_bundle = _fallback_news_bundle(
+                    record,
+                    error=str(exc),
+                    generated_at=effective_reference_dt,
+                )
         else:
-            news_bundle = _deferred_news_bundle(record)
+            news_bundle = _deferred_news_bundle(
+                record,
+                generated_at=effective_reference_dt,
+            )
 
         try:
             option_chain = await self.options_step.execute(
@@ -664,11 +675,11 @@ def _fallback_market_snapshot(record: CandidateRecord, *, error: str) -> MarketS
     )
 
 
-def _deferred_news_bundle(record: CandidateRecord) -> NewsBundle:
+def _deferred_news_bundle(record: CandidateRecord, *, generated_at: datetime) -> NewsBundle:
     return NewsBundle(
         ticker=record.ticker,
         company_name=record.company_name,
-        generated_at=datetime.now(tz=timezone.utc),
+        generated_at=generated_at,
         search_results=(),
         articles=(),
         brief=NewsBrief(
@@ -682,11 +693,16 @@ def _deferred_news_bundle(record: CandidateRecord) -> NewsBundle:
     )
 
 
-def _fallback_news_bundle(record: CandidateRecord, *, error: str) -> NewsBundle:
+def _fallback_news_bundle(
+    record: CandidateRecord,
+    *,
+    error: str,
+    generated_at: datetime,
+) -> NewsBundle:
     return NewsBundle(
         ticker=record.ticker,
         company_name=record.company_name,
-        generated_at=datetime.now(tz=timezone.utc),
+        generated_at=generated_at,
         search_results=(),
         articles=(),
         brief=NewsBrief(

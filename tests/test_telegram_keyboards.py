@@ -39,6 +39,7 @@ def test_settings_keyboard_exposes_all_editable_fields() -> None:
         "🏦 Broker",
         "📜 Strategy Permission",
         "🔢 Max Contracts",
+        "🔔 Alert Mute Duration",
     ]
 
 

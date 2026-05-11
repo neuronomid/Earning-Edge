@@ -132,6 +132,48 @@ async def test_yfinance_client_builds_calls_and_puts(monkeypatch: pytest.MonkeyP
     assert contracts[0].ticker == "AMD"
 
 
+async def test_yfinance_client_treats_nan_numeric_fields_as_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class NaNTicker(FakeTicker):
+        def option_chain(self, expiry: str) -> FakeOptionChain:
+            assert expiry == "2026-05-16"
+            return FakeOptionChain(
+                calls=FakeFrame(
+                    [
+                        {
+                            "contractSymbol": "AMD260516C00104000",
+                            "strike": 104,
+                            "bid": 1.1,
+                            "ask": 1.3,
+                            "lastPrice": 1.2,
+                            "volume": float("nan"),
+                            "openInterest": "NaN",
+                            "impliedVolatility": "nan",
+                        }
+                    ]
+                ),
+                puts=FakeFrame([]),
+            )
+
+    monkeypatch.setitem(
+        sys.modules,
+        "yfinance",
+        SimpleNamespace(Ticker=lambda symbol: NaNTicker()),
+    )
+
+    contracts = await YFinanceOptionsClient().fetch_chain(
+        "amd",
+        expiry_window_days=30,
+        today=date(2026, 5, 1),
+    )
+
+    assert len(contracts) == 1
+    assert contracts[0].volume is None
+    assert contracts[0].open_interest is None
+    assert contracts[0].implied_volatility is None
+
+
 async def test_options_service_falls_back_to_yfinance_and_duplicates_sides(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

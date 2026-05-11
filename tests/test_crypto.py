@@ -37,7 +37,8 @@ def test_decrypt_with_wrong_key_fails() -> None:
 
 
 def test_missing_key_raises() -> None:
-    original_key = os.environ.pop("APP_ENCRYPTION_KEY", "")
+    original_key = os.environ.get("APP_ENCRYPTION_KEY", "")
+    os.environ["APP_ENCRYPTION_KEY"] = ""
     get_settings.cache_clear()
     crypto.reset_cache()
     try:

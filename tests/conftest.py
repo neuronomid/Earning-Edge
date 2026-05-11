@@ -8,9 +8,10 @@ import pytest_asyncio
 from cryptography.fernet import Fernet
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-os.environ.setdefault("APP_ENV", "test")
+os.environ["APP_ENV"] = "test"
 os.environ.setdefault("APP_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
 os.environ.setdefault("POSTGRES_HOST", "localhost")
+os.environ.setdefault("POSTGRES_PORT", "15432")
 os.environ.setdefault("POSTGRES_DB", "earning_edge_test")
 
 

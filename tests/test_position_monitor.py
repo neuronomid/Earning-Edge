@@ -17,6 +17,7 @@ from app.db.models.workflow_run import WorkflowRun
 from app.db.repositories.open_position_repo import OpenPositionRepository
 from app.db.repositories.user_repo import UserRepository
 from app.services.options.alpaca_client import build_occ_symbol
+from app.services.options.types import OptionContract
 from app.services.positions.monitor import PositionMonitor
 
 pytestmark = pytest.mark.asyncio
@@ -30,6 +31,26 @@ class FakePremiumClient:
     async def fetch_premium(self, ticker: str, **kwargs: Any) -> Decimal | None:
         self.calls.append({"ticker": ticker, **kwargs})
         return self.premium
+
+    async def fetch_chain(self, ticker: str, **kwargs: Any) -> tuple[OptionContract, ...]:
+        self.calls.append({"ticker": ticker, **kwargs})
+        if self.premium is None:
+            return ()
+        symbols = kwargs.get("symbols") or (None,)
+        return tuple(
+            OptionContract(
+                ticker=ticker,
+                option_type="call",
+                strike=Decimal("104.00"),
+                expiry=date(2026, 5, 11),
+                bid=self.premium,
+                ask=self.premium,
+                mid=self.premium,
+                source="alpaca",
+                symbol=symbol,
+            )
+            for symbol in symbols
+        )
 
 
 @dataclass(slots=True)
@@ -144,7 +165,8 @@ async def test_monitor_sends_target_alert_once(db_session: AsyncSession) -> None
     assert refreshed is not None
     assert refreshed.last_premium == Decimal("2.0500")
     assert refreshed.last_data_source == "yfinance"
-    assert refreshed.alerts_sent == ["target_hit"]
+    assert refreshed.target_alert_count == 1
+    assert refreshed.alerts_sent == []
     assert len(notifier.calls) == 1
     assert "Target price has been reached." in notifier.calls[0]["text"]
 

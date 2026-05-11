@@ -92,8 +92,9 @@ class FakeNewsStep:
         record: CandidateRecord,
         *,
         openrouter_api_key: str,
+        reference_dt: datetime | None = None,
     ) -> NewsBundle:
-        del openrouter_api_key
+        del openrouter_api_key, reference_dt
         self.calls.append(record.ticker)
         return self.bundles[record.ticker]
 
@@ -119,7 +120,7 @@ class ScoringPlan:
     action: str
     final_score: int
     direction: str
-    direction_score: int
+    direction_score: int | None = None
     contract_score: int | None = None
     confidence_score: int = 88
     reasoning: tuple[str, ...] = ("Momentum and contract quality lined up.",)
@@ -182,7 +183,7 @@ class FakeScoringStep:
             direction=DirectionResult(
                 classification=plan.direction,  # type: ignore[arg-type]
                 bias=Decimal("0.70"),
-                score=plan.direction_score,
+                score=plan.direction_score if plan.direction_score is not None else plan.final_score,
                 factors=(),
                 reasons=plan.reasoning,
             ),
@@ -294,7 +295,10 @@ async def _make_run(
 async def _contract_count(session: AsyncSession, run_id) -> int:
     candidates = await CandidateRepository(session).list_for_run(run_id)
     repo = OptionContractRepository(session)
-    return sum(len(await repo.list_for_candidate(candidate.id)) for candidate in candidates)
+    total = 0
+    for candidate in candidates:
+        total += len(await repo.list_for_candidate(candidate.id))
+    return total
 
 
 def _batch() -> CandidateBatch:

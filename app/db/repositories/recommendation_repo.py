@@ -29,3 +29,12 @@ class RecommendationRepository(BaseRepository[Recommendation]):
             .order_by(Recommendation.created_at.asc(), Recommendation.id.asc())
         )
         return list(result.scalars().all())
+
+    async def get_child_for_parent(self, parent_id: UUID) -> Recommendation | None:
+        result = await self.session.execute(
+            select(Recommendation)
+            .where(Recommendation.parent_recommendation_id == parent_id)
+            .order_by(Recommendation.created_at.desc(), Recommendation.id.desc())
+            .limit(1)
+        )
+        return result.scalars().first()
