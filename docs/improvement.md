@@ -13,6 +13,23 @@ of unproven improvements.
 
 **Status:** This is a recommendations document. No code has been changed.
 
+**User decisions locked in (2026-05-11):**
+- **Q1 — Strategy A filter drift:** Not deliberate. Build a system that tries
+  the full PRD §5.2 filter set first and **progressively relaxes** filters
+  until matches appear. Goal is "best filtered results," not just "any
+  results." Concrete relaxation tier proposed in §B4.
+- **Q2 — Vertical spreads:** **Not in this version.** Keep on the radar for
+  a future release.
+- **Q3 — Volatility-ramp (cut-before-earnings):** **Chair recommends
+  deferring.** See §E1 for rationale. Decision: drop from this version, keep
+  current hold-through architecture.
+- **Q4 — Backtest harness:** Use Tastytrade / ORATS canon defaults now. Add
+  a structured **outcome log** so future versions can re-tune from data.
+  See §B16.
+- **Q5 — Naked `short_call`:** Keep as a real recommendation type. Build a
+  proper margin estimator, IV-scaled stops, and gap-risk language — do NOT
+  gate to watch-only.
+
 ---
 
 ## TL;DR — chair's synthesis
@@ -158,14 +175,31 @@ Severity scale:
   permission can receive a recommendation for a `short_put` or naked
   `short_call` with **no target, no stop, and no programmatic loss cut at
   all**. For naked short call this is unbounded loss.
-- **Recommendation (chair):**
-  - Implement Tastytrade canon for short_put: target = `entry_credit × 0.50`
-    (close at 50% of max profit), stop = exit when loss reaches `2× credit
-    received`.
-  - **Gate naked `short_call` to `watch_only=True` unconditionally** until a
-    real margin/buying-power estimator exists. Sizing for short_call already
-    admits "Undefined" — that is a tell that the strategy should not produce
-    actionable recommendations yet.
+- **Recommendation (chair) — per user Q5 decision (keep short_call):**
+  - **short_put (the easy half):** Implement Tastytrade canon — target =
+    `entry_credit × 0.50` (close at 50% of max profit); stop = exit when loss
+    reaches `2× credit received`. Both are well-cited industry defaults.
+  - **short_call (the hard half) — full build, not watch-only gate:**
+    1. **Replace the strike-notional sizing cap** in `sizing.py:64-100` with a
+       proper Reg-T-style buying-power estimate: `BPR ≈ max(20% × underlying
+       − OTM amount + premium, 10% × strike) × 100`. Reference: CBOE margin
+       rules. Until then the system over-sizes naked calls in low-priced
+       volatile names.
+    2. **IV-scaled stop:** premium-based stops fail catastrophically on
+       short calls because the option price can multiply 5×–10× on a gap.
+       Use an **underlying-touch stop** (close when underlying breaches the
+       short strike or a configurable buffer above it, e.g. strike × 1.02),
+       converted into the option-price domain via current delta only for the
+       monitor's alert threshold.
+    3. **Mandatory gap-risk disclosure** in the Telegram template for
+       short_call: "naked short — overnight gap can multiply loss." Plus a
+       per-trade max-loss cap derived from the user's account size.
+    4. **Conviction floor:** require `direction_score ≥ 65` AND
+       `confidence ≥ 60` before a naked short_call can produce a `recommend`
+       action (it stays as `watchlist` below those thresholds). The risk
+       asymmetry justifies a higher bar than long premium.
+    5. **`broker_verification_required = True` stays.** Keep telling the
+       user the broker's real margin number may differ.
 - **Consensus:** Target, stop, and sizing agents independently flagged
   short-premium gaps. Strong consensus.
 
@@ -192,19 +226,64 @@ Severity scale:
   filter. The selection bias (top-5 by market cap) systematically returns the
   same megacaps every earnings season, which the post-earnings-drift
   literature suggests is *the least* edge-rich slice.
-- **Recommendation (chair):**
-  1. Add `earningsdate_thisweek` to `STRATEGY_A_EARNINGS_VALUES` (currently a
-     1-tuple that makes the swap mechanism dead code). 2-line change.
-  2. Implement **graded filter fallback**: try the full PRD §5.2 filter set
-     first; on empty result, relax one tier at a time (drop `sh_relvol_o1.5`,
-     then `fa_epssurprise_pos`, then `an_recom_buybetter`) before falling
-     back to the current minimal net.
-  3. Replace top-5-by-marketcap with `cap_midover` floor + `-relativevolume`
-     sort to push toward mid-caps where earnings effects concentrate.
-- **Open question for the user:** was the PRD §5.2 filter set abandoned
-  deliberately (e.g. Finviz free-tier returned empty) or did it drift? The
-  chair recommends checking telemetry on the full-filter URL's row count
-  before deciding.
+- **Recommendation (chair) — per user Q1 decision (drift, not deliberate):**
+
+  Build a **graded relaxation engine** that runs the full PRD §5.2 filter
+  set first and progressively drops filters only when row count falls below
+  a target threshold. Each relaxation step is logged and surfaced in the
+  Telegram message as a transparency note (e.g. "Used Tier-3 relaxed
+  filters — analyst-revision signals dropped").
+
+  **Design principles for the relaxation order** (so we keep the highest-
+  signal filters longest):
+  - **Never relax** filters that define product eligibility — without these
+    we cannot recommend an option at all.
+  - **Relax cosmetic technicals first** (narrow-band RSI, short-term SMAs)
+    because they exclude many otherwise-good candidates without adding much
+    signal.
+  - **Relax analyst-revision filters next** — they're directional but soft.
+  - **Keep fundamental-surprise filters (`fa_epssurprise_pos`,
+    `fa_revenuesurprise_pos`) almost last** — these are the most durable
+    edge in the post-earnings-drift literature (Alpha Architect, Quantpedia).
+  - **Keep relative-volume last among the "soft" filters** because attention/
+    volume is a strong attention proxy around earnings.
+
+  **Proposed tier structure** (run top-down until row count ≥ target, e.g.
+  ≥ 5 distinct names, ideally ≥ 10 so re-ranking has room to work):
+
+  | Tier | Drop from previous tier | Rationale |
+  |------|-------------------------|-----------|
+  | 0 — Full PRD §5.2 | (nothing — start here) | Best case; all 15 filters active |
+  | 1 | `ta_rsi_50to70` | Narrow RSI band is the most-restrictive technical |
+  | 2 | `ta_sma20_pa` | Short-term trend; SMA50/200 still enforce uptrend |
+  | 3 | `ta_perf_qup` | Quarterly performance up — could exclude reversion plays |
+  | 4 | `targetprice_above` | Analyst target — soft directional signal |
+  | 5 | `an_recom_buybetter` | Analyst recs — soft |
+  | 6 | Relax `sh_relvol_o1.5` → `sh_relvol_o1` | Still want above-average attention |
+  | 7 | `ta_sma50_pa`, `ta_sma200_pa` | Drop trend confluence — keep fundamentals |
+  | 8 | `fa_epsqoq_pos`, `fa_salesqoq_pos` | Drop QoQ growth confluence |
+  | 9 — Confluence floor | Keep only: `earningsdate_*`, `geo_usa`, `sh_opt_option`, `sh_price_o20`, `cap_midover`, `fa_epssurprise_pos`, `fa_revenuesurprise_pos`, `sh_avgvol_o1000` | Surprise-history + tradability essentials |
+  | 10 — Last resort | Current minimal net: `earningsdate_*`, `geo_usa` | Triggers `FINVIZ_FALLBACK_WARNING`-style transparency note |
+
+  **Never-relax set (eligibility, not preference):**
+  `earningsdate_nextweek` OR `earningsdate_thisweek` (need an earnings event);
+  `geo_usa` (US-listed); `sh_opt_option` (must have options); `sh_price_o20`
+  (avoid penny-stock data noise); `cap_midover` (avoid micro-caps where
+  Finviz data quality drops).
+
+  **Additional fixes alongside the tier engine:**
+  1. Add `earningsdate_thisweek` to `STRATEGY_A_EARNINGS_VALUES` so the
+     variant swap actually runs both windows and dedupes (today it's a
+     1-tuple = dead code). Two-line change.
+  2. Replace top-5-by-marketcap with `-relativevolume` sort. Mid/large-cap
+     stocks with elevated relative volume are the canonical PEAD/IV-ramp
+     setup; sorting by raw marketcap just returns the same megacaps every
+     week regardless of edge.
+  3. Re-rank surviving rows by a composite of (relativevolume, surprise
+     history, analyst target delta) before slicing top 5 — that way the
+     "best filtered results" survive even when an outer tier relaxed.
+  4. Log the active tier per run in `StrategyRunReport` so we can later see
+     which tier triggers most often in production.
 - **Consensus:** Strategy A agent (high confidence, code & PRD-cross-referenced).
 
 ### B5. HIGH — Strategy B is misnamed; nothing "coiled" is measured
@@ -268,13 +347,17 @@ Severity scale:
   creates the opportunity (the print) also creates the gap risk that defeats
   a premium-based stop. The user could reasonably submit a broker stop on a
   $1.30 option and get filled at $0.10 on a wide overnight spread.
-- **Recommendation (chair):**
-  1. Add one line to the template: "Mental alert only — not a broker order.
-     An earnings gap can move the option past this stop before you can act."
-  2. Consider a `--cut-before-earnings` alternative recommendation (close
-     pre-print) for users who want to avoid gap risk entirely.
-  3. Long-term: prefer **debit spreads** for earnings trades to structurally
-     cap the loss rather than rely on an unfillable stop.
+- **Recommendation (chair) — per user Q2/Q3 decisions (no spreads, no
+  ramp this version):**
+  1. Add one line to the Telegram template: "Mental alert only — not a
+     broker order. An earnings gap can move the option past this stop
+     before you can act."
+  2. Add a separate, stronger line for naked `short_call`: "Naked short
+     call — an overnight gap above the strike can multiply your loss.
+     Manage actively."
+  3. Future versions (deferred per user): debit/credit spreads to floor the
+     loss structurally, and a pre-earnings volatility-ramp exit path. Both
+     listed in §E2.
 - **Consensus:** Stop and target agents both flagged this. Strong consensus.
 
 ### B8. HIGH — No portfolio-level risk awareness in sizing
@@ -364,6 +447,50 @@ Severity scale:
 - **Recommendation:** reorder, or pick by `updated_at`/recency rather than
   position.
 
+### B16. NEW — Recommendation outcome log (per user Q4 decision)
+
+User chose to **adopt Tastytrade / ORATS canon defaults now and build a
+structured outcome log for future re-tuning** instead of building a full
+backtest harness up-front. This is the sensible middle path: ship with
+well-cited defaults; capture data; calibrate later.
+
+**Why this fits the existing system:** the database already stores every
+`Recommendation` (entry price, target, stop, strategy, IV, expected_move,
+chosen contract) and the `positions/monitor.py` service already watches
+open positions for target/stop touches. The missing piece is a **post-trade
+outcome row** that links each recommendation to its realised result.
+
+**Proposed outcome log (logical columns — not a final schema):**
+- `recommendation_id` (FK to existing `recommendations` table)
+- `entry_filled_at`, `entry_fill_price` (from user confirmation or
+  monitor's first observation)
+- `exit_event` ∈ {`hit_target`, `hit_stop`, `time_exit`, `pre_earnings_cut`,
+  `expired_worthless`, `expired_itm`, `manual_close`, `unobserved`}
+- `exit_at`, `exit_price`
+- `realised_pnl_per_contract` (Decimal)
+- `realised_pnl_pct` (Decimal — vs entry premium)
+- `iv_at_entry`, `iv_at_exit`, `iv_change_pct`
+- `actual_underlying_move_pct` (vs entry-day close)
+- `expected_move_used` (the EM the system computed at recommend-time)
+- `move_realisation_ratio` = `actual_move / expected_move`
+- `days_held`
+- `strategy_source` (catalyst_confluence vs coiled_setup), `strategy`,
+  `confidence`, `final_score`, `direction_score`, `contract_score`
+
+**What this unlocks (without building anything more right now):**
+- After a few months of weekly runs you have a flat-file dataset
+  (~50–200 trades) sufficient to re-fit the magic numbers in §B12.
+- Aggregations by `strategy_source` show whether Strategy A or Strategy B
+  actually has edge.
+- Aggregations by `iv_rank_bucket × strategy` validate or refute the
+  Tastytrade canon defaults in your specific universe.
+- Move-realisation-ratio histograms tell you if straddle-implied EM is
+  well-calibrated for your candidate pool.
+
+**Effort estimate:** small — one Alembic migration, one new repository, one
+new service called from the monitor's exit-detection hook. No code yet (per
+user instruction), but worth scoping into Phase 5.
+
 ### B15. LOW — Polish items
 - No jittered backoff between Finviz retries (`browser.py:108` uses a flat
   500ms).
@@ -443,72 +570,142 @@ Severity scale:
 
 ---
 
-## D. Recommended sequencing (chair's view)
+## D. Recommended sequencing (chair's view, post-decisions)
 
 Fix-the-bugs first, then the product gaps, then the polish. Each phase ends
-with the system in a strictly better state — no half-states.
+with the system in a strictly better state — no half-states. Updated to
+reflect the user's Q1–Q5 decisions: short_call gets a real build, no
+spreads, no volatility-ramp, canon defaults + outcome log instead of full
+backtest harness.
 
 **Phase 1 — Bugs & safety rails (low risk, high payoff):**
-1. B1 fix the fake-earnings-date path for Strategy B (`orchestrator.py:300`).
-2. B3 bound `custom_risk_percent` at the user_service layer.
-3. B2 gate naked `short_call` to `watch_only=True` until margin estimator
-   exists; add Tastytrade-style 50%/2× target/stop for `short_put`.
-4. B7 add gap-risk disclosure to the Telegram template.
+1. **B1** fix the fake-earnings-date path for Strategy B
+   (`orchestrator.py:300`).
+2. **B3** bound `custom_risk_percent` at the user_service ingestion layer
+   (cap at e.g. 5–10%).
+3. **B2 (easy half)** — add Tastytrade-style targets/stops for `short_put`
+   (close at 50% of max profit; stop at 2× credit received).
+4. **B7** add gap-risk disclosure lines to the Telegram template (general
+   line for longs; stronger naked-short-call-specific line).
 
-**Phase 2 — Make IV/EM a first-class signal (the biggest product win):**
-5. B6 compute straddle-implied EM from the option chain and populate
-   `CandidateContext.expected_move_percent`. Once populated, the
-   `_expected_move_fraction` EM-preferred branch starts firing automatically.
-6. Compute IV-rank against trailing IV history.
-7. Use IV-rank in `strategy_select` to bias long-vs-short premium.
+**Phase 2 — Make IV/EM a first-class signal (biggest product win):**
+5. **B6 (part 1)** compute straddle-implied expected move from the ATM
+   front-expiry chain and populate `CandidateContext.expected_move_percent`.
+   The dead "EM-preferred" branch in `exit_target.py:135-146` starts firing
+   automatically. Single highest-leverage change in the plan.
+6. **B6 (part 2)** compute IV-rank against trailing 30/60/252-day IV
+   history (per CBOE / Tastytrade methodology).
+7. **B6 (part 3)** use IV-rank in `strategy_select` to bias long-vs-short
+   premium — low IVR favours long premium, high IVR favours short premium.
+8. Scale target prices by EM (replace conviction-scale floors with
+   `target = entry + delta × (EM × IVR-bucket-scalar × move-fraction)`).
+   Replace fixed 50% stop with IV-scaled stop. Both per the agents' canon
+   citations.
 
 **Phase 3 — Fix the candidate funnel (Strategy A & B match their names):**
-8. B4 graded filter fallback for Strategy A; restore `earningsdate_thisweek`
-   in the variant swap; consider mid-cap-floor + relvol sort.
-9. B5 restore real compression measurement in Strategy B (ATR-percentile or
-   BB-width-percentile, or `ta_volatility_wo4`).
+9. **B4** — implement the graded filter relaxation engine for Strategy A
+   per the tier table in §B4. Add `earningsdate_thisweek` to the variant
+   swap. Replace `-marketcap` sort with `-relativevolume` + composite
+   re-rank (relvol, surprise-history, analyst delta). Log active tier in
+   `StrategyRunReport`.
+10. **B5** — restore real compression measurement for Strategy B (compute
+    ATR-percentile and/or BB-width-percentile from yfinance OHLC in the
+    scoring layer; do not rely on Finviz pattern filters). Remove the dead
+    1-tuple `STRATEGY_B_VARIANT_VALUES` swap.
 
-**Phase 4 — Math hardening (do not break anything that works):**
-10. B10 add direction-and-contract floors for `recommend`, keep the 0.45/0.55
-    PRD weights.
-11. B11 drop `MISSING_UNIT` to 0 for missing signals.
-12. B9 pick one side of the sizing/stop coupling and document it.
-13. B8 add portfolio-level open-risk cap.
-14. B12 short-term: add inline provenance comments. Replace step thresholds
-    with sigmoids where a single test confirms behaviour is identical at
+**Phase 4 — Math hardening + short_call full build:**
+11. **B2 (hard half)** — naked `short_call` real margin estimator
+    (`BPR ≈ max(0.20 × underlying − OTM amount + premium, 0.10 × strike) × 100`),
+    underlying-touch stop (close on underlying ≥ strike × 1.02 or
+    user-configurable buffer), conviction floor (`direction ≥ 65 AND
+    confidence ≥ 60` for `recommend`), mandatory gap-risk language.
+12. **B10** add direction-and-contract floors for `recommend` (e.g.
+    `direction ≥ 55 AND contract ≥ 60`), keep the 0.45/0.55 PRD blend
+    weights.
+13. **B11** drop `MISSING_UNIT = 0.45` to 0 (missing signals should not
+    silently credit).
+14. **B9** pick one side of the sizing/stop coupling and document it. The
+    chair's recommendation is **Option A** (size off `0.50 × ask × 100` to
+    match the planned cut) — that makes the displayed `account_risk_percent`
+    truthful for the modal case (longs that hit the stop). The gap-risk
+    language in §B7 covers the worst-case (gap-through-stop).
+15. **B8** add portfolio-level open-risk cap (sum open premium-at-risk
+    across `OpenPosition` rows; cap at 6–10% combined).
+16. **B12 (short-term half)** add inline provenance comments to every
+    magic number — PRD section, Tastytrade article, or "informal" if
+    that's the truth. Replace step thresholds with sigmoids/piecewise
+    linear where a single test confirms behaviour is identical at the
     knot points.
 
-**Phase 5 — Polish & calibration:**
-15. B13 slippage/commission buffer.
-16. B14 reorder backup sources.
-17. B15 jittered backoff, UA rotation, holiday calendar, BMO/AMC, solo-mode
-    caching, encrypt `account_size`.
-18. Build the backtest harness needed to justify any future change to a
-    magic number.
+**Phase 5 — Outcome log, polish & calibration prep:**
+17. **B16** ship the recommendation outcome log (Alembic migration, new
+    repository, hook into `positions/monitor.py` exit handlers). One
+    schema. No analyzer yet. This is the foundation for future
+    data-driven re-tuning.
+18. **B13** slippage / commission buffer in sizing.
+19. **B14** reorder backup earnings sources (Finnhub before yfinance).
+20. **B15** jittered backoff, UA rotation, US-holiday calendar, BMO/AMC
+    awareness, solo-mode caching, encrypt `account_size`.
+
+**Out of scope this version (see §E2):** vertical spreads,
+volatility-ramp / cut-before-earnings, full backtest harness, calibrated
+probability outputs, direction-probability features (skew / OI / gamma).
 
 ---
 
-## E. Open questions for the user
+## E. Decisions made + deferred items
 
-These are decisions the chair could not make without you:
+### E1. Chair's reasoning on the deferred decisions
 
-1. **Is the simplified Strategy A URL deliberate?** Did the PRD §5.2 full
-   filter set get abandoned because Finviz free-tier returned empty, or did
-   it drift? Need telemetry on the full-filter URL's row count to decide.
-2. **Should the system include debit/credit spreads** (vertical strategies)?
-   The current universe is `long_call`, `long_put`, `short_put`, `short_call`
-   only. Adding spreads is the structural answer to earnings gap risk, but
-   it is a bigger lift.
-3. **Cut-before-earnings vs hold-through-earnings**: should the system offer
-   a pre-print exit alternative, or stay PRD §27 (always pick post-earnings
-   expiry)?
-4. **Backtest harness**: many recommendations want empirical validation
-   before being adopted. Do you want a small backtest harness built (a few
-   days of work) or do you trust Tastytrade / ORATS canon enough to adopt
-   the well-cited defaults without one?
-5. **Short-strategy stance**: do you actually want the bot to recommend
-   `short_call` at all? If not, the right move is to remove it from the
-   permission set rather than improve sizing for it.
+**Volatility-ramp (Q3) — chair recommended defer, user accepted.**
+
+The user offered to add the volatility-ramp (cut-before-earnings) path if the
+chair recommended it. After weighing the work:
+- The Phase 1–4 plan already adds significant new behavior: graded Finviz
+  relaxation, IV-rank computation, expected-move population, short_call
+  margin estimator, gap-risk UX, sizing/stop reconciliation. That is enough
+  net-new surface for one release.
+- Volatility-ramp is not just "exit earlier" — it requires a parallel
+  decision branch in `decide.py` (ramp vs hold), a separate exit-target
+  computation path (target = pre-event premium peak, not post-event move),
+  separate Telegram messaging to avoid user confusion, and separate outcome
+  tracking. Order-of-magnitude bigger than the Phase 1 bug fixes.
+- The Phase 2 work (IV-rank + expected-move) *unlocks* a clean ramp
+  implementation later. Deferring does not burn the work — it preserves the
+  foundation.
+- The user's earnings-options thesis is direction-betting (hold-through);
+  volatility-ramp is a different product. Keeping product focus tight on
+  one thesis per release reduces test surface and decision fatigue.
+
+**Vertical spreads (Q2) — user deferred to a future version.** Spreads are
+the structural answer to gap risk; the gap-risk language added in B7 is the
+interim workaround. When spreads ship, B7's "mental alert only" disclosure
+gets weaker because the loss is structurally floored.
+
+**Backtest harness (Q4) — user chose canon now, outcome log for later.**
+Canon defaults (Tastytrade 50% / 2× rules, ORATS straddle-implied EM,
+IV-rank gating) are well-cited and battle-tested. The outcome log (§B16)
+captures everything needed to validate them in your specific universe
+later, without delaying this release.
+
+### E2. Deferred items (future versions)
+
+These are explicitly out of scope for this version but should not be lost:
+
+1. **Vertical spreads** (debit/credit) as 5th and 6th strategy types.
+   Structurally caps loss; preferred for earnings trades in the academic
+   and trader-desk literature. Estimated 3–5 days of work when prioritised.
+2. **Volatility-ramp / cut-before-earnings** as a parallel recommendation
+   mode. Most cleanly built after IV-rank and EM are in (Phase 2 here).
+3. **Full backtest harness.** Once the outcome log (§B16) has 3–6 months
+   of data, build a runner that re-simulates the pipeline against history
+   and re-fits the magic numbers in §B12.
+4. **Calibrated probability output** (isotonic regression on
+   direction-score → realised-PnL-sign). Requires the backtest harness.
+5. **Direction-probability features** beyond price-returns: 25Δ
+   risk-reversal skew, put/call OI ratios, overnight gamma exposure. The
+   scoring agent flagged these as the highest-quality additions to
+   `direction.py`.
 
 ---
 
