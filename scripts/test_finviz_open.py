@@ -1,4 +1,5 @@
 """End-to-end test: Finviz → top 5 CandidateRecord objects."""
+
 import asyncio
 import sys
 from pathlib import Path

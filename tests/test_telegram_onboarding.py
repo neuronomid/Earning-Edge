@@ -40,9 +40,7 @@ def send_recorder(monkeypatch: pytest.MonkeyPatch) -> SendRecorder:
 
 
 @pytest.fixture
-def patch_user_service_scope(
-    monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
-) -> None:
+def patch_user_service_scope(monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession) -> None:
     scope = make_user_service_scope(db_session)
     monkeypatch.setattr(start_handlers, "user_service_scope", scope)
     monkeypatch.setattr(onboarding_handlers, "user_service_scope", scope)
@@ -53,9 +51,7 @@ def validators_ok(monkeypatch: pytest.MonkeyPatch) -> None:
     async def openrouter_ok(self: OpenRouterValidator, api_key: str) -> ValidationResult:
         return ValidationResult(True, f"OpenRouter accepted {api_key}")
 
-    async def alpaca_ok(
-        self: AlpacaValidator, api_key: str, api_secret: str
-    ) -> ValidationResult:
+    async def alpaca_ok(self: AlpacaValidator, api_key: str, api_secret: str) -> ValidationResult:
         return ValidationResult(True, f"Alpaca accepted {api_key}/{api_secret}")
 
     async def av_ok(self: AlphaVantageValidator, api_key: str) -> ValidationResult:
@@ -82,9 +78,7 @@ async def test_full_onboarding_flow_persists_user_and_default_cron(
         assert "Welcome to <b>Earning Edge</b>" in send_recorder.calls[0].text
         assert "account size" in send_recorder.calls[1].text.lower()
 
-        await onboarding_handlers.step_account_size(
-            make_message("$7,500", chat_id=chat_id), state
-        )
+        await onboarding_handlers.step_account_size(make_message("$7,500", chat_id=chat_id), state)
         assert await state.get_state() == Onboarding.risk_profile.state
 
         risk_cb = make_callback(chat_id=chat_id)
@@ -222,9 +216,7 @@ async def test_onboarding_reprompts_when_openrouter_key_is_invalid(
     send_recorder: SendRecorder,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def openrouter_bad(
-        self: OpenRouterValidator, api_key: str
-    ) -> ValidationResult:
+    async def openrouter_bad(self: OpenRouterValidator, api_key: str) -> ValidationResult:
         return ValidationResult(False, f"{api_key} is invalid")
 
     monkeypatch.setattr(OpenRouterValidator, "validate", openrouter_bad)
@@ -233,9 +225,7 @@ async def test_onboarding_reprompts_when_openrouter_key_is_invalid(
     try:
         await state.set_state(Onboarding.openrouter_key)
 
-        await onboarding_handlers.step_openrouter_key(
-            make_message("bad-key", chat_id=22222), state
-        )
+        await onboarding_handlers.step_openrouter_key(make_message("bad-key", chat_id=22222), state)
 
         assert await state.get_state() == Onboarding.openrouter_key.state
         assert "didn't work" in send_recorder.calls[-1].text

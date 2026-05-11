@@ -38,13 +38,7 @@ COLD_PHRASES: tuple[str, ...] = (
 # Light emoji palette (PRD §10.6) — used for "looks too plain?" hints.
 LIGHT_EMOJI = ("🚀", "📊", "⚠️", "✅", "🔍", "🧠", "📈", "🗓", "💰", "🎚", "🌎", "🏦", "📜", "🔢")
 
-EMOJI_PATTERN = re.compile(
-    "["
-    "\U0001f300-\U0001fad6"
-    "\U00002600-\U000027bf"
-    "\U0001f1e6-\U0001f1ff"
-    "]"
-)
+EMOJI_PATTERN = re.compile("[\U0001f300-\U0001fad6\U00002600-\U000027bf\U0001f1e6-\U0001f1ff]")
 
 MAX_EMOJI = 8
 

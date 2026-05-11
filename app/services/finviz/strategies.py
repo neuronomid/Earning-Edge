@@ -11,9 +11,7 @@ STRATEGY_A_BASE = FinvizQuery(
 )
 
 STRATEGY_A_EARNINGS_PREFIX = "earningsdate_"
-STRATEGY_A_EARNINGS_VALUES: tuple[str, ...] = (
-    "earningsdate_nextweek",
-)
+STRATEGY_A_EARNINGS_VALUES: tuple[str, ...] = ("earningsdate_nextweek",)
 
 STRATEGY_B_BASE = FinvizQuery(
     filters=(
@@ -32,6 +30,4 @@ STRATEGY_B_BASE = FinvizQuery(
 )
 
 STRATEGY_B_VARIANT_PREFIX = "ta_beta_"
-STRATEGY_B_VARIANT_VALUES: tuple[str, ...] = (
-    "ta_beta_o1",
-)
+STRATEGY_B_VARIANT_VALUES: tuple[str, ...] = ("ta_beta_o1",)

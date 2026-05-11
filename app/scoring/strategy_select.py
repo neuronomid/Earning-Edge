@@ -68,4 +68,3 @@ def _median_iv(contracts: tuple[OptionContractInput, ...]) -> Decimal | None:
     if len(values) % 2 == 1:
         return values[midpoint]
     return (values[midpoint - 1] + values[midpoint]) / Decimal("2")
-

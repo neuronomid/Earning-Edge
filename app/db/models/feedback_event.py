@@ -18,9 +18,7 @@ class FeedbackEvent(Base):
     )
     user_id: Mapped[UuidFK] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
 
-    user_action: Mapped[str] = mapped_column(
-        String(32)
-    )  # bought/skipped/still_holding/closed
+    user_action: Mapped[str] = mapped_column(String(32))  # bought/skipped/still_holding/closed
     entry_price: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)
     exit_price: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)
     pnl: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)

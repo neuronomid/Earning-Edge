@@ -18,9 +18,7 @@ class OptionContract(Base):
     __tablename__ = "option_contracts"
 
     id: Mapped[UuidPK]
-    candidate_id: Mapped[UuidFK] = mapped_column(
-        ForeignKey("candidates.id", ondelete="CASCADE")
-    )
+    candidate_id: Mapped[UuidFK] = mapped_column(ForeignKey("candidates.id", ondelete="CASCADE"))
 
     ticker: Mapped[str] = mapped_column(String(16))
     option_type: Mapped[str] = mapped_column(String(8))  # call/put

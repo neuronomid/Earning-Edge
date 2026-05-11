@@ -12,7 +12,5 @@ class CandidateRepository(BaseRepository[Candidate]):
     model = Candidate
 
     async def list_for_run(self, run_id: UUID) -> list[Candidate]:
-        result = await self.session.execute(
-            select(Candidate).where(Candidate.run_id == run_id)
-        )
+        result = await self.session.execute(select(Candidate).where(Candidate.run_id == run_id))
         return list(result.scalars().all())

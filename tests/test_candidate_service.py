@@ -166,8 +166,7 @@ async def test_candidate_service_validates_finviz_rows() -> None:
         "EEE",
     ]
     assert all(
-        candidate.strategy_source == CATALYST_STRATEGY_SOURCE
-        for candidate in batch.candidates
+        candidate.strategy_source == CATALYST_STRATEGY_SOURCE for candidate in batch.candidates
     )
     assert all(candidate.earnings_date == date(2026, 5, 8) for candidate in batch.candidates)
 
@@ -233,8 +232,7 @@ async def test_candidate_service_falls_back_when_finviz_fails() -> None:
         "EEE",
     ]
     assert all(
-        candidate.strategy_source == CATALYST_STRATEGY_SOURCE
-        for candidate in batch.candidates
+        candidate.strategy_source == CATALYST_STRATEGY_SOURCE for candidate in batch.candidates
     )
 
 
@@ -316,8 +314,9 @@ async def test_candidate_service_keeps_finviz_top_five_when_backup_date_conflict
     assert all(candidate.earnings_date is not None for candidate in batch.candidates)
 
 
-async def test_candidate_service_marks_partial_backup_usage_when_finviz_needs_supplemental_rows(
-) -> None:
+async def test_candidate_service_marks_partial_backup_usage_when_finviz_needs_supplemental_rows() -> (
+    None
+):
     finviz_rows = [
         _candidate(
             "AAA",

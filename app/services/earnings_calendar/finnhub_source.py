@@ -84,8 +84,9 @@ class FinnhubEarningsSource:
             ranked.append((symbol, earnings_date, payload))
 
         ranked.sort(
-            key=lambda item: _market_cap_to_decimal(item[2].get("marketCapitalization"))
-            or Decimal("0"),
+            key=lambda item: (
+                _market_cap_to_decimal(item[2].get("marketCapitalization")) or Decimal("0")
+            ),
             reverse=True,
         )
         quote_limit = max(limit * 3, 12)

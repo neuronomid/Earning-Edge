@@ -144,4 +144,3 @@ def collect_soft_penalties(
         )
 
     return tuple(penalties)
-

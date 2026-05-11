@@ -38,9 +38,7 @@ class FinvizQueryRunner:
         limit: int,
         strategy_source: StrategySource,
     ) -> list[CandidateRecord]:
-        queries = [
-            base.with_filter_replaced(swap_prefix, value) for value in swap_values
-        ]
+        queries = [base.with_filter_replaced(swap_prefix, value) for value in swap_values]
         results = await asyncio.gather(
             *[
                 self._run_single(query, limit=limit, strategy_source=strategy_source)
@@ -107,9 +105,7 @@ class FinvizQueryRunner:
         merged = sorted(best_by_ticker.values(), key=_rank_value)
         result: list[CandidateRecord] = []
         for new_rank, row in enumerate(merged[:limit], start=1):
-            result.append(
-                replace(row, screener_rank=new_rank, strategy_source=strategy_source)
-            )
+            result.append(replace(row, screener_rank=new_rank, strategy_source=strategy_source))
         return result
 
 

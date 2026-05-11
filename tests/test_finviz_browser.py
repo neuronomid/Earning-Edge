@@ -92,7 +92,9 @@ async def test_capture_snapshot_uses_clean_context_only_after_same_page_retry_fa
     original = sys.modules.get("playwright.async_api")
     sys.modules["playwright.async_api"] = fake_module
     try:
-        await client.capture_snapshot(query=type("Q", (), {"to_url": lambda self: "https://finviz.com"})())
+        await client.capture_snapshot(
+            query=type("Q", (), {"to_url": lambda self: "https://finviz.com"})()
+        )
     finally:
         if original is None:
             sys.modules.pop("playwright.async_api", None)

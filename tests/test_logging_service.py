@@ -244,9 +244,12 @@ def test_logging_service_builds_complete_artifacts_and_archive(tmp_path) -> None
     assert archived_summary["run_id"] == str(run_id)
     assert len(json.loads((archive_dir / "candidate_cards.json").read_text(encoding="utf-8"))) == 2
     assert len(json.loads((archive_dir / "option_contracts.json").read_text(encoding="utf-8"))) == 3
-    assert json.loads(
-        (archive_dir / "recommendation_card.json").read_text(encoding="utf-8")
-    )["selected_ticker"] == "AMD"
+    assert (
+        json.loads((archive_dir / "recommendation_card.json").read_text(encoding="utf-8"))[
+            "selected_ticker"
+        ]
+        == "AMD"
+    )
     assert (archive_dir / "telegram_message.txt").read_text(encoding="utf-8") == (
         "Weekly Earnings Options Signal"
     )
@@ -417,9 +420,7 @@ def _candidate(
             score=84 if rejection is None else 0,
             factors=(),
             penalties=(),
-            vetoes=()
-            if rejection is None
-            else (HardVeto("rejected", rejection),),
+            vetoes=() if rejection is None else (HardVeto("rejected", rejection),),
             breakeven=Decimal("105.25"),
             breakeven_move_percent=Decimal("0.03"),
             liquidity_score=82 if rejection is None else 25,

@@ -79,4 +79,3 @@ def _risk_preference(days: int, risk_profile: RiskProfile) -> Decimal:
     if 0 <= days <= 2 or 22 <= days <= 30:
         return Decimal("0.65")
     return Decimal("0.40")
-

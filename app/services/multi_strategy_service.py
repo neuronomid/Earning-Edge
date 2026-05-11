@@ -62,8 +62,7 @@ class MultiStrategyCandidateService:
             a_rows = list(a_result.candidates)
             strategy_reports.extend(a_result.strategy_reports)
             if not any(
-                report.strategy_source == "catalyst_confluence"
-                for report in strategy_reports
+                report.strategy_source == "catalyst_confluence" for report in strategy_reports
             ):
                 final_rows = tuple(a_rows)
                 strategy_reports.append(
@@ -84,9 +83,7 @@ class MultiStrategyCandidateService:
                 )
         elif isinstance(a_result, BaseException):
             catalyst_failed = True
-            self.logger.warning(
-                "multi_strategy_catalyst_failed", error=str(a_result)
-            )
+            self.logger.warning("multi_strategy_catalyst_failed", error=str(a_result))
             strategy_reports.append(
                 build_strategy_report(
                     "catalyst_confluence",
@@ -115,9 +112,7 @@ class MultiStrategyCandidateService:
             )
         elif isinstance(b_result, BaseException):
             coiled_failed = True
-            self.logger.warning(
-                "multi_strategy_coiled_failed", error=str(b_result)
-            )
+            self.logger.warning("multi_strategy_coiled_failed", error=str(b_result))
             strategy_reports.append(
                 build_strategy_report(
                     "coiled_setup",

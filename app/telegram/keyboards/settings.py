@@ -151,9 +151,7 @@ def recommendation_keyboard(
         action_row.append(
             InlineKeyboardButton(
                 text="📈 Alternatives",
-                callback_data=AltRecCB(
-                    cursor_rec_id=alternative_cursor_id or rec_id
-                ).pack(),
+                callback_data=AltRecCB(cursor_rec_id=alternative_cursor_id or rec_id).pack(),
             )
         )
     action_row.append(
@@ -178,7 +176,9 @@ def recommendation_keyboard(
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def position_alert_keyboard(position_id: str, alert_type: str | None = None) -> InlineKeyboardMarkup:
+def position_alert_keyboard(
+    position_id: str, alert_type: str | None = None
+) -> InlineKeyboardMarkup:
     if alert_type in ("tp", "sl"):
         # Price-level alert: show Sold, Mute, Okay buttons
         mute_action = f"mute_{alert_type}"

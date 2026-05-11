@@ -79,9 +79,7 @@ async def test_run_candidate_contract_recommendation_feedback_chain(
     user = await _make_user(db_session, telegram_chat_id="tg-chain")
 
     run_repo = WorkflowRunRepository(db_session)
-    run = await run_repo.add(
-        WorkflowRun(user_id=user.id, trigger_type="manual", status="running")
-    )
+    run = await run_repo.add(WorkflowRun(user_id=user.id, trigger_type="manual", status="running"))
 
     candidate_repo = CandidateRepository(db_session)
     candidate = await candidate_repo.add(

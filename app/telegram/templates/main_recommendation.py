@@ -44,9 +44,7 @@ def render_main_recommendation(
         f"{_rank_medal(rank_position)} {recommendation.ticker}"
     )
     quantity_text = (
-        "Watchlist only"
-        if watchlist_only
-        else f"{recommendation.suggested_quantity} contract(s)"
+        "Watchlist only" if watchlist_only else f"{recommendation.suggested_quantity} contract(s)"
     )
     lines.extend(
         [
@@ -64,13 +62,9 @@ def render_main_recommendation(
         ]
     )
     if getattr(recommendation, "target_option_price", None) is not None:
-        lines.append(
-            f"🟢 <b>Target sell price:</b> ${_money(recommendation.target_option_price)}"
-        )
+        lines.append(f"🟢 <b>Target sell price:</b> ${_money(recommendation.target_option_price)}")
     if getattr(recommendation, "stop_loss_option_price", None) is not None:
-        lines.append(
-            f"🛑 <b>Stop loss:</b> ${_money(recommendation.stop_loss_option_price)}"
-        )
+        lines.append(f"🛑 <b>Stop loss:</b> ${_money(recommendation.stop_loss_option_price)}")
     if getattr(recommendation, "target_stock_price", None) is not None:
         lines.append(f"🎯 <b>Stock target:</b> ${_money(recommendation.target_stock_price)}")
     if getattr(recommendation, "exit_by_date", None) is not None:

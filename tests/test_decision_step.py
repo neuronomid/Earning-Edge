@@ -152,8 +152,9 @@ async def test_llm_decision_step_returns_no_trade_on_authentication_error() -> N
     assert result.decision.key_concerns == ["OpenRouter rejected the API key."]
 
 
-async def test_llm_decision_step_falls_back_when_model_selects_non_viable_visible_contract(
-) -> None:
+async def test_llm_decision_step_falls_back_when_model_selects_non_viable_visible_contract() -> (
+    None
+):
     candidate = _candidate(
         "MCD",
         chosen_index=0,
@@ -192,8 +193,9 @@ async def test_llm_decision_step_falls_back_when_model_selects_non_viable_visibl
     assert result.decision.chosen_contract.strike == Decimal("270")
 
 
-async def test_llm_decision_step_downgrades_action_when_model_escalates_watchlist_to_recommend(
-) -> None:
+async def test_llm_decision_step_downgrades_action_when_model_escalates_watchlist_to_recommend() -> (
+    None
+):
     # Structural: direction=74, contract=54 → combine = (74*0.45 + 54*0.55) ≈ 63 → watchlist
     candidate = _candidate(
         "MCD",
@@ -240,8 +242,9 @@ async def test_llm_decision_step_downgrades_action_when_model_escalates_watchlis
     assert result.decision.final_score == 63
 
 
-async def test_llm_decision_step_accepts_conservative_watchlist_on_recommend_quality_setup(
-) -> None:
+async def test_llm_decision_step_accepts_conservative_watchlist_on_recommend_quality_setup() -> (
+    None
+):
     # Structural says recommend (72), but LLM picks watchlist for news reasons.
     # The conservative call wins on action; the displayed final_score remains
     # the deterministic structural number.

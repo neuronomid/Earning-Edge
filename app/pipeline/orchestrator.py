@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from functools import lru_cache
 from typing import Any, Protocol
@@ -104,6 +104,18 @@ class AiogramNotifier:
             await bot.session.close()
 
 
+class NullNotifier:
+    async def send_text(
+        self,
+        chat_id: str,
+        text: str,
+        *,
+        reply_markup: Any | None = None,
+    ) -> str | None:
+        del chat_id, text, reply_markup
+        return None
+
+
 class PipelineOrchestrator:
     def __init__(
         self,
@@ -127,7 +139,7 @@ class PipelineOrchestrator:
         self.scoring_step = scoring_step or CandidateScoringStep()
         self.sizing_step = sizing_step or PositionSizingStep()
         self.decision_step = decision_step or get_default_decision_step(settings=settings)
-        self.notifier = notifier or AiogramNotifier()
+        self.notifier = notifier or _build_default_notifier(settings)
         self.logger = logger or get_logger(__name__)
         self.logging_service = logging_service or get_logging_service()
 
@@ -136,10 +148,10 @@ class PipelineOrchestrator:
         if user is None:
             raise LookupError(f"Workflow user {run.user_id} was not found")
 
-        if run.trigger_type == "manual":
+        if run.trigger_type == "manual" and not _is_dashboard_user(user):
             await self.notifier.send_text(user.telegram_chat_id, render_scan_started())
 
-        reference_dt = datetime.now(timezone.utc)
+        reference_dt = datetime.now(UTC)
 
         batch = await self.candidate_step.execute()
         run.screener_status = batch.screener_status
@@ -163,7 +175,7 @@ class PipelineOrchestrator:
         *,
         reference_dt: datetime | None = None,
     ) -> PipelineOutcome:
-        effective_reference_dt = reference_dt or datetime.now(timezone.utc)
+        effective_reference_dt = reference_dt or datetime.now(UTC)
         secrets = _decrypt_user_secrets(user)
         user_context = _build_user_context(
             user,
@@ -241,7 +253,7 @@ class PipelineOrchestrator:
     ) -> PipelineCandidate:
         calculation_errors: list[str] = []
         effective_user_context = user_context
-        effective_reference_dt = reference_dt or datetime.now(timezone.utc)
+        effective_reference_dt = reference_dt or datetime.now(UTC)
 
         try:
             market_snapshot = await self.market_data_step.execute(
@@ -297,7 +309,7 @@ class PipelineOrchestrator:
         context = CandidateContext(
             ticker=record.ticker,
             company_name=record.company_name or market_snapshot.company_name or record.ticker,
-            earnings_date=record.earnings_date or datetime.now(timezone.utc).date(),
+            earnings_date=record.earnings_date or datetime.now(UTC).date(),
             earnings_timing="unknown",
             market_snapshot=market_snapshot,
             news_brief=news_bundle.brief,
@@ -454,7 +466,7 @@ class PipelineOrchestrator:
             update_run=True,
         )
         if recommendation is None and run.finished_at is None:
-            run.finished_at = datetime.now(timezone.utc)
+            run.finished_at = datetime.now(UTC)
         return recommendation
 
     async def persist_recommendation(
@@ -471,7 +483,7 @@ class PipelineOrchestrator:
         if outcome.decision.action == "no_trade" or outcome.selected is None:
             if update_run:
                 run.status = "no_trade"
-                run.finished_at = datetime.now(timezone.utc)
+                run.finished_at = datetime.now(UTC)
                 run.final_recommendation_id = None
             return None
 
@@ -479,7 +491,7 @@ class PipelineOrchestrator:
         if chosen_contract is None:
             if update_run:
                 run.status = "no_trade"
-                run.finished_at = datetime.now(timezone.utc)
+                run.finished_at = datetime.now(UTC)
                 run.final_recommendation_id = None
             return None
 
@@ -558,7 +570,7 @@ class PipelineOrchestrator:
         recommendation.earnings_date = outcome.selected.context.earnings_date
         if update_run:
             run.status = "success"
-            run.finished_at = datetime.now(timezone.utc)
+            run.finished_at = datetime.now(UTC)
             run.final_recommendation_id = recommendation.id
         return recommendation
 
@@ -569,23 +581,26 @@ class PipelineOrchestrator:
         outcome: PipelineOutcome,
         recommendation: Recommendation | None,
     ) -> str:
+        dashboard = _is_dashboard_user(user)
+
         if recommendation is None:
-            await self.notifier.send_text(
-                user.telegram_chat_id,
-                render_weekly_scan_ready(
-                    trigger_type=trigger_type,
-                    action="no_trade",
-                ),
-            )
             final_message = render_no_trade(
                 reason=outcome.decision.reasoning,
                 watchlist_tickers=outcome.decision.watchlist_tickers,
                 warning_text=outcome.batch.warning_text,
             )
-            await self.notifier.send_text(
-                user.telegram_chat_id,
-                final_message,
-            )
+            if not dashboard:
+                await self.notifier.send_text(
+                    user.telegram_chat_id,
+                    render_weekly_scan_ready(
+                        trigger_type=trigger_type,
+                        action="no_trade",
+                    ),
+                )
+                await self.notifier.send_text(
+                    user.telegram_chat_id,
+                    final_message,
+                )
             return final_message
 
         action = outcome.decision.action
@@ -596,22 +611,27 @@ class PipelineOrchestrator:
             warning_text=outcome.batch.warning_text,
             watchlist_only=action == "watchlist",
         )
-        await self.notifier.send_text(
-            user.telegram_chat_id,
-            render_weekly_scan_ready(trigger_type=trigger_type, action=action),
-        )
-        message_id = await self.notifier.send_text(
-            user.telegram_chat_id,
-            final_message,
-            reply_markup=recommendation_keyboard(str(recommendation.id)),
-        )
-        recommendation.telegram_message_id = message_id
+        if not dashboard:
+            await self.notifier.send_text(
+                user.telegram_chat_id,
+                render_weekly_scan_ready(trigger_type=trigger_type, action=action),
+            )
+            message_id = await self.notifier.send_text(
+                user.telegram_chat_id,
+                final_message,
+                reply_markup=recommendation_keyboard(str(recommendation.id)),
+            )
+            recommendation.telegram_message_id = message_id
         return final_message
 
 
 @lru_cache(maxsize=1)
 def get_pipeline_orchestrator() -> PipelineOrchestrator:
     return PipelineOrchestrator()
+
+
+def _is_dashboard_user(user: User) -> bool:
+    return user.telegram_chat_id.startswith("dashboard:")
 
 
 def _decrypt_user_secrets(user: User) -> _UserSecrets:
@@ -684,12 +704,15 @@ def _deferred_news_bundle(record: CandidateRecord, *, generated_at: datetime) ->
         articles=(),
         brief=NewsBrief(
             neutral_contextual_evidence=[
-                "News was not fetched for preliminary ranking because this candidate did not reach the finalist stage yet."
+                "News was not fetched for preliminary ranking because this candidate "
+                "did not reach the finalist stage yet."
             ],
             key_uncertainty="Finalist-only news refresh was deferred for this candidate.",
         ),
         used_ir_fallback=False,
         used_llm_summary=False,
+        news_coverage="none",
+        stale_news=False,
     )
 
 
@@ -711,6 +734,8 @@ def _fallback_news_bundle(
         ),
         used_ir_fallback=False,
         used_llm_summary=False,
+        news_coverage="none",
+        stale_news=False,
     )
 
 
@@ -781,3 +806,9 @@ def _build_runtime_bot() -> Bot:
         token=settings.telegram_bot_token,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
+
+
+def _build_default_notifier(settings) -> TelegramNotifier:
+    if settings.telegram_bot_token:
+        return AiogramNotifier()
+    return NullNotifier()

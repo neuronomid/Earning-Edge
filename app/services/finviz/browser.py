@@ -102,9 +102,7 @@ class FinvizBrowserClient:
                 timeout=self.timeout_ms,
             )
         except Exception as exc:
-            raise FinvizBrowserError(
-                "Finviz screener result state never became visible"
-            ) from exc
+            raise FinvizBrowserError("Finviz screener result state never became visible") from exc
         await page.wait_for_timeout(500)
 
     async def _extract_rows(self, page: Page, *, limit: int) -> list[CandidateRecord]:

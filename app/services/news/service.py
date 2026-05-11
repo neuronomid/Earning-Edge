@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 from collections.abc import Sequence
-from datetime import UTC, date, datetime, timezone
+from datetime import UTC, date, datetime
 from functools import lru_cache
 from typing import Any, Protocol
 from urllib.parse import urlsplit, urlunsplit
@@ -320,9 +320,7 @@ class NewsService:
         as_of = reference_dt.date()
         collected = await asyncio.gather(
             *[
-                source.fetch_ticker(
-                    ticker, company_name=company_name, as_of_date=as_of
-                )
+                source.fetch_ticker(ticker, company_name=company_name, as_of_date=as_of)
                 for source in self.structured_sources
             ],
             return_exceptions=True,
@@ -412,9 +410,7 @@ def _compute_news_coverage(articles: tuple[NewsArticle, ...]) -> NewsCoverage:
     return "adequate"
 
 
-def _compute_stale_news(
-    articles: tuple[NewsArticle, ...], *, reference_dt: datetime
-) -> bool:
+def _compute_stale_news(articles: tuple[NewsArticle, ...], *, reference_dt: datetime) -> bool:
     published = [a.published_at for a in articles if a.published_at is not None]
     if not published:
         return False
@@ -585,19 +581,13 @@ def _company_tokens(company_name: str | None) -> tuple[str, ...]:
         "ltd",
         "plc",
     }
-    tokens = [
-        token
-        for token in cleaned.split()
-        if len(token) >= 4 and token not in blocked
-    ]
+    tokens = [token for token in cleaned.split() if len(token) >= 4 and token not in blocked]
     return tuple(tokens)
 
 
 def _article_dedupe_key(article: NewsArticle) -> tuple[str, str, str]:
     published = (
-        article.published_at.astimezone(UTC).isoformat()
-        if article.published_at is not None
-        else ""
+        article.published_at.astimezone(UTC).isoformat() if article.published_at is not None else ""
     )
     normalized_url = _normalized_url(article.url)
     return (

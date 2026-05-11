@@ -13,9 +13,7 @@ class WorkflowRunRepository(BaseRepository[WorkflowRun]):
 
     async def list_by_user_status(self, user_id: UUID, status: str) -> list[WorkflowRun]:
         result = await self.session.execute(
-            select(WorkflowRun).where(
-                WorkflowRun.user_id == user_id, WorkflowRun.status == status
-            )
+            select(WorkflowRun).where(WorkflowRun.user_id == user_id, WorkflowRun.status == status)
         )
         return list(result.scalars().all())
 

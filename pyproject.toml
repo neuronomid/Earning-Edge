@@ -28,6 +28,8 @@ dependencies = [
     "lxml>=5.3",
     "trafilatura>=1.12",
     "yfinance>=0.2.54",
+    "msgpack>=1.1",
+    "websockets>=14",
 ]
 
 [dependency-groups]

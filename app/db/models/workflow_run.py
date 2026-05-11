@@ -47,15 +47,9 @@ class WorkflowRun(Base):
     )
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     run_summary_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
-    candidate_cards_json: Mapped[list[dict[str, Any]] | None] = mapped_column(
-        JSONB, nullable=True
-    )
-    option_contracts_json: Mapped[list[dict[str, Any]] | None] = mapped_column(
-        JSONB, nullable=True
-    )
-    recommendation_card_json: Mapped[dict[str, Any] | None] = mapped_column(
-        JSONB, nullable=True
-    )
+    candidate_cards_json: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB, nullable=True)
+    option_contracts_json: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB, nullable=True)
+    recommendation_card_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     telegram_message_text: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     user: Mapped[User] = relationship(back_populates="workflow_runs")

@@ -23,9 +23,9 @@ from app.services.api_key_validators import (
 )
 from app.services.user_service import (
     DEFAULT_MAX_CONTRACTS,
-    OnboardingPayload,
     TIMEZONE_DISPLAY,
     TIMEZONE_MAP,
+    OnboardingPayload,
     RiskProfile,
     StrategyPermission,
     TimezoneLabel,
@@ -35,9 +35,9 @@ from app.telegram.fsm.onboarding_states import Onboarding
 from app.telegram.handlers._common import send_text
 from app.telegram.keyboards.confirm import (
     CANCEL_BTN,
+    SKIP_BTN,
     ChoiceCB,
     ConfirmCB,
-    SKIP_BTN,
     cancel_keyboard,
     choice_keyboard,
     confirm_keyboard,
@@ -163,9 +163,7 @@ async def step_timezone(
 
 
 @router.callback_query(Onboarding.broker, ChoiceCB.filter(F.group == "broker"))
-async def step_broker(
-    callback: CallbackQuery, callback_data: ChoiceCB, state: FSMContext
-) -> None:
+async def step_broker(callback: CallbackQuery, callback_data: ChoiceCB, state: FSMContext) -> None:
     await state.update_data(broker=callback_data.value)
     await callback.answer()
     await state.set_state(Onboarding.strategy_permission)
@@ -180,9 +178,7 @@ async def step_broker(
 # ---------- step 5: strategy permission ----------
 
 
-@router.callback_query(
-    Onboarding.strategy_permission, ChoiceCB.filter(F.group == "strategy")
-)
+@router.callback_query(Onboarding.strategy_permission, ChoiceCB.filter(F.group == "strategy"))
 async def step_strategy(
     callback: CallbackQuery, callback_data: ChoiceCB, state: FSMContext
 ) -> None:

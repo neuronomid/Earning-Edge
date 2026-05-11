@@ -147,16 +147,14 @@ class ResultsExportService:
         username = _export_username()
         ranked = _rank_candidates(outcome.candidates)
         rank_by_ticker = {
-            candidate.record.ticker: index
-            for index, candidate in enumerate(ranked, start=1)
+            candidate.record.ticker: index for index, candidate in enumerate(ranked, start=1)
         }
         report_by_source = {
             report.strategy_source: report for report in outcome.batch.strategy_reports
         }
 
         rows_by_source: dict[str, list[dict[str, str]]] = {
-            definition.strategy_source: []
-            for definition in all_strategy_definitions()
+            definition.strategy_source: [] for definition in all_strategy_definitions()
         }
         combined_rows: list[dict[str, str]] = []
 
@@ -310,14 +308,22 @@ def _candidate_row(
         "strategy_note": report.warning_text or report.error or "",
         "ticker": candidate.record.ticker,
         "company_name": candidate.context.company_name,
-        "candidate_origin": "finviz_row" if "finviz" in candidate.record.sources else "backup_source",
+        "candidate_origin": "finviz_row"
+        if "finviz" in candidate.record.sources
+        else "backup_source",
         "candidate_sources": "|".join(candidate.record.sources),
         "data_sources_used": "|".join(_data_sources(candidate)),
-        "screener_rank": "" if candidate.record.screener_rank is None else str(candidate.record.screener_rank),
+        "screener_rank": ""
+        if candidate.record.screener_rank is None
+        else str(candidate.record.screener_rank),
         "combined_rank": str(combined_rank),
-        "selected_for_final": _bool(selected is not None and selected.record.ticker == candidate.record.ticker),
+        "selected_for_final": _bool(
+            selected is not None and selected.record.ticker == candidate.record.ticker
+        ),
         "selected_contract_matches_best_scored": _bool(
-            _contracts_match(selected_contract, best_scored) if selected_contract is not None else True
+            _contracts_match(selected_contract, best_scored)
+            if selected_contract is not None
+            else True
         ),
         "market_cap": _decimal(candidate.record.market_cap or snapshot.market_cap),
         "current_price": _decimal(snapshot.current_price or candidate.record.current_price),
@@ -387,7 +393,9 @@ def _candidate_row(
         "missing_data_fields": "|".join(_missing_data_fields(candidate)),
         "validation_notes": "|".join(candidate.record.validation_notes),
         "scoring_reasons": "|".join(candidate.evaluation.reasons),
-        "decision_reasoning": recommendation.reasoning_summary if recommendation else outcome.decision.reasoning,
+        "decision_reasoning": recommendation.reasoning_summary
+        if recommendation
+        else outcome.decision.reasoning,
     }
 
 

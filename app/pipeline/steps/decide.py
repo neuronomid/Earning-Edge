@@ -206,9 +206,7 @@ def validate_llm_decision(
     raw_response = decision.model_dump_json()
 
     nominated_band = _band_or_default(decision.confidence_band, decision.action)
-    _validate_band_action_consistency(
-        nominated_band, decision.action, raw_response=raw_response
-    )
+    _validate_band_action_consistency(nominated_band, decision.action, raw_response=raw_response)
 
     if decision.action == "no_trade":
         normalized = decision.model_copy(
@@ -313,8 +311,10 @@ def resolve_selected_contract(
     if chosen_contract is None:
         return candidate.evaluation.chosen_contract if not visible_only else None
 
-    contracts = candidate.evaluation.considered_contracts[:3] if visible_only else (
-        candidate.evaluation.considered_contracts
+    contracts = (
+        candidate.evaluation.considered_contracts[:3]
+        if visible_only
+        else (candidate.evaluation.considered_contracts)
     )
     for contract in contracts:
         if _contract_matches(contract, chosen_contract):
@@ -324,9 +324,8 @@ def resolve_selected_contract(
 
     if visible_only:
         return None
-    if (
-        candidate.evaluation.chosen_contract is not None
-        and _contract_matches(candidate.evaluation.chosen_contract, chosen_contract)
+    if candidate.evaluation.chosen_contract is not None and _contract_matches(
+        candidate.evaluation.chosen_contract, chosen_contract
     ):
         return candidate.evaluation.chosen_contract
     return None
@@ -442,14 +441,11 @@ def _candidate_bundle(candidate: PipelineCandidate) -> CandidateBundle:
             "qqq_5d": _decimal_to_float(snapshot.qqq_returns.five_day),
         },
         news_summary=_news_summary(candidate),
-        structural_direction_tier=structural_direction_tier(
-            candidate.evaluation.direction.score
-        ),
+        structural_direction_tier=structural_direction_tier(candidate.evaluation.direction.score),
         news_coverage=candidate.news_bundle.news_coverage,
         stale_news=candidate.news_bundle.stale_news,
         option_chain_candidates=[
-            _option_chain_candidate(contract)
-            for contract in viable_contracts[:3]
+            _option_chain_candidate(contract) for contract in viable_contracts[:3]
         ],
         expected_move=candidate.context.expected_move_percent,
         previous_earnings_move=candidate.context.previous_earnings_move_percent,
@@ -617,9 +613,7 @@ def _build_corrective_prompt(
     error_message: str,
     raw_response: str | None,
 ) -> str:
-    response_block = (
-        "(no parsed JSON available)" if not raw_response else raw_response
-    )
+    response_block = "(no parsed JSON available)" if not raw_response else raw_response
     return (
         f"{base_prompt}\n\n"
         "## Retry context\n\n"
@@ -652,11 +646,7 @@ def _default_watchlist(
     exclude: str | None,
 ) -> list[str]:
     ranked = _rank_candidates(candidates)
-    return [
-        item.record.ticker
-        for item in ranked
-        if item.record.ticker != exclude
-    ][:3]
+    return [item.record.ticker for item in ranked if item.record.ticker != exclude][:3]
 
 
 def _rank_candidates(candidates: Sequence[PipelineCandidate]) -> list[PipelineCandidate]:
@@ -687,8 +677,7 @@ def _llm_blocked_decision(error: str) -> StructuredDecision:
         confidence_band="no_trade",
         reasoning=(
             "I could not run the final Opus decision step because the OpenRouter key is "
-            "missing or invalid. Update the OpenRouter key in Telegram settings and rerun "
-            "the scan."
+            "missing or invalid. Update the OpenRouter key in settings and rerun the scan."
         ),
         key_concerns=[error],
     )

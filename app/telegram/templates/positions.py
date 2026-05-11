@@ -28,9 +28,7 @@ def render_position_card(
     if quote is None or closing_price is None:
         lines.append("Live quote: unavailable")
     else:
-        lines.append(
-            f"{closing_label} (live): ${_money(closing_price)} (source: {quote.source})"
-        )
+        lines.append(f"{closing_label} (live): ${_money(closing_price)} (source: {quote.source})")
         pnl = position_pnl(
             entry_price=position.entry_price,
             close_price=closing_price,

@@ -64,9 +64,7 @@ class NewsSummarizer:
                     "url": article.url,
                     "source": article.source,
                     "published_at": (
-                        None
-                        if article.published_at is None
-                        else article.published_at.isoformat()
+                        None if article.published_at is None else article.published_at.isoformat()
                     ),
                     "is_ir_fallback": article.is_ir_fallback,
                     "snippet": article.snippet[:400],
@@ -172,9 +170,7 @@ def _parse_json_payload(text: str) -> dict[str, Any]:
     try:
         payload = json.loads(candidate)
     except json.JSONDecodeError as exc:
-        raise NewsSummaryValidationError(
-            f"Lightweight model returned invalid JSON: {exc}"
-        ) from exc
+        raise NewsSummaryValidationError(f"Lightweight model returned invalid JSON: {exc}") from exc
     if not isinstance(payload, dict):
         raise NewsSummaryValidationError("Lightweight model returned a non-object payload.")
     return payload

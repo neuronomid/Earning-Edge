@@ -277,9 +277,7 @@ def _compose_sec_content(
     report_date: date | None,
 ) -> str:
     report_note = (
-        f" Related report date: {report_date.isoformat()}."
-        if report_date is not None
-        else ""
+        f" Related report date: {report_date.isoformat()}." if report_date is not None else ""
     )
     return (
         f"{company_label} filed {form} with the SEC on {filing_date.isoformat()}."

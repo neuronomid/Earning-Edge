@@ -116,9 +116,7 @@ async def test_dedupes_overlapping_tickers_keeping_catalyst() -> None:
 
 async def test_partial_when_only_catalyst_returns() -> None:
     catalyst_batch = CandidateBatch(
-        candidates=(
-            _row("AAA", rank=1, strategy_source="catalyst_confluence"),
-        ),
+        candidates=(_row("AAA", rank=1, strategy_source="catalyst_confluence"),),
         screener_status="success",
         fallback_used=False,
     )
@@ -144,9 +142,7 @@ async def test_partial_when_only_coiled_returns() -> None:
         screener_status="failed",
         fallback_used=False,
     )
-    coiled_rows = (
-        _row("XXX", rank=1, strategy_source="coiled_setup"),
-    )
+    coiled_rows = (_row("XXX", rank=1, strategy_source="coiled_setup"),)
     service = MultiStrategyCandidateService(
         FakeCatalyst(batch=catalyst_batch),
         FakeCoiled(rows=coiled_rows),
@@ -161,11 +157,13 @@ async def test_partial_when_only_coiled_returns() -> None:
 
 async def test_failed_when_both_empty() -> None:
     service = MultiStrategyCandidateService(
-        FakeCatalyst(batch=CandidateBatch(
-            candidates=(),
-            screener_status="failed",
-            fallback_used=False,
-        )),
+        FakeCatalyst(
+            batch=CandidateBatch(
+                candidates=(),
+                screener_status="failed",
+                fallback_used=False,
+            )
+        ),
         FakeCoiled(rows=()),
     )
 
@@ -177,9 +175,7 @@ async def test_failed_when_both_empty() -> None:
 
 
 async def test_catalyst_exception_treated_as_zero_rows() -> None:
-    coiled_rows = (
-        _row("XXX", rank=1, strategy_source="coiled_setup"),
-    )
+    coiled_rows = (_row("XXX", rank=1, strategy_source="coiled_setup"),)
     service = MultiStrategyCandidateService(
         FakeCatalyst(error=RuntimeError("catalyst exploded")),
         FakeCoiled(rows=coiled_rows),
@@ -194,9 +190,7 @@ async def test_catalyst_exception_treated_as_zero_rows() -> None:
 
 async def test_coiled_exception_is_reported_as_failed_not_empty() -> None:
     catalyst_batch = CandidateBatch(
-        candidates=(
-            _row("AAA", rank=1, strategy_source="catalyst_confluence"),
-        ),
+        candidates=(_row("AAA", rank=1, strategy_source="catalyst_confluence"),),
         screener_status="success",
         fallback_used=False,
     )
@@ -217,16 +211,12 @@ async def test_coiled_exception_is_reported_as_failed_not_empty() -> None:
 
 async def test_propagates_fallback_used_from_catalyst() -> None:
     catalyst_batch = CandidateBatch(
-        candidates=(
-            _row("AAA", rank=1, strategy_source="catalyst_confluence"),
-        ),
+        candidates=(_row("AAA", rank=1, strategy_source="catalyst_confluence"),),
         screener_status="failed",
         fallback_used=True,
         warning_text="catalyst-fallback warning",
     )
-    coiled_rows = (
-        _row("BBB", rank=1, strategy_source="coiled_setup"),
-    )
+    coiled_rows = (_row("BBB", rank=1, strategy_source="coiled_setup"),)
     service = MultiStrategyCandidateService(
         FakeCatalyst(batch=catalyst_batch),
         FakeCoiled(rows=coiled_rows),

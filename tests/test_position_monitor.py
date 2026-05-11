@@ -64,9 +64,7 @@ class FakeNotifier:
         *,
         reply_markup: Any | None = None,
     ) -> str | None:
-        self.calls.append(
-            {"chat_id": chat_id, "text": text, "reply_markup": reply_markup}
-        )
+        self.calls.append({"chat_id": chat_id, "text": text, "reply_markup": reply_markup})
         return "message-1"
 
 

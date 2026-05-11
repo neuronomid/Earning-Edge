@@ -5,13 +5,15 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from app.scoring.types import (
+    ZERO,
     CandidateContext,
     DirectionResult,
     ExitTarget,
     OptionContractInput,
     TargetMethod,
+    option_mid,
+    option_premium,
 )
-from app.scoring.types import ZERO, option_mid, option_premium
 
 ONE = Decimal("1")
 HUNDRED = Decimal("100")
@@ -75,7 +77,9 @@ class ExitTargetService:
             target_option_price = (
                 current_mid
                 + (contract.delta or ZERO) * (target_stock_price - current_price)
-                + Decimal("0.5") * (contract.gamma or ZERO) * (target_stock_price - current_price) ** 2
+                + Decimal("0.5")
+                * (contract.gamma or ZERO)
+                * (target_stock_price - current_price) ** 2
                 + (contract.theta or ZERO) * Decimal(planned_holding_days)
                 + (contract.vega or ZERO) * (expected_iv_change or ZERO)
             )
@@ -211,4 +215,4 @@ def _intrinsic_target_price(
 def _decimal_sqrt(value: Decimal) -> Decimal:
     if value <= ZERO:
         return ZERO
-    return (value.sqrt() if hasattr(value, "sqrt") else value ** Decimal("0.5"))
+    return value.sqrt() if hasattr(value, "sqrt") else value ** Decimal("0.5")

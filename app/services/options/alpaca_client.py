@@ -60,9 +60,7 @@ class AlpacaOptionsClient:
             "feed": self.feed,
             "limit": self.page_limit,
             "expiration_date_gte": today.isoformat(),
-            "expiration_date_lte": (
-                today + timedelta(days=max(expiry_window_days, 1))
-            ).isoformat(),
+            "expiration_date_lte": (today + timedelta(days=max(expiry_window_days, 1))).isoformat(),
         }
         if symbols:
             params["symbols"] = ",".join(symbols)

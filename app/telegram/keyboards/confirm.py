@@ -20,7 +20,9 @@ class ChoiceCB(CallbackData, prefix="choice"):
     value: str
 
 
-def confirm_keyboard(yes_label: str = "✅ Confirm", no_label: str = "✏️ Edit") -> InlineKeyboardMarkup:
+def confirm_keyboard(
+    yes_label: str = "✅ Confirm", no_label: str = "✏️ Edit"
+) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -35,7 +37,11 @@ def choice_keyboard(group: str, options: list[tuple[str, str]]) -> InlineKeyboar
     """Inline keyboard for a single-pick set of options (label, value)."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text=label, callback_data=ChoiceCB(group=group, value=value).pack())]
+            [
+                InlineKeyboardButton(
+                    text=label, callback_data=ChoiceCB(group=group, value=value).pack()
+                )
+            ]
             for label, value in options
         ]
     )

@@ -1,7 +1,7 @@
 """add exit target fields
 
 Revision ID: 0005_exit_targets
-Revises: 0004_strategy_source, 0004_recommendation_parent_chain
+Revises: 0005_merge_heads
 Create Date: 2026-05-05 22:45:00
 """
 
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 revision = "0005_exit_targets"
-down_revision = ("0004_strategy_source", "0004_recommendation_parent_chain")
+down_revision = "0005_merge_heads"
 branch_labels = None
 depends_on = None
 

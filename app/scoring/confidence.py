@@ -20,12 +20,12 @@ _MAX_CALCULATION: int = 10
 
 # Importance weights — sum to 0.97 after removing the 0.03 news weight.
 # Not renormalized: max raw confidence is 97 by design (see PLAN_News §8.2).
-_W_EARNINGS: float = 0.25      # wrong date → wrong trade
-_W_OPTIONS: float = 0.22       # can't select contract without chain
-_W_MARKET: float = 0.20        # price drives all sizing/breakeven math
-_W_IDENTITY: float = 0.13      # fundamental but rarely fails
+_W_EARNINGS: float = 0.25  # wrong date → wrong trade
+_W_OPTIONS: float = 0.22  # can't select contract without chain
+_W_MARKET: float = 0.20  # price drives all sizing/breakeven math
+_W_IDENTITY: float = 0.13  # fundamental but rarely fails
 _W_CROSS_SOURCE: float = 0.10  # data conflicts affect reliability
-_W_CALCULATION: float = 0.07   # errors degrade output quality
+_W_CALCULATION: float = 0.07  # errors degrade output quality
 
 
 def compute_data_confidence(

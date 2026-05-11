@@ -74,9 +74,7 @@ class AlpacaValidator:
         if not api_key or not api_secret:
             return ValidationResult(False, "Both Alpaca key and secret are required.")
         if not api_key.strip().isascii() or not api_secret.strip().isascii():
-            return ValidationResult(
-                False, "Keys must be ASCII — no emojis or special characters."
-            )
+            return ValidationResult(False, "Keys must be ASCII — no emojis or special characters.")
         headers = {
             "APCA-API-KEY-ID": api_key.strip(),
             "APCA-API-SECRET-KEY": api_secret.strip(),

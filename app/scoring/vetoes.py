@@ -64,4 +64,3 @@ def evaluate_hard_vetoes(
         vetoes.append(HardVeto("long_disabled", "Long options are disabled for this user."))
 
     return tuple(vetoes)
-

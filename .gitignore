@@ -31,3 +31,11 @@ logs/
 
 # Screener output
 results/
+
+# Test/dev screenshots
+output/
+
+# Node
+dashboard/node_modules/
+dashboard/.next/
+dashboard/tsconfig.tsbuildinfo

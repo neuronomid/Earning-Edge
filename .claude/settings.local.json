@@ -32,7 +32,9 @@
       "Bash(python -m pytest tests/test_recommendation_pipeline.py -x -q)",
       "Bash(python -m pytest tests/test_recommendation_pipeline.py -x -q -k \"template\")",
       "Bash(ls ~/.claude/commands/ 2>/dev/null || echo \"directory does not exist\")",
-      "Read(//Users/omid/.claude/commands/**)"
+      "Read(//Users/omid/.claude/commands/**)",
+      "Bash(Get-ChildItem -Path \"e:\\\\Sep-Earning-Project\\\\Earning-Edge\" -Recurse -Force)",
+      "Bash(Select-Object FullName)"
     ],
     "additionalDirectories": [
       "/Users/omid/Documents/Projects/Earning-Edge/app/telegram/handlers"

@@ -54,9 +54,7 @@ class FakeNotifier:
         *,
         reply_markup: object | None = None,
     ) -> str:
-        self.calls.append(
-            RecordedMessage(chat_id=chat_id, text=text, reply_markup=reply_markup)
-        )
+        self.calls.append(RecordedMessage(chat_id=chat_id, text=text, reply_markup=reply_markup))
         return str(len(self.calls))
 
 
@@ -215,7 +213,9 @@ class FakeScoringStep:
             direction=DirectionResult(
                 classification=plan.direction,  # type: ignore[arg-type]
                 bias=Decimal("0.70"),
-                score=plan.direction_score if plan.direction_score is not None else plan.final_score,
+                score=plan.direction_score
+                if plan.direction_score is not None
+                else plan.final_score,
                 factors=(),
                 reasons=plan.reasoning,
             ),
@@ -226,12 +226,8 @@ class FakeScoringStep:
                 notes=("Pricing came from fixture data.",),
             ),
             strategy_selection=StrategySelection(
-                allowed_strategies=tuple(
-                    contract.strategy for contract in candidate.option_chain
-                ),
-                preferred_order=tuple(
-                    contract.strategy for contract in candidate.option_chain
-                ),
+                allowed_strategies=tuple(contract.strategy for contract in candidate.option_chain),
+                preferred_order=tuple(contract.strategy for contract in candidate.option_chain),
                 reason="Fixture strategy order.",
             ),
             considered_contracts=considered,
@@ -292,9 +288,7 @@ async def make_user(
             openrouter_api_key_encrypted=crypto.encrypt(openrouter_api_key)
             if openrouter_api_key
             else None,
-            alpaca_api_key_encrypted=crypto.encrypt(alpaca_api_key)
-            if alpaca_api_key
-            else None,
+            alpaca_api_key_encrypted=crypto.encrypt(alpaca_api_key) if alpaca_api_key else None,
             alpaca_api_secret_encrypted=crypto.encrypt(alpaca_api_secret)
             if alpaca_api_secret
             else None,
@@ -365,9 +359,7 @@ def make_snapshot(
     confidence_adjustment: int = 0,
     confidence_notes: tuple[ConfidenceNote, ...] = (),
 ) -> MarketSnapshot:
-    resolved_price = (
-        record.current_price if current_price is ... else current_price
-    )
+    resolved_price = record.current_price if current_price is ... else current_price
     return MarketSnapshot(
         ticker=record.ticker,
         as_of_date=DEFAULT_AS_OF_DATE,
@@ -434,9 +426,7 @@ def make_news_bundle(
         search_results=(),
         articles=(),
         brief=NewsBrief(
-            neutral_contextual_evidence=list(
-                neutral or ("Sector context stayed constructive.",)
-            ),
+            neutral_contextual_evidence=list(neutral or ("Sector context stayed constructive.",)),
             key_uncertainty=key_uncertainty,
             summary=" ".join(summary_parts),
             key_facts=summary_parts,

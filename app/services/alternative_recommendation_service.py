@@ -115,9 +115,7 @@ class AlternativeRecommendationService:
             "alternative_ranked_candidates",
             run_id=str(current_recommendation.run_id),
             ranked_count=len(ranked),
-            ranked_tickers=[
-                f"{c.ticker}(score={c.final_opportunity_score})" for c in ranked
-            ],
+            ranked_tickers=[f"{c.ticker}(score={c.final_opportunity_score})" for c in ranked],
         )
 
         for i, candidate in enumerate(ranked):
@@ -426,8 +424,7 @@ def _candidate_evaluation(
         final_score=candidate.final_opportunity_score,
         action=_stored_action(candidate.final_opportunity_score, confidence, chosen),
         reasons=(
-            f"{candidate.ticker} stored final score: "
-            f"{candidate.final_opportunity_score}/100.",
+            f"{candidate.ticker} stored final score: {candidate.final_opportunity_score}/100.",
         ),
     )
 
@@ -555,9 +552,7 @@ def _user_context(user: User) -> UserContext:
         risk_profile=user.risk_profile,  # type: ignore[arg-type]
         strategy_permission=user.strategy_permission,  # type: ignore[arg-type]
         max_contracts=user.max_contracts,
-        has_valid_openrouter_api_key=bool(
-            decrypt_or_none(user.openrouter_api_key_encrypted)
-        ),
+        has_valid_openrouter_api_key=bool(decrypt_or_none(user.openrouter_api_key_encrypted)),
     )
 
 

@@ -260,7 +260,7 @@ class LLMRouter:
         if status in (401, 403):
             raise LLMAuthenticationError(
                 f"OpenRouter rejected the API key (HTTP {status}). "
-                "Update the OpenRouter key in Telegram settings."
+                "Update the OpenRouter key in settings."
             )
         if status == 429:
             # Surface as retryable so AsyncRetrying gets a chance, then bubble as

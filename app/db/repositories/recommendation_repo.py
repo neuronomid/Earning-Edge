@@ -11,9 +11,7 @@ from app.db.repositories._base import BaseRepository
 class RecommendationRepository(BaseRepository[Recommendation]):
     model = Recommendation
 
-    async def list_recent_for_user(
-        self, user_id: UUID, limit: int = 20
-    ) -> list[Recommendation]:
+    async def list_recent_for_user(self, user_id: UUID, limit: int = 20) -> list[Recommendation]:
         result = await self.session.execute(
             select(Recommendation)
             .where(Recommendation.user_id == user_id)

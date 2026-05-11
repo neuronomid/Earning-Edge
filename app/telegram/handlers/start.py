@@ -23,8 +23,7 @@ WELCOME_TEXT = (
 )
 
 PROMPT_ACCOUNT_SIZE = (
-    "💰 What's your <b>account size</b> in USD?\n"
-    "Send a number, e.g. <code>5000</code>."
+    "💰 What's your <b>account size</b> in USD?\nSend a number, e.g. <code>5000</code>."
 )
 
 
@@ -53,9 +52,7 @@ async def on_start(message: Message, state: FSMContext) -> None:
 async def on_cancel(message: Message, state: FSMContext) -> None:
     current = await state.get_state()
     if current is None:
-        await send_text(
-            message, "Nothing to cancel right now.", reply_markup=main_menu_keyboard()
-        )
+        await send_text(message, "Nothing to cancel right now.", reply_markup=main_menu_keyboard())
         return
     await state.clear()
     await send_text(

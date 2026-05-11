@@ -21,9 +21,7 @@ def test_to_url_includes_canonical_finviz_path() -> None:
 
 def test_with_filter_replaced_swaps_existing_value() -> None:
     base = STRATEGY_A_BASE
-    swapped = base.with_filter_replaced(
-        STRATEGY_A_EARNINGS_PREFIX, "earningsdate_nextweek"
-    )
+    swapped = base.with_filter_replaced(STRATEGY_A_EARNINGS_PREFIX, "earningsdate_nextweek")
     assert "earningsdate_nextweek" in swapped.filters
     assert "earningsdate_thisweek" not in swapped.filters
     assert len(swapped.filters) == len(base.filters)
@@ -54,10 +52,7 @@ def test_stable_hash_differs_when_sort_changes() -> None:
 
 def test_strategy_a_url_contains_doc_filters() -> None:
     url = STRATEGY_A_BASE.to_url()
-    assert (
-        url
-        == "https://finviz.com/screener?v=111&f=earningsdate_nextweek,geo_usa&o=-marketcap"
-    )
+    assert url == "https://finviz.com/screener?v=111&f=earningsdate_nextweek,geo_usa&o=-marketcap"
 
 
 def test_strategy_b_url_contains_doc_filters() -> None:

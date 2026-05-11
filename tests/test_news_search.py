@@ -61,7 +61,9 @@ async def test_news_search_service_uses_ir_fallback_and_deduplicates_urls() -> N
 
     response = await service.search_ticker("amd", company_name="Advanced Micro Devices")
 
-    assert [result.url for result in response.primary_results] == ["https://example.com/amd-primary"]
+    assert [result.url for result in response.primary_results] == [
+        "https://example.com/amd-primary"
+    ]
     assert [result.url for result in response.fallback_results] == [
         "https://ir.example.com/amd-update"
     ]

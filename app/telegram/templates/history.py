@@ -42,8 +42,7 @@ def compute_history_summary(
     rows: list[tuple[OpenPosition, Recommendation]],
 ) -> HistorySummary:
     pnl_by_row = [
-        (position, realized_pnl(position, recommendation))
-        for position, recommendation in rows
+        (position, realized_pnl(position, recommendation)) for position, recommendation in rows
     ]
 
     total_profit = sum((pnl for _, pnl in pnl_by_row if pnl > 0), Decimal("0"))

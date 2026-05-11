@@ -18,6 +18,7 @@ WORKDIR /app
 
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-install-project
+RUN playwright install --with-deps chromium
 
 COPY app ./app
 COPY alembic ./alembic

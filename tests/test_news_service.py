@@ -298,9 +298,7 @@ async def test_news_service_prefers_structured_sources_before_open_web_fallback(
     assert search.calls["CSCO"] == 0
     assert fetcher.calls == 0
     assert len(bundle.articles) == 3
-    assert {
-        article.title for article in bundle.articles
-    } == {
+    assert {article.title for article in bundle.articles} == {
         "Cisco Stock Finds New Growth In AI Infrastructure",
         "Cisco Systems 8-K filed on 2026-05-01",
         "Evercore ISI Says Cisco's Silicon One Is An Underappreciated Driver Of Upside",

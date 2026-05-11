@@ -19,8 +19,8 @@ from app.scoring.types import (
     round_decimal,
     spread_percent,
 )
-from app.services.exit_target import ExitTargetService
 from app.scoring.vetoes import evaluate_hard_vetoes
+from app.services.exit_target import ExitTargetService
 from app.services.sizing import SizingError, SizingPermissionError, size
 
 ZERO = Decimal("0")
@@ -91,10 +91,9 @@ def score_contract(
     penalty_total = sum(penalty.score_delta for penalty in penalties)
     final_score = 0 if vetoes else clamp_int(base_score + penalty_total)
 
-    reasons = (
-        tuple(factor.detail for factor in factors if factor.score >= factor.weight // 2)
-        + tuple(penalty.reason for penalty in penalties)
-    )
+    reasons = tuple(
+        factor.detail for factor in factors if factor.score >= factor.weight // 2
+    ) + tuple(penalty.reason for penalty in penalties)
     return ContractScoreResult(
         strategy=contract.strategy,
         contract=contract,

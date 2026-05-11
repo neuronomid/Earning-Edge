@@ -127,8 +127,7 @@ class MarketDataService:
                     source="alphavantage",
                     field="price_history",
                     detail=(
-                        "Used Alpha Vantage price history because yfinance history "
-                        "was unavailable."
+                        "Used Alpha Vantage price history because yfinance history was unavailable."
                     ),
                     severity="warning",
                     score_delta=-5,
@@ -156,9 +155,7 @@ class MarketDataService:
             relative_strength_vs_spy=relative_strength(stock_returns, spy_returns),
             relative_strength_vs_qqq=relative_strength(stock_returns, qqq_returns),
             relative_strength_vs_sector=(
-                None
-                if sector_returns is None
-                else relative_strength(stock_returns, sector_returns)
+                None if sector_returns is None else relative_strength(stock_returns, sector_returns)
             ),
             av_news_sentiment=None if av_result is None else av_result.news_sentiment,
             price_source=price_source,
@@ -373,8 +370,7 @@ def _price_conflict_note(
         score_delta = -15
 
     detail = (
-        f"Price cross-check conflict for {ticker}: yfinance={yf_price} "
-        f"vs Alpha Vantage={av_price}."
+        f"Price cross-check conflict for {ticker}: yfinance={yf_price} vs Alpha Vantage={av_price}."
     )
     get_logger(__name__).warning(
         "market_data_conflict",

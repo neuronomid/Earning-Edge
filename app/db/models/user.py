@@ -21,6 +21,13 @@ class User(Base):
     id: Mapped[UuidPK]
 
     telegram_chat_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    dashboard_username: Mapped[str | None] = mapped_column(
+        String(64),
+        unique=True,
+        index=True,
+        nullable=True,
+    )
+    dashboard_password_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     account_size: Mapped[Decimal] = mapped_column(Numeric(14, 2))
     risk_profile: Mapped[str] = mapped_column(String(32))  # Conservative/Balanced/Aggressive

@@ -23,8 +23,7 @@ class FinvizQuery:
                 f"Replacement value '{value}' does not start with prefix '{group_prefix}'"
             )
         new_filters = tuple(
-            value if existing.startswith(group_prefix) else existing
-            for existing in self.filters
+            value if existing.startswith(group_prefix) else existing for existing in self.filters
         )
         if new_filters == self.filters and not any(
             existing.startswith(group_prefix) for existing in self.filters

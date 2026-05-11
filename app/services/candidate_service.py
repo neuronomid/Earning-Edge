@@ -29,6 +29,10 @@ from app.services.strategy_catalog import build_strategy_report
 
 CATALYST_STRATEGY_SOURCE = "catalyst_confluence"
 
+# Tickers that appear frequently in screeners but are unsuitable for earnings plays
+# (e.g. AAPL earnings are too well-covered, options are expensive, move is priced in).
+EXCLUDED_TICKERS: frozenset[str] = frozenset({"AAPL"})
+
 FINVIZ_FALLBACK_WARNING = (
     "⚠️ Finviz did not load correctly, so I used backup earnings data for this scan."
 )
@@ -87,9 +91,7 @@ class CandidateService:
                 strategy_source=CATALYST_STRATEGY_SOURCE,
             )
             if not extracted:
-                raise CandidateSelectionError(
-                    "Strategy A returned no rows from Finviz"
-                )
+                raise CandidateSelectionError("Strategy A returned no rows from Finviz")
             self.logger.info(
                 "candidate_service_finviz_rows_extracted",
                 window_start=window[0].isoformat(),
@@ -105,8 +107,7 @@ class CandidateService:
                 backup_tickers=[row.ticker for row in validated[:5]],
             )
             final_rows = tuple(
-                replace(row, strategy_source=CATALYST_STRATEGY_SOURCE)
-                for row in validated[:5]
+                replace(row, strategy_source=CATALYST_STRATEGY_SOURCE) for row in validated[:5]
             )
             warning_text = FINVIZ_FALLBACK_WARNING if final_rows else None
             return CandidateBatch(
@@ -131,9 +132,7 @@ class CandidateService:
 
         validated = await self._validate_rows(extracted, window=window, limit=5)
         if not validated:
-            raise CandidateSelectionError(
-                "Finviz produced no validated candidates"
-            )
+            raise CandidateSelectionError("Finviz produced no validated candidates")
         self.logger.info(
             "candidate_service_candidates_selected",
             screener_tickers=[row.ticker for row in extracted],
@@ -144,8 +143,7 @@ class CandidateService:
             fallback_used=any("finviz" not in row.sources for row in validated[:5]),
         )
         final_rows = tuple(
-            replace(row, strategy_source=CATALYST_STRATEGY_SOURCE)
-            for row in validated[:5]
+            replace(row, strategy_source=CATALYST_STRATEGY_SOURCE) for row in validated[:5]
         )
         fallback_used = any("finviz" not in row.sources for row in final_rows)
         return CandidateBatch(
@@ -178,7 +176,7 @@ class CandidateService:
 
         for row in rows:
             ticker = row.ticker.upper()
-            if ticker in seen:
+            if ticker in seen or ticker in EXCLUDED_TICKERS:
                 continue
             candidate = await self._validate_row(row, window=window)
             if candidate is not None:
@@ -246,9 +244,7 @@ class CandidateService:
                 earnings_date=window[0],
                 earnings_date_verified=False,
                 validation_notes=tuple(
-                    dict.fromkeys(
-                        (*reconciled.validation_notes, FINVIZ_CONFLICT_NOTE)
-                    )
+                    dict.fromkeys((*reconciled.validation_notes, FINVIZ_CONFLICT_NOTE))
                 ),
             )
         return reconciled
@@ -272,7 +268,8 @@ class CandidateService:
             if not isinstance(result, list):
                 continue
             for record in result:
-                grouped[record.ticker.upper()].append(record)
+                if record.ticker.upper() not in EXCLUDED_TICKERS:
+                    grouped[record.ticker.upper()].append(record)
 
         merged: list[CandidateRecord] = []
         for records in grouped.values():

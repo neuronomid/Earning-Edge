@@ -32,6 +32,7 @@ def structural_direction_tier(score: int) -> StructuralDirectionTier:
         return "bullish"
     return "neutral"
 
+
 _DIRECTION_WEIGHTS: dict[str, int] = {
     "trend alignment": 20,
     "relative strength": 15,
@@ -43,9 +44,7 @@ _DIRECTION_WEIGHTS: dict[str, int] = {
 }
 
 
-def score_direction(
-    candidate: CandidateContext, *, data_confidence_score: int
-) -> DirectionResult:
+def score_direction(candidate: CandidateContext, *, data_confidence_score: int) -> DirectionResult:
     signals = {
         "trend alignment": _trend_signal(candidate),
         "relative strength": _relative_strength_signal(candidate),
@@ -102,8 +101,7 @@ def score_direction(
     score = clamp_int(score)
 
     reasons = tuple(
-        factor.detail
-        for factor in sorted(factors, key=lambda item: item.score, reverse=True)[:3]
+        factor.detail for factor in sorted(factors, key=lambda item: item.score, reverse=True)[:3]
     )
 
     return DirectionResult(
@@ -248,9 +246,7 @@ def _mean(values: tuple[Decimal | None, ...]) -> Decimal | None:
     return sum(present) / Decimal(len(present))
 
 
-def _weighted_mean(
-    values: tuple[Decimal | None, ...], weights: tuple[int, ...]
-) -> Decimal | None:
+def _weighted_mean(values: tuple[Decimal | None, ...], weights: tuple[int, ...]) -> Decimal | None:
     weighted_total = ZERO
     total_weight = 0
     for value, weight in zip(values, weights, strict=True):

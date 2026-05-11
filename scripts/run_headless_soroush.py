@@ -4,7 +4,7 @@ import asyncio
 import csv
 import os
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
@@ -78,7 +78,7 @@ class RunInputs:
             results_tag=os.environ.get("HEADLESS_RESULTS_TAG", "soroush").strip() or "soroush",
             run_stamp=(
                 os.environ.get("HEADLESS_RUN_STAMP", "").strip()
-                or datetime.now(tz=timezone.utc).strftime("%Y%m%d_%H%M%S")
+                or datetime.now(tz=UTC).strftime("%Y%m%d_%H%M%S")
             ),
         )
 
@@ -159,7 +159,11 @@ async def main() -> None:
         openrouter_api_key=inputs.openrouter_api_key,
     )
     selected = next(
-        (item for item in candidates if item.record.ticker == decision_result.decision.chosen_ticker),
+        (
+            item
+            for item in candidates
+            if item.record.ticker == decision_result.decision.chosen_ticker
+        ),
         None,
     )
     selected_contract = (
@@ -251,7 +255,7 @@ async def analyze_candidate(
     context = CandidateContext(
         ticker=record.ticker,
         company_name=record.company_name or market_snapshot.company_name or record.ticker,
-        earnings_date=record.earnings_date or datetime.now(timezone.utc).date(),
+        earnings_date=record.earnings_date or datetime.now(UTC).date(),
         earnings_timing="unknown",
         market_snapshot=market_snapshot,
         news_brief=news_bundle.brief,
@@ -546,7 +550,9 @@ def write_news_articles_csv(
                     "article_rank": str(index),
                     "title": article.title,
                     "source": article.source or "",
-                    "published_at": "" if article.published_at is None else article.published_at.isoformat(),
+                    "published_at": ""
+                    if article.published_at is None
+                    else article.published_at.isoformat(),
                     "url": article.url,
                     "snippet": article.snippet,
                     "is_ir_fallback": yesno(article.is_ir_fallback),
@@ -678,11 +684,21 @@ def write_options_csv(
                     "is_viable": yesno(contract.is_viable),
                     "vetoes": " | ".join(veto.reason for veto in contract.vetoes),
                     "reasons": " | ".join(contract.reasons),
-                    "target_method": "" if contract.exit_target is None else contract.exit_target.target_method,
-                    "target_stock_price": "" if contract.exit_target is None else dec(contract.exit_target.target_stock_price),
-                    "target_option_price": "" if contract.exit_target is None else dec(contract.exit_target.target_option_price),
-                    "stop_loss_option_price": "" if contract.exit_target is None else dec(contract.exit_target.stop_loss_option_price),
-                    "exit_by_date": "" if contract.exit_target is None else contract.exit_target.exit_by_date.isoformat(),
+                    "target_method": ""
+                    if contract.exit_target is None
+                    else contract.exit_target.target_method,
+                    "target_stock_price": ""
+                    if contract.exit_target is None
+                    else dec(contract.exit_target.target_stock_price),
+                    "target_option_price": ""
+                    if contract.exit_target is None
+                    else dec(contract.exit_target.target_option_price),
+                    "stop_loss_option_price": ""
+                    if contract.exit_target is None
+                    else dec(contract.exit_target.stop_loss_option_price),
+                    "exit_by_date": ""
+                    if contract.exit_target is None
+                    else contract.exit_target.exit_by_date.isoformat(),
                 }
             )
     write_csv(
@@ -787,9 +803,15 @@ def write_decision_csv(
                 "key_evidence": " | ".join(decision_result.decision.key_evidence),
                 "key_concerns": " | ".join(decision_result.decision.key_concerns),
                 "watchlist_tickers": " | ".join(decision_result.decision.watchlist_tickers),
-                "decision_finalists": " | ".join(item.record.ticker for item in decision_candidates),
-                "selected_contract_strategy": "" if selected_contract is None else selected_contract.strategy,
-                "selected_contract_score": "" if selected_contract is None else str(selected_contract.score),
+                "decision_finalists": " | ".join(
+                    item.record.ticker for item in decision_candidates
+                ),
+                "selected_contract_strategy": ""
+                if selected_contract is None
+                else selected_contract.strategy,
+                "selected_contract_score": ""
+                if selected_contract is None
+                else str(selected_contract.score),
             }
         ],
     )
@@ -837,7 +859,9 @@ def write_final_option_csv(
                 "position_side": selected_contract.contract.position_side,
                 "strike": dec(selected_contract.contract.strike),
                 "expiry": selected_contract.contract.expiry.isoformat(),
-                "entry_price": dec(selected_contract.contract.ask or option_mid(selected_contract.contract)),
+                "entry_price": dec(
+                    selected_contract.contract.ask or option_mid(selected_contract.contract)
+                ),
                 "quantity": str(quantity),
                 "estimated_max_loss": sizing.max_loss_text,
                 "confidence_score": str(decision.final_score or selected.evaluation.final_score),
@@ -982,7 +1006,7 @@ def deferred_news_bundle(record: CandidateRecord) -> NewsBundle:
     return NewsBundle(
         ticker=record.ticker,
         company_name=record.company_name,
-        generated_at=datetime.now(tz=timezone.utc),
+        generated_at=datetime.now(tz=UTC),
         search_results=(),
         articles=(),
         brief=NewsBrief(
@@ -1003,7 +1027,7 @@ def fallback_news_bundle(record: CandidateRecord, *, error: str) -> NewsBundle:
     return NewsBundle(
         ticker=record.ticker,
         company_name=record.company_name,
-        generated_at=datetime.now(tz=timezone.utc),
+        generated_at=datetime.now(tz=UTC),
         search_results=(),
         articles=(),
         brief=NewsBrief(

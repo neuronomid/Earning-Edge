@@ -115,9 +115,7 @@ def snapshot_from_json(payload: str) -> MarketSnapshot:
         spy_returns=_returns_from_dict(data["spy_returns"]),
         qqq_returns=_returns_from_dict(data["qqq_returns"]),
         sector_returns=(
-            None
-            if data["sector_returns"] is None
-            else _returns_from_dict(data["sector_returns"])
+            None if data["sector_returns"] is None else _returns_from_dict(data["sector_returns"])
         ),
         relative_strength_vs_spy=_decode_decimal(data["relative_strength_vs_spy"]),
         relative_strength_vs_qqq=_decode_decimal(data["relative_strength_vs_qqq"]),

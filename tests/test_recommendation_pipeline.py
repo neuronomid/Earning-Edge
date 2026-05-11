@@ -28,11 +28,11 @@ from app.scoring.types import (
     StrategySelection,
     UserContext,
 )
-from app.services.recommendation_alternatives import AlternativeRecommendationService
 from app.services.candidate_models import CandidateBatch, CandidateRecord
 from app.services.logging_service import LoggingService
 from app.services.market_data.types import MarketSnapshot, ReturnMetrics
 from app.services.news.types import NewsBrief, NewsBundle
+from app.services.recommendation_alternatives import AlternativeRecommendationService
 from app.services.sizing import BROKER_MARGIN_DEPENDENT_TEXT
 from app.services.sizing_types import SizingResult
 from app.telegram.templates.main_recommendation import render_main_recommendation
@@ -183,7 +183,9 @@ class FakeScoringStep:
             direction=DirectionResult(
                 classification=plan.direction,  # type: ignore[arg-type]
                 bias=Decimal("0.70"),
-                score=plan.direction_score if plan.direction_score is not None else plan.final_score,
+                score=plan.direction_score
+                if plan.direction_score is not None
+                else plan.final_score,
                 factors=(),
                 reasons=plan.reasoning,
             ),
@@ -194,12 +196,8 @@ class FakeScoringStep:
                 notes=("Pricing came from fixture data.",),
             ),
             strategy_selection=StrategySelection(
-                allowed_strategies=tuple(
-                    contract.strategy for contract in candidate.option_chain
-                ),
-                preferred_order=tuple(
-                    contract.strategy for contract in candidate.option_chain
-                ),
+                allowed_strategies=tuple(contract.strategy for contract in candidate.option_chain),
+                preferred_order=tuple(contract.strategy for contract in candidate.option_chain),
                 reason="Fixture strategy order.",
             ),
             considered_contracts=considered,
@@ -719,7 +717,10 @@ async def test_alternative_service_reuses_candidate_universe_and_persists_watchl
     assert result.recommendation.ticker == "AAPL"
     assert result.recommendation.suggested_quantity == 0
     assert decision_step.calls == [("AAPL", "MSFT", "NFLX", "JPM")]
-    assert len(await WorkflowRunRepository(db_session).list_recent_for_user(user.id)) == run_count_before
+    assert (
+        len(await WorkflowRunRepository(db_session).list_recent_for_user(user.id))
+        == run_count_before
+    )
     assert len(await CandidateRepository(db_session).list_for_run(run.id)) == candidate_count_before
     assert await _contract_count(db_session, run.id) == contract_count_before
 
@@ -788,9 +789,7 @@ async def test_alternative_service_second_click_returns_third_best_option(
             market_data_step=FakeMarketDataStep(
                 {record.ticker: _snapshot(record) for record in batch.candidates}
             ),
-            news_step=FakeNewsStep(
-                {record.ticker: _bundle(record) for record in batch.candidates}
-            ),
+            news_step=FakeNewsStep({record.ticker: _bundle(record) for record in batch.candidates}),
             options_step=FakeOptionsStep(
                 {
                     "AAPL": (_long_call("AAPL", strike="195"),),
@@ -841,9 +840,7 @@ async def test_alternative_service_second_click_returns_third_best_option(
             market_data_step=FakeMarketDataStep(
                 {record.ticker: _snapshot(record) for record in batch.candidates}
             ),
-            news_step=FakeNewsStep(
-                {record.ticker: _bundle(record) for record in batch.candidates}
-            ),
+            news_step=FakeNewsStep({record.ticker: _bundle(record) for record in batch.candidates}),
             options_step=FakeOptionsStep({"MSFT": (_long_call("MSFT", strike="425"),)}),
             scoring_step=FakeScoringStep(
                 {
@@ -921,9 +918,7 @@ async def test_alternative_service_no_trade_does_not_persist_recommendation(
             market_data_step=FakeMarketDataStep(
                 {record.ticker: _snapshot(record) for record in batch.candidates}
             ),
-            news_step=FakeNewsStep(
-                {record.ticker: _bundle(record) for record in batch.candidates}
-            ),
+            news_step=FakeNewsStep({record.ticker: _bundle(record) for record in batch.candidates}),
             options_step=FakeOptionsStep({}),
             scoring_step=FakeScoringStep(
                 {
@@ -944,7 +939,10 @@ async def test_alternative_service_no_trade_does_not_persist_recommendation(
 
     assert result.status == "no_trade"
     assert result.recommendation is None
-    assert len(await RecommendationRepository(db_session).list_recent_for_user(user.id)) == rec_count_before
+    assert (
+        len(await RecommendationRepository(db_session).list_recent_for_user(user.id))
+        == rec_count_before
+    )
 
 
 def test_main_recommendation_template_matches_prd_structure() -> None:

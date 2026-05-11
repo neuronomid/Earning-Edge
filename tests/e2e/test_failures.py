@@ -47,11 +47,7 @@ async def test_finviz_failure_warning_surfaces_in_message_and_logs(
             {record.ticker: make_news_bundle(record) for record in batch.candidates}
         ),
         options_step=StaticOptionsStep(
-            {
-                "AMD": (
-                    make_contract("AMD", option_type="call", position_side="long", strike="104"),
-                )
-            }
+            {"AMD": (make_contract("AMD", option_type="call", position_side="long", strike="104"),)}
         ),
         scoring_step=FakeScoringStep(
             {

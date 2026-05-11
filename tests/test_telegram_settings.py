@@ -55,9 +55,7 @@ def send_recorder(monkeypatch: pytest.MonkeyPatch) -> SendRecorder:
 
 
 @pytest.fixture
-def patch_user_service_scope(
-    monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
-) -> None:
+def patch_user_service_scope(monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession) -> None:
     monkeypatch.setattr(
         settings_handlers,
         "user_service_scope",
@@ -70,9 +68,7 @@ def validators_ok(monkeypatch: pytest.MonkeyPatch) -> None:
     async def openrouter_ok(self: OpenRouterValidator, api_key: str) -> ValidationResult:
         return ValidationResult(True, api_key)
 
-    async def alpaca_ok(
-        self: AlpacaValidator, api_key: str, api_secret: str
-    ) -> ValidationResult:
+    async def alpaca_ok(self: AlpacaValidator, api_key: str, api_secret: str) -> ValidationResult:
         return ValidationResult(True, f"{api_key}:{api_secret}")
 
     async def av_ok(self: AlphaVantageValidator, api_key: str) -> ValidationResult:

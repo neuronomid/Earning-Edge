@@ -19,7 +19,7 @@ from app.pipeline.orchestrator import get_pipeline_orchestrator
 from app.services.run_lock import RunLockService, get_run_lock_service
 
 RUN_ALREADY_ACTIVE_TEXT = (
-    "⏳ A scan is already running. " "I\u2019ll show the result here when it finishes."
+    "⏳ A scan is already running. I\u2019ll show the result here when it finishes."
 )
 logger = get_logger(__name__)
 

@@ -44,12 +44,8 @@ def test_settings_keyboard_exposes_all_editable_fields() -> None:
 
 
 def test_api_keys_keyboard_shows_remove_buttons_only_when_keys_exist() -> None:
-    no_keys = _flatten_inline_labels(
-        api_keys_keyboard(has_alpaca=False, has_alpha_vantage=False)
-    )
-    with_keys = _flatten_inline_labels(
-        api_keys_keyboard(has_alpaca=True, has_alpha_vantage=True)
-    )
+    no_keys = _flatten_inline_labels(api_keys_keyboard(has_alpaca=False, has_alpha_vantage=False))
+    with_keys = _flatten_inline_labels(api_keys_keyboard(has_alpaca=True, has_alpha_vantage=True))
 
     assert "🗑 Remove Alpaca" not in no_keys
     assert "🗑 Remove Alpha Vantage" not in no_keys
@@ -70,9 +66,7 @@ def test_recommendation_keyboard_includes_feedback_buttons() -> None:
 
 
 def test_recommendation_keyboard_hides_alternative_when_requested() -> None:
-    labels = _flatten_inline_labels(
-        recommendation_keyboard("rec-123", include_alternative=False)
-    )
+    labels = _flatten_inline_labels(recommendation_keyboard("rec-123", include_alternative=False))
     assert labels == [
         "🔍 Why this?",
         "⚖️ Risk / Sizing",

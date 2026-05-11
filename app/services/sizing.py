@@ -69,8 +69,7 @@ def _size_short_put(user: UserContext, contract: OptionContractInput) -> SizingR
     return SizingResult(
         quantity=quantity,
         max_loss_text=(
-            f"Approx. {_format_currency(per_contract_exposure)} "
-            "notional exposure per contract"
+            f"Approx. {_format_currency(per_contract_exposure)} notional exposure per contract"
         ),
         account_risk_pct=SHORT_NOTIONAL_CAP_PCTS[user.risk_profile],
         broker_verification_required=True,

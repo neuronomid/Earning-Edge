@@ -69,7 +69,7 @@ async def run_scan_now(message: Message) -> None:
     if result.outcome == "failed":
         await send_text(
             message,
-            ("⚠️ I couldn't start that scan cleanly. " "Please try again in a minute."),
+            ("⚠️ I couldn't start that scan cleanly. Please try again in a minute."),
             reply_markup=main_menu_keyboard(),
         )
         return
@@ -118,6 +118,7 @@ async def last_recommendation(message: Message) -> None:
         ),
         reply_markup=recommendation_keyboard(str(recommendation.id)),
     )
+
 
 @router.message(F.text == BTN_POSITIONS)
 async def show_positions(message: Message) -> None:

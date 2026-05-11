@@ -102,8 +102,9 @@ async def test_finnhub_source_reuses_calendar_cache_for_upcoming_candidates() ->
 
 
 @respx.mock
-async def test_finnhub_source_upcoming_candidates_rank_later_large_caps_and_filter_low_price(
-) -> None:
+async def test_finnhub_source_upcoming_candidates_rank_later_large_caps_and_filter_low_price() -> (
+    None
+):
     respx.get("https://finnhub.io/api/v1/calendar/earnings").mock(
         return_value=Response(
             200,

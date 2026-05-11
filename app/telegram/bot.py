@@ -84,10 +84,7 @@ async def build_runtime_storage(
     redis_error = await _redis_ping_error(settings.redis_url)
     if redis_error is not None:
         if settings.app_env == "production":
-            raise BotStartupError(
-                "Redis is not reachable for Telegram FSM storage: "
-                f"{redis_error}"
-            )
+            raise BotStartupError(f"Redis is not reachable for Telegram FSM storage: {redis_error}")
         (logger or logging.getLogger(__name__)).warning(
             "telegram_fsm_redis_unavailable; falling back to memory storage: %s",
             redis_error,

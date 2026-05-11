@@ -41,9 +41,7 @@ class PipelineOutcome:
     candidates: tuple[PipelineCandidate, ...]
     selected: PipelineCandidate | None
     selected_contract: ContractScoreResult | None = None
-    decision_trace: DecisionTrace = field(
-        default_factory=lambda: DecisionTrace(engine="heuristic")
-    )
+    decision_trace: DecisionTrace = field(default_factory=lambda: DecisionTrace(engine="heuristic"))
 
     @property
     def final_contract(self) -> ContractScoreResult | None:

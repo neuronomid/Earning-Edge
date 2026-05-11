@@ -195,9 +195,7 @@ async def test_decide_parses_structured_response_and_uses_heavy_model() -> None:
 
     def _capture(request: httpx.Request) -> httpx.Response:
         captured.append(json.loads(request.content))
-        return httpx.Response(
-            200, json=_completion(content=json.dumps(decision), model=HEAVY)
-        )
+        return httpx.Response(200, json=_completion(content=json.dumps(decision), model=HEAVY))
 
     respx.post(CHAT_URL).mock(side_effect=_capture)
 
@@ -237,9 +235,7 @@ async def test_decide_rejects_non_json_output() -> None:
 async def test_decide_rejects_schema_mismatch() -> None:
     bad = {"action": "definitely-not-a-real-action", "reasoning": "n/a"}
     respx.post(CHAT_URL).mock(
-        return_value=httpx.Response(
-            200, json=_completion(content=json.dumps(bad), model=HEAVY)
-        )
+        return_value=httpx.Response(200, json=_completion(content=json.dumps(bad), model=HEAVY))
     )
     with pytest.raises(LLMValidationError):
         await _router().decide(
@@ -314,9 +310,7 @@ async def test_5xx_exhausts_retries_and_raises_unavailable() -> None:
 @respx.mock
 async def test_429_final_raises_rate_limit() -> None:
     respx.post(CHAT_URL).mock(
-        return_value=httpx.Response(
-            429, headers={"x-ratelimit-final": "true"}, text="slow down"
-        )
+        return_value=httpx.Response(429, headers={"x-ratelimit-final": "true"}, text="slow down")
     )
     with pytest.raises(LLMRateLimitError):
         await _router(max_attempts=2).summarize(api_key="sk-or-test", system="s", user="u")
@@ -395,9 +389,7 @@ class _SmallSchema(BaseModel):
 async def test_decide_works_with_arbitrary_response_schema() -> None:
     body = {"label": "ok", "score": 9}
     respx.post(CHAT_URL).mock(
-        return_value=httpx.Response(
-            200, json=_completion(content=json.dumps(body), model=HEAVY)
-        )
+        return_value=httpx.Response(200, json=_completion(content=json.dumps(body), model=HEAVY))
     )
     out = await _router().decide(
         api_key="sk-or-test",

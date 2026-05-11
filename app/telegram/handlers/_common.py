@@ -33,4 +33,4 @@ def enforce_tone(text: str) -> None:
         _logger.warning("tone-issue detected: %s | text=%r", list(issues), text)
 
 
-__all__ = ["send_text", "ToneError", "enforce_tone"]
+__all__ = ["ToneError", "enforce_tone", "send_text"]

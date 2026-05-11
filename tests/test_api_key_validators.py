@@ -126,9 +126,7 @@ async def test_av_rejects_empty_key() -> None:
 
 @respx.mock
 async def test_av_rejects_non_json_payload() -> None:
-    respx.get(AlphaVantageValidator.URL).mock(
-        return_value=httpx.Response(200, text="not-json")
-    )
+    respx.get(AlphaVantageValidator.URL).mock(return_value=httpx.Response(200, text="not-json"))
     result = await AlphaVantageValidator().validate("AVKEY")
     assert result.ok is False
     assert "non-json" in result.detail.lower()

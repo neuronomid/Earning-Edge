@@ -7,6 +7,10 @@ persistence side of every setting.
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
+import secrets
 from dataclasses import dataclass
 from datetime import time
 from decimal import Decimal
@@ -50,10 +54,14 @@ DEFAULT_STRATEGY_PERMISSION: StrategyPermission = "long_and_short"
 DEFAULT_MAX_CONTRACTS = 3
 DEFAULT_TIMEZONE_LABEL: TimezoneLabel = "ET"
 DEFAULT_BROKER = "Other"
+DEFAULT_DASHBOARD_ACCOUNT_SIZE = Decimal("150000")
+DEFAULT_DASHBOARD_BROKER = "IBKR Paper"
 
 # PRD §12.1 default cron
 DEFAULT_CRON_DAY = "monday"
 DEFAULT_CRON_TIME = time(10, 30)
+PASSWORD_SCHEME = "pbkdf2_sha256"  # noqa: S105 - scheme name, not a secret.
+PASSWORD_ITERATIONS = 260_000
 
 
 @dataclass(slots=True)
@@ -83,6 +91,51 @@ class UserService:
 
     async def get_by_chat_id(self, telegram_chat_id: str) -> User | None:
         return await self.users.get_by_telegram_chat_id(telegram_chat_id)
+
+    async def get_by_dashboard_username(self, username: str) -> User | None:
+        return await self.users.get_by_dashboard_username(normalize_dashboard_username(username))
+
+    # ---------- dashboard auth ----------
+
+    async def create_dashboard_user(self, username: str, password: str) -> User:
+        normalized_username = normalize_dashboard_username(username)
+        if len(normalized_username) < 2:
+            raise ValueError("Username must be at least 2 characters.")
+        existing = await self.users.get_by_dashboard_username(normalized_username)
+        if existing is not None:
+            raise ValueError("That username is already registered.")
+
+        user = User(
+            telegram_chat_id=f"dashboard:{normalized_username}",
+            dashboard_username=normalized_username,
+            dashboard_password_hash=hash_dashboard_password(password),
+            account_size=DEFAULT_DASHBOARD_ACCOUNT_SIZE,
+            risk_profile=DEFAULT_RISK_PROFILE,
+            broker=DEFAULT_DASHBOARD_BROKER,
+            timezone_label=DEFAULT_TIMEZONE_LABEL,
+            timezone_iana=TIMEZONE_MAP[DEFAULT_TIMEZONE_LABEL],
+            strategy_permission=DEFAULT_STRATEGY_PERMISSION,
+            max_contracts=DEFAULT_MAX_CONTRACTS,
+            openrouter_api_key_encrypted=crypto.encrypt(""),
+            alpaca_api_key_encrypted=None,
+            alpaca_api_secret_encrypted=None,
+            alpha_vantage_api_key_encrypted=None,
+            is_active=True,
+        )
+        await self.users.add(user)
+        await self._ensure_default_cron(user)
+        return user
+
+    async def authenticate_dashboard_user(self, username: str, password: str) -> User | None:
+        normalized_username = normalize_dashboard_username(username)
+        if len(normalized_username) < 2:
+            return None
+        user = await self.users.get_by_dashboard_username(normalized_username)
+        if user is None or not user.is_active or not user.dashboard_password_hash:
+            return None
+        if not verify_dashboard_password(password, user.dashboard_password_hash):
+            return None
+        return user
 
     # ---------- onboarding ----------
 
@@ -170,9 +223,7 @@ class UserService:
         user.broker = broker
         await self.session.flush()
 
-    async def update_strategy_permission(
-        self, user: User, permission: StrategyPermission
-    ) -> None:
+    async def update_strategy_permission(self, user: User, permission: StrategyPermission) -> None:
         user.strategy_permission = permission
         await self.session.flush()
 
@@ -186,8 +237,8 @@ class UserService:
 
     # ---------- API-key edits (Settings UI) ----------
 
-    async def replace_openrouter_key(self, user: User, api_key: str) -> None:
-        user.openrouter_api_key_encrypted = crypto.encrypt(api_key)
+    async def replace_openrouter_key(self, user: User, api_key: str | None) -> None:
+        user.openrouter_api_key_encrypted = crypto.encrypt(api_key or "")
         await self.session.flush()
 
     async def replace_alpaca_creds(
@@ -261,3 +312,39 @@ def decrypt_or_none(ciphertext: str | None) -> str | None:
     if ciphertext is None:
         return None
     return crypto.decrypt(ciphertext)
+
+
+def normalize_dashboard_username(username: str) -> str:
+    return username.strip().lower()
+
+
+def hash_dashboard_password(password: str) -> str:
+    salt = secrets.token_urlsafe(16)
+    digest = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        salt.encode("utf-8"),
+        PASSWORD_ITERATIONS,
+    )
+    encoded_digest = base64.urlsafe_b64encode(digest).decode("ascii")
+    return f"{PASSWORD_SCHEME}${PASSWORD_ITERATIONS}${salt}${encoded_digest}"
+
+
+def verify_dashboard_password(password: str, stored_hash: str) -> bool:
+    try:
+        scheme, raw_iterations, salt, encoded_digest = stored_hash.split("$", 3)
+        iterations = int(raw_iterations)
+    except ValueError:
+        return False
+
+    if scheme != PASSWORD_SCHEME:
+        return False
+
+    digest = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        salt.encode("utf-8"),
+        iterations,
+    )
+    expected = base64.urlsafe_b64encode(digest).decode("ascii")
+    return hmac.compare_digest(expected, encoded_digest)

@@ -44,7 +44,11 @@ class LoggingService:
         if archive_root is None and self.settings.app_env != "test":
             archive_root = Path("var/runs")
         self.archive_root = None if archive_root is None else Path(archive_root)
-        if results_root is None and self.archive_root is not None and self.archive_root != Path("var/runs"):
+        if (
+            results_root is None
+            and self.archive_root is not None
+            and self.archive_root != Path("var/runs")
+        ):
             results_root = self.archive_root.parent / "results"
         self.logger = logger or get_logger(__name__)
         self.results_exporter = ResultsExportService(
@@ -103,7 +107,9 @@ class LoggingService:
             _candidate_card(
                 candidate=item,
                 selected_ticker=selected_ticker,
-                selected_contract=selected_contract_score if selected_ticker == item.record.ticker else None,
+                selected_contract=selected_contract_score
+                if selected_ticker == item.record.ticker
+                else None,
                 top_candidate_ticker=None if top_candidate is None else top_candidate.record.ticker,
                 final_action=outcome.decision.action,
                 final_reasoning=outcome.decision.reasoning,
@@ -136,13 +142,17 @@ class LoggingService:
             else (
                 selected.evaluation.final_score
                 if selected is not None
-                else 0 if top_candidate is None else top_candidate.evaluation.final_score
+                else 0
+                if top_candidate is None
+                else top_candidate.evaluation.final_score
             )
         )
         data_confidence = (
             selected.evaluation.confidence.score
             if selected is not None
-            else 0 if top_candidate is None else top_candidate.evaluation.confidence.score
+            else 0
+            if top_candidate is None
+            else top_candidate.evaluation.confidence.score
         )
         recommendation_card = {
             "card_id": str(recommendation.id) if recommendation is not None else str(run.id),
@@ -193,9 +203,7 @@ class LoggingService:
             "risk_profile": user.risk_profile,
             "account_size_snapshot": _decimal(user.account_size),
             "account_risk_percent": (
-                None
-                if recommendation is None
-                else _decimal(recommendation.account_risk_percent)
+                None if recommendation is None else _decimal(recommendation.account_risk_percent)
             ),
             "risk_level": None if recommendation is None else recommendation.risk_level,
             "estimated_max_loss": (
@@ -447,7 +455,9 @@ def _candidate_card(
         "best_strategy": None if best_contract is None else best_contract.strategy,
         "strategy_source": candidate.record.strategy_source,
         "candidate_sources": list(candidate.record.sources),
-        "candidate_origin": "finviz_row" if "finviz" in candidate.record.sources else "backup_source",
+        "candidate_origin": "finviz_row"
+        if "finviz" in candidate.record.sources
+        else "backup_source",
         "best_contract": (
             None if best_contract is None else _selected_contract_fields(best_contract)
         ),
@@ -519,16 +529,24 @@ def _contract_card(
         "vega": _decimal(contract.contract.vega),
         "breakeven": _decimal(contract.breakeven),
         "target_stock_price": (
-            None if contract.exit_target is None else _decimal(contract.exit_target.target_stock_price)
+            None
+            if contract.exit_target is None
+            else _decimal(contract.exit_target.target_stock_price)
         ),
         "target_option_price": (
-            None if contract.exit_target is None else _decimal(contract.exit_target.target_option_price)
+            None
+            if contract.exit_target is None
+            else _decimal(contract.exit_target.target_option_price)
         ),
         "target_gain_percent": (
-            None if contract.exit_target is None else _decimal(contract.exit_target.target_gain_percent)
+            None
+            if contract.exit_target is None
+            else _decimal(contract.exit_target.target_gain_percent)
         ),
         "stop_loss_option_price": (
-            None if contract.exit_target is None else _decimal(contract.exit_target.stop_loss_option_price)
+            None
+            if contract.exit_target is None
+            else _decimal(contract.exit_target.stop_loss_option_price)
         ),
         "exit_by_date": (
             None if contract.exit_target is None else _date(contract.exit_target.exit_by_date)
@@ -574,18 +592,26 @@ def _selected_contract_fields(contract: ContractScoreResult) -> dict[str, Any]:
         "option_type": contract.contract.option_type,
         "position_side": contract.contract.position_side,
         "target_stock_price": (
-            None if contract.exit_target is None else _decimal(contract.exit_target.target_stock_price)
+            None
+            if contract.exit_target is None
+            else _decimal(contract.exit_target.target_stock_price)
         ),
         "target_option_price": (
-            None if contract.exit_target is None else _decimal(contract.exit_target.target_option_price)
+            None
+            if contract.exit_target is None
+            else _decimal(contract.exit_target.target_option_price)
         ),
         "stop_loss_option_price": (
-            None if contract.exit_target is None else _decimal(contract.exit_target.stop_loss_option_price)
+            None
+            if contract.exit_target is None
+            else _decimal(contract.exit_target.stop_loss_option_price)
         ),
         "exit_by_date": (
             None if contract.exit_target is None else _date(contract.exit_target.exit_by_date)
         ),
-        "target_method": None if contract.exit_target is None else contract.exit_target.target_method,
+        "target_method": None
+        if contract.exit_target is None
+        else contract.exit_target.target_method,
     }
 
 

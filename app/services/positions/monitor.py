@@ -3,10 +3,9 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from app.core.logging import get_logger
 from app.db.models.open_position import OpenPosition
@@ -61,7 +60,9 @@ class PositionMonitor:
             positions = await repo.list_active()
 
             # Group positions by ticker for batch Alpaca calls
-            by_ticker: dict[str, list[tuple[OpenPosition, Recommendation, User]]] = defaultdict(list)
+            by_ticker: dict[str, list[tuple[OpenPosition, Recommendation, User]]] = defaultdict(
+                list
+            )
             for position in positions:
                 recommendation = await session.get(Recommendation, position.recommendation_id)
                 user = await session.get(User, position.user_id)
@@ -113,7 +114,9 @@ class PositionMonitor:
             if quote is None:
                 continue
 
-            await self._poll_position(session, position, recommendation, user, quote, today=today, now=now)
+            await self._poll_position(
+                session, position, recommendation, user, quote, today=today, now=now
+            )
 
     async def _close_expired_position(
         self,
@@ -244,7 +247,9 @@ class PositionMonitor:
         position.last_polled_at = datetime.now(UTC)
         position.last_data_source = quote.source
 
-        alert_keys = _alerts_for_position(position, recommendation, quote.premium, today=today, now=now)
+        alert_keys = _alerts_for_position(
+            position, recommendation, quote.premium, today=today, now=now
+        )
         for alert_key in alert_keys:
             await self._send_alert(position, recommendation, user, alert_key, quote.premium)
             # Increment alert counts for TP/SL (not for date-based alerts)

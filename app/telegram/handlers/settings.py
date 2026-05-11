@@ -262,7 +262,9 @@ async def edit_account_size(message: Message, state: FSMContext) -> None:
             return
         await service.update_account_size(user, value)
     await state.clear()
-    await send_text(message, f"✅ Account size updated to <b>${value}</b>.", reply_markup=main_menu_keyboard())
+    await send_text(
+        message, f"✅ Account size updated to <b>${value}</b>.", reply_markup=main_menu_keyboard()
+    )
 
 
 @router.message(SettingsEdit.max_contracts)
@@ -281,7 +283,9 @@ async def edit_max_contracts(message: Message, state: FSMContext) -> None:
             return
         await service.update_max_contracts(user, n)
     await state.clear()
-    await send_text(message, f"✅ Max contracts updated to <b>{n}</b>.", reply_markup=main_menu_keyboard())
+    await send_text(
+        message, f"✅ Max contracts updated to <b>{n}</b>.", reply_markup=main_menu_keyboard()
+    )
 
 
 @router.message(SettingsEdit.openrouter_key)
@@ -421,9 +425,7 @@ async def edit_timezone(
 
 
 @router.callback_query(SettingsEdit.broker, ChoiceCB.filter(F.group == "set_broker"))
-async def edit_broker(
-    callback: CallbackQuery, callback_data: ChoiceCB, state: FSMContext
-) -> None:
+async def edit_broker(callback: CallbackQuery, callback_data: ChoiceCB, state: FSMContext) -> None:
     async with user_service_scope() as (_, service):
         user = await _user_by_id(service, str(callback.from_user.id))
         if user is None:
@@ -440,9 +442,7 @@ async def edit_broker(
         )
 
 
-@router.callback_query(
-    SettingsEdit.strategy_permission, ChoiceCB.filter(F.group == "set_strategy")
-)
+@router.callback_query(SettingsEdit.strategy_permission, ChoiceCB.filter(F.group == "set_strategy"))
 async def edit_strategy_permission(
     callback: CallbackQuery, callback_data: ChoiceCB, state: FSMContext
 ) -> None:
@@ -482,7 +482,10 @@ async def edit_alert_mute_duration(
     await callback.answer("Saved.")
     await state.clear()
     # Find the display label
-    display_label = next((label for label, v in MUTE_DURATION_OPTIONS if v == callback_data.value), callback_data.value)
+    display_label = next(
+        (label for label, v in MUTE_DURATION_OPTIONS if v == callback_data.value),
+        callback_data.value,
+    )
     if callback.message:
         await send_text(
             callback.message,
@@ -494,7 +497,7 @@ async def edit_alert_mute_duration(
 # ---------- helpers ----------
 
 
-async def _user(service: UserService, message: Message):  # noqa: ANN201 — internal helper
+async def _user(service: UserService, message: Message):
     user = await service.get_by_chat_id(str(message.chat.id))
     if user is None:
         await send_text(
@@ -505,5 +508,5 @@ async def _user(service: UserService, message: Message):  # noqa: ANN201 — int
     return user
 
 
-async def _user_by_id(service: UserService, chat_id: str):  # noqa: ANN201
+async def _user_by_id(service: UserService, chat_id: str):
     return await service.get_by_chat_id(chat_id)

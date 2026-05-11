@@ -86,13 +86,7 @@ async def test_news_summarizer_returns_failure_brief_on_schema_invalid_response(
             mock.post("https://openrouter.ai/api/v1/chat/completions").respond(
                 200,
                 json={
-                    "choices": [
-                        {
-                            "message": {
-                                "content": '{"unexpected_field":"value"}'
-                            }
-                        }
-                    ],
+                    "choices": [{"message": {"content": '{"unexpected_field":"value"}'}}],
                     "usage": {"prompt_tokens": 8, "completion_tokens": 9, "total_tokens": 17},
                 },
             )
