@@ -94,8 +94,9 @@ class StaticNewsStep:
         record: CandidateRecord,
         *,
         openrouter_api_key: str,
+        reference_dt: datetime | None = None,
     ) -> NewsBundle:
-        del openrouter_api_key
+        del openrouter_api_key, reference_dt
         payload = self.bundles[record.ticker]
         if isinstance(payload, Exception):
             raise payload
@@ -151,7 +152,7 @@ class ScoringPlan:
     action: str
     final_score: int
     direction: str
-    direction_score: int
+    direction_score: int | None = None
     contract_score: int | None = None
     confidence_score: int = 88
     reasoning: tuple[str, ...] = ("Momentum and contract quality lined up.",)
@@ -214,7 +215,7 @@ class FakeScoringStep:
             direction=DirectionResult(
                 classification=plan.direction,  # type: ignore[arg-type]
                 bias=Decimal("0.70"),
-                score=plan.direction_score,
+                score=plan.direction_score if plan.direction_score is not None else plan.final_score,
                 factors=(),
                 reasons=plan.reasoning,
             ),
@@ -423,6 +424,9 @@ def make_news_bundle(
     key_uncertainty: str = "Guidance tone still matters.",
     news_confidence: int = 72,
 ) -> NewsBundle:
+    del news_confidence
+    summary_parts = list(bullish or (f"{record.ticker} had supportive setup notes.",))
+    summary_parts.extend(bearish or ())
     return NewsBundle(
         ticker=record.ticker,
         company_name=record.company_name,
@@ -430,15 +434,12 @@ def make_news_bundle(
         search_results=(),
         articles=(),
         brief=NewsBrief(
-            bullish_evidence=list(
-                bullish or (f"{record.ticker} had supportive setup notes.",)
-            ),
-            bearish_evidence=list(bearish or ()),
             neutral_contextual_evidence=list(
                 neutral or ("Sector context stayed constructive.",)
             ),
             key_uncertainty=key_uncertainty,
-            news_confidence=news_confidence,
+            summary=" ".join(summary_parts),
+            key_facts=summary_parts,
         ),
         used_ir_fallback=False,
     )

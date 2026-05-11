@@ -98,6 +98,7 @@ async def test_run_candidate_contract_recommendation_feedback_chain(
             best_strategy="long_call",
             final_opportunity_score=78,
             data_confidence_score=85,
+            strategy_source="catalyst_confluence",
         )
     )
 

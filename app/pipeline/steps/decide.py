@@ -12,6 +12,7 @@ from app.llm.router import LLMRouter
 from app.llm.schemas import (
     CandidateBundle,
     ChosenContract,
+    ConfidenceBand,
     DecisionInput,
     OptionChainCandidate,
     StructuredDecision,
@@ -28,6 +29,7 @@ from app.pipeline.types import (
     DecisionTrace,
     PipelineCandidate,
 )
+from app.scoring.direction import structural_direction_tier
 from app.scoring.final import combine_scores
 from app.scoring.types import (
     ContractScoreResult,
@@ -203,8 +205,22 @@ def validate_llm_decision(
 ) -> StructuredDecision:
     raw_response = decision.model_dump_json()
 
+    nominated_band = _band_or_default(decision.confidence_band, decision.action)
+    _validate_band_action_consistency(
+        nominated_band, decision.action, raw_response=raw_response
+    )
+
     if decision.action == "no_trade":
-        _validate_action_thresholds(decision, raw_response=raw_response)
+        normalized = decision.model_copy(
+            update={
+                "action": "no_trade",
+                "confidence_band": "no_trade",
+                "chosen_ticker": None,
+                "chosen_contract": None,
+                "contract_score": None,
+                "final_score": None,
+            }
+        )
         watchlist = _sanitize_watchlist(
             candidates,
             decision.watchlist_tickers,
@@ -212,13 +228,7 @@ def validate_llm_decision(
         )
         if not watchlist:
             watchlist = _default_watchlist(candidates, exclude=None)
-        return decision.model_copy(
-            update={
-                "chosen_ticker": None,
-                "chosen_contract": None,
-                "watchlist_tickers": watchlist,
-            }
-        )
+        return normalized.model_copy(update={"watchlist_tickers": watchlist})
 
     if decision.chosen_ticker is None or decision.chosen_contract is None:
         raise LLMValidationError(
@@ -253,29 +263,39 @@ def validate_llm_decision(
             raw_response=raw_response,
         )
 
-    _validate_action_thresholds(decision, raw_response=raw_response)
     structural_final_score = combine_scores(
         candidate.evaluation.direction.score,
         matched_contract.score,
     )
-    normalized_final_score = (
-        structural_final_score
-        if decision.final_score is None
-        else min(decision.final_score, structural_final_score)
-    )
+    structural_band = _band_from_score(structural_final_score)
+    final_band = _min_band(nominated_band, structural_band)
+    final_action = _action_for_band(final_band)
+
     normalized = decision.model_copy(
         update={
-            "direction_score": candidate.evaluation.direction.score,
+            "action": final_action,
+            "confidence_band": final_band,
             "contract_score": matched_contract.score,
-            "final_score": normalized_final_score,
+            "final_score": structural_final_score,
         }
     )
-    _validate_action_not_more_aggressive(
-        candidate,
-        matched_contract,
-        normalized,
-        raw_response=raw_response,
-    )
+
+    if normalized.action == "no_trade":
+        watchlist_seed = list(normalized.watchlist_tickers)
+        if decision.chosen_ticker is not None and decision.chosen_ticker not in watchlist_seed:
+            watchlist_seed.insert(0, decision.chosen_ticker)
+        watchlist = _sanitize_watchlist(candidates, watchlist_seed, exclude=None)
+        if not watchlist:
+            watchlist = _default_watchlist(candidates, exclude=None)
+        return normalized.model_copy(
+            update={
+                "chosen_ticker": None,
+                "chosen_contract": None,
+                "contract_score": None,
+                "final_score": None,
+                "watchlist_tickers": watchlist,
+            }
+        )
     watchlist = _sanitize_watchlist(
         candidates,
         normalized.watchlist_tickers,
@@ -316,6 +336,7 @@ def _heuristic_decision(candidates: Sequence[PipelineCandidate]) -> StructuredDe
     if not candidates:
         return StructuredDecision(
             action="no_trade",
+            confidence_band="no_trade",
             reasoning="No validated candidates were available for this scan.",
             key_concerns=["The candidate list came back empty."],
         )
@@ -339,7 +360,8 @@ def _heuristic_decision(candidates: Sequence[PipelineCandidate]) -> StructuredDe
                     "Highest final score after the direction, contract, and confidence checks."
                 ),
             ),
-            direction_score=best.evaluation.direction.score,
+            direction_tier=structural_direction_tier(best.evaluation.direction.score),
+            confidence_band=_band_from_score(best.evaluation.final_score),
             contract_score=chosen.score,
             final_score=best.evaluation.final_score,
             reasoning=_summarize_reasons(best),
@@ -363,7 +385,8 @@ def _heuristic_decision(candidates: Sequence[PipelineCandidate]) -> StructuredDe
                     "The setup cleared the watchlist bar, but not the live-sizing threshold."
                 ),
             ),
-            direction_score=best.evaluation.direction.score,
+            direction_tier=structural_direction_tier(best.evaluation.direction.score),
+            confidence_band="watchlist",
             contract_score=chosen.score,
             final_score=best.evaluation.final_score,
             reasoning=(
@@ -378,6 +401,7 @@ def _heuristic_decision(candidates: Sequence[PipelineCandidate]) -> StructuredDe
 
     return StructuredDecision(
         action="no_trade",
+        confidence_band="no_trade",
         reasoning=_no_trade_reason(best),
         key_evidence=[],
         key_concerns=_key_concerns(best),
@@ -418,6 +442,11 @@ def _candidate_bundle(candidate: PipelineCandidate) -> CandidateBundle:
             "qqq_5d": _decimal_to_float(snapshot.qqq_returns.five_day),
         },
         news_summary=_news_summary(candidate),
+        structural_direction_tier=structural_direction_tier(
+            candidate.evaluation.direction.score
+        ),
+        news_coverage=candidate.news_bundle.news_coverage,
+        stale_news=candidate.news_bundle.stale_news,
         option_chain_candidates=[
             _option_chain_candidate(contract)
             for contract in viable_contracts[:3]
@@ -452,10 +481,14 @@ def _option_chain_candidate(contract: ContractScoreResult) -> OptionChainCandida
 def _news_summary(candidate: PipelineCandidate) -> str:
     brief = candidate.news_bundle.brief
     parts = []
-    if brief.bullish_evidence:
-        parts.append(f"Bullish: {'; '.join(brief.bullish_evidence[:2])}")
-    if brief.bearish_evidence:
-        parts.append(f"Bearish: {'; '.join(brief.bearish_evidence[:2])}")
+    if brief.summary:
+        parts.append(f"Summary: {brief.summary}")
+    if brief.key_facts:
+        parts.append(f"Key facts: {'; '.join(brief.key_facts[:6])}")
+    if brief.named_actions:
+        parts.append(f"Named actions: {'; '.join(brief.named_actions[:4])}")
+    if brief.quoted_statements:
+        parts.append(f"Quotes: {'; '.join(brief.quoted_statements[:3])}")
     if brief.neutral_contextual_evidence:
         parts.append(f"Context: {'; '.join(brief.neutral_contextual_evidence[:2])}")
     parts.append(f"Uncertainty: {brief.key_uncertainty}")
@@ -498,47 +531,61 @@ def _key_concerns(candidate: PipelineCandidate) -> list[str]:
     return concerns[:4]
 
 
-def _validate_action_not_more_aggressive(
-    candidate: PipelineCandidate,
-    contract: ContractScoreResult,
-    decision: StructuredDecision,
-    *,
-    raw_response: str | None = None,
-) -> None:
-    allowed = _maximum_allowed_action(candidate, contract)
-    if _action_rank(decision.action) > _action_rank(allowed):
-        raise LLMValidationError(
-            (
-                "Heavy model selected an action that is more aggressive than the "
-                "scoring engine allows for the chosen contract."
-            ),
-            raw_response=raw_response,
-        )
+_BAND_RANK: dict[ConfidenceBand, int] = {
+    "no_trade": 0,
+    "watchlist": 1,
+    "standard": 2,
+    "strong": 3,
+}
 
 
-def _maximum_allowed_action(
-    candidate: PipelineCandidate,
-    contract: ContractScoreResult,
-) -> str:
-    confidence = candidate.evaluation.confidence
-    final_score = combine_scores(candidate.evaluation.direction.score, contract.score)
-    if not contract.is_viable or confidence.blockers or confidence.score < 40:
-        return "no_trade"
-    if confidence.score < 55:
-        return "watchlist" if final_score >= 60 else "no_trade"
-    if final_score >= 68:
-        return "recommend"
-    if final_score >= 60:
+def _band_from_score(score: int) -> ConfidenceBand:
+    """Map a deterministic structural score to its confidence band."""
+    if score >= 78:
+        return "strong"
+    if score >= 68:
+        return "standard"
+    if score >= 60:
         return "watchlist"
     return "no_trade"
 
 
-def _action_rank(action: str) -> int:
+def _action_for_band(band: ConfidenceBand) -> str:
+    if band in ("strong", "standard"):
+        return "recommend"
+    if band == "watchlist":
+        return "watchlist"
+    return "no_trade"
+
+
+def _band_or_default(band: ConfidenceBand | None, action: str) -> ConfidenceBand:
+    """Best-effort fallback when the LLM omits confidence_band."""
+    if band is not None:
+        return band
     if action == "recommend":
-        return 2
+        return "standard"
     if action == "watchlist":
-        return 1
-    return 0
+        return "watchlist"
+    return "no_trade"
+
+
+def _min_band(a: ConfidenceBand, b: ConfidenceBand) -> ConfidenceBand:
+    return a if _BAND_RANK[a] <= _BAND_RANK[b] else b
+
+
+def _validate_band_action_consistency(
+    band: ConfidenceBand,
+    action: str,
+    *,
+    raw_response: str | None,
+) -> None:
+    expected = _action_for_band(band)
+    if expected != action:
+        raise LLMValidationError(
+            f"Heavy model confidence_band {band!r} does not match action {action!r} "
+            f"(expected action {expected!r}).",
+            raw_response=raw_response,
+        )
 
 
 def _no_trade_reason(candidate: PipelineCandidate) -> str:
@@ -562,33 +609,6 @@ def _no_trade_reason(candidate: PipelineCandidate) -> str:
         "direction, pricing, liquidity, or data confidence than I want for an "
         "earnings hold."
     )
-
-
-def _validate_action_thresholds(
-    decision: StructuredDecision,
-    *,
-    raw_response: str | None = None,
-) -> None:
-    score = decision.final_score
-    if decision.action == "recommend":
-        if score is None or score < 68:
-            raise LLMValidationError(
-                "Heavy model returned recommend with final_score below 68.",
-                raw_response=raw_response,
-            )
-        return
-    if decision.action == "watchlist":
-        if score is None or not 60 <= score <= 67:
-            raise LLMValidationError(
-                "Heavy model returned watchlist with final_score outside 60-67.",
-                raw_response=raw_response,
-            )
-        return
-    if score is not None and score >= 60:
-        raise LLMValidationError(
-            "Heavy model returned no_trade with final_score 60 or higher.",
-            raw_response=raw_response,
-        )
 
 
 def _build_corrective_prompt(
@@ -664,6 +684,7 @@ def _contract_matches(contract: ContractScoreResult, chosen_contract: ChosenCont
 def _llm_blocked_decision(error: str) -> StructuredDecision:
     return StructuredDecision(
         action="no_trade",
+        confidence_band="no_trade",
         reasoning=(
             "I could not run the final Opus decision step because the OpenRouter key is "
             "missing or invalid. Update the OpenRouter key in Telegram settings and rerun "

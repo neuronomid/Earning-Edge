@@ -43,6 +43,11 @@ class Settings(BaseSettings):
     finviz_timeout_ms: int = 30000
     finviz_query_cache_ttl_seconds: int = 600
     finnhub_api_key: str = Field(default="")
+    finnhub_news_lookback_days: int = 120
+    sec_edgar_user_agent: str = "Earning-Edge/1.0 (contact: ops@example.com)"
+
+    news_brief_schema_version: str = "v3"
+    news_prompt_version: str = "v3"
 
     @property
     def database_url(self) -> str:

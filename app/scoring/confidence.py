@@ -17,17 +17,15 @@ _MAX_MARKET: int = 15
 _MAX_OPTIONS: int = 20
 _MAX_CROSS_SOURCE: int = 10
 _MAX_CALCULATION: int = 10
-_MAX_NEWS: int = 10
 
-# Importance weights — must sum to 1.0.
-# Higher weight = larger share of the 0-100 final score.
+# Importance weights — sum to 0.97 after removing the 0.03 news weight.
+# Not renormalized: max raw confidence is 97 by design (see PLAN_News §8.2).
 _W_EARNINGS: float = 0.25      # wrong date → wrong trade
 _W_OPTIONS: float = 0.22       # can't select contract without chain
 _W_MARKET: float = 0.20        # price drives all sizing/breakeven math
 _W_IDENTITY: float = 0.13      # fundamental but rarely fails
 _W_CROSS_SOURCE: float = 0.10  # data conflicts affect reliability
 _W_CALCULATION: float = 0.07   # errors degrade output quality
-_W_NEWS: float = 0.03          # useful catalyst signal but optional
 
 
 def compute_data_confidence(
@@ -46,7 +44,6 @@ def compute_data_confidence(
     market_score = _market_score(candidate, blockers)
     options_score = _options_data_score(candidate, selected_contract, notes)
     cross_source_score = _cross_source_score(candidate, notes)
-    news_score = _news_score(candidate, notes)
     calculation_score = _calculation_score(candidate, notes)
 
     # --- normalize each component to [0, 1] then apply weight ---
@@ -56,7 +53,6 @@ def compute_data_confidence(
         + (market_score / _MAX_MARKET) * _W_MARKET
         + (options_score / _MAX_OPTIONS) * _W_OPTIONS
         + (cross_source_score / _MAX_CROSS_SOURCE) * _W_CROSS_SOURCE
-        + (news_score / _MAX_NEWS) * _W_NEWS
         + (calculation_score / _MAX_CALCULATION) * _W_CALCULATION
     )
 
@@ -169,18 +165,6 @@ def _cross_source_score(candidate: CandidateContext, notes: list[str]) -> int:
     if moderate:
         return 6
     return 8
-
-
-def _news_score(candidate: CandidateContext, notes: list[str]) -> int:
-    confidence = candidate.news_brief.news_confidence
-    if confidence >= 70:
-        return 10
-    if confidence >= 55:
-        return 8
-    if confidence >= 40:
-        return 6
-    notes.append("News coverage was thin, so catalyst confidence is reduced.")
-    return 4
 
 
 def _calculation_score(candidate: CandidateContext, notes: list[str]) -> int:

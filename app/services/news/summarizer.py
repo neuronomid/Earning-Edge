@@ -77,35 +77,79 @@ class NewsSummarizer:
             ensure_ascii=True,
         )
         company_label = company_name.strip() if company_name else ticker.strip().upper()
-        text = await self.router.summarize(
-            api_key=api_key.strip(),
-            system=_system_prompt(),
-            user=(
-                f"TICKER: {ticker.strip().upper()}\n"
-                f"COMPANY: {company_label}\n"
-                f"RESPONSE_SCHEMA: {schema_json}\n"
-                f"ARTICLES_JSON: {article_payload}"
-            ),
-            max_tokens=1200,
-            temperature=0.2,
-        )
-
-        payload = _parse_json_payload(text)
         try:
+            text = await self.router.summarize(
+                api_key=api_key.strip(),
+                system=_system_prompt(),
+                user=(
+                    f"TICKER: {ticker.strip().upper()}\n"
+                    f"COMPANY: {company_label}\n"
+                    f"RESPONSE_SCHEMA: {schema_json}\n"
+                    f"ARTICLES_JSON: {article_payload}"
+                ),
+                max_tokens=1200,
+                temperature=0,
+            )
+        except Exception as exc:
+            self.logger.warning(
+                "gemini_brief_failed",
+                ticker=ticker.strip().upper(),
+                error=str(exc),
+            )
+            return _failure_brief()
+
+        try:
+            payload = _parse_json_payload(text)
             return NewsBrief.model_validate(payload)
-        except ValidationError as exc:
-            raise NewsSummaryValidationError(
-                f"Lightweight model returned an invalid NewsBrief: {exc}"
-            ) from exc
+        except (ValidationError, NewsSummaryValidationError) as exc:
+            self.logger.warning(
+                "gemini_brief_invalid",
+                ticker=ticker.strip().upper(),
+                error=str(exc),
+            )
+            return _failure_brief()
+
+
+def _failure_brief() -> NewsBrief:
+    return NewsBrief(
+        summary="",
+        key_facts=[],
+        quoted_statements=[],
+        named_actions=[],
+        neutral_contextual_evidence=[],
+        key_uncertainty="news service unavailable",
+    )
 
 
 def _system_prompt() -> str:
     return (
-        "You summarize recent company and sector news for an earnings options workflow. "
-        "Return JSON only. Be concrete, concise, and evidence-based. "
-        "Use short bullet-style strings inside the evidence arrays. "
-        "Keep News confidence as an integer from 0 to 100 based on article quality, "
-        "recency, and agreement across sources."
+        "You are a factual extractor for an earnings options workflow. "
+        "Read the supplied articles and return JSON ONLY matching the response "
+        "schema. Do not produce directional opinions or trade advice — your job is "
+        "to preserve facts faithfully so a downstream analyst can interpret them.\n"
+        "\n"
+        "Required behavior:\n"
+        "- Preserve every quantitative figure verbatim: guidance ranges, EPS "
+        "  estimates, revenue numbers, percentage changes, dollar amounts.\n"
+        "- Quote executives and analysts directly when their words appear; attach "
+        "  the speaker's name and role.\n"
+        "- Name every analyst with their action (upgrade, downgrade, target change) "
+        "  and the new target where stated.\n"
+        "- Include all dates of upcoming events (earnings, investor days, deal "
+        "  closings, regulatory deadlines).\n"
+        "- Capture M&A specifics (parties, price, structure) and regulatory actions "
+        "  (agency, charge, status) in full.\n"
+        "- Use `summary` for a neutral paragraph-length overview that scales with "
+        "  substance. Use `key_facts` for the unbounded list of preserved facts. "
+        "  Use `quoted_statements` for verbatim quotes with attribution. Use "
+        "  `named_actions` for analyst/regulatory/M&A actions with full detail. "
+        "  Use `neutral_contextual_evidence` for sector/macro context that does "
+        "  not name a specific action. Use `key_uncertainty` for factual gaps.\n"
+        "\n"
+        "Completeness check (mandatory before returning): re-scan every article "
+        "and verify that no quantitative figure, quoted statement, or named "
+        "action was summarized away. If anything was dropped, add it back to "
+        "`key_facts`, `quoted_statements`, or `named_actions` before responding."
     )
 
 

@@ -24,15 +24,6 @@ def collect_soft_penalties(
 ) -> tuple[SoftPenalty, ...]:
     penalties: list[SoftPenalty] = []
 
-    if candidate.news_brief.bullish_evidence and candidate.news_brief.bearish_evidence:
-        penalties.append(
-            SoftPenalty(
-                "mixed_news",
-                "News flow was mixed rather than one-way.",
-                -8 if candidate.news_brief.news_confidence < 60 else -5,
-            )
-        )
-
     sector_returns = candidate.market_snapshot.sector_returns
     if sector_returns is not None and sector_returns.five_day is not None:
         aligned = sector_returns.five_day

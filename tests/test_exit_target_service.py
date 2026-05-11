@@ -39,11 +39,8 @@ def _context(*, current_price: str, expected_move_percent: str | None = "0.08") 
             sources=("fixture",),
         ),
         news_brief=NewsBrief(
-            bullish_evidence=[],
-            bearish_evidence=[],
             neutral_contextual_evidence=[],
             key_uncertainty="None",
-            news_confidence=70,
         ),
         option_chain=(),
         expected_move_percent=None

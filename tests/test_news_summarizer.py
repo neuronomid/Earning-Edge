@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 import httpx
@@ -7,10 +8,29 @@ import pytest
 import respx
 
 from app.llm import LLMRouter
-from app.services.news.summarizer import NewsSummarizer, NewsSummaryValidationError
+from app.services.news.summarizer import NewsSummarizer
 from app.services.news.types import NewsArticle
 
 pytestmark = pytest.mark.asyncio
+
+
+@dataclass
+class RecordingRouter:
+    response_text: str
+    captured_temperature: float | None = None
+
+    async def summarize(
+        self,
+        *,
+        api_key: str,
+        system: str,
+        user: str,
+        max_tokens: int = 1024,
+        temperature: float = 0.3,
+    ) -> str:
+        del api_key, system, user, max_tokens
+        self.captured_temperature = temperature
+        return self.response_text
 
 
 async def test_news_summarizer_parses_valid_openrouter_response() -> None:
@@ -28,11 +48,12 @@ async def test_news_summarizer_parses_valid_openrouter_response() -> None:
                                 "content": """
 ```json
 {
-  "bullish_evidence": ["Data center backlog improved"],
-  "bearish_evidence": ["Margins still need to prove out"],
   "neutral_contextual_evidence": ["Sector demand remains constructive"],
   "key_uncertainty": "Guidance wording could still move the stock sharply.",
-  "news_confidence": 74
+  "summary": "Data center backlog improved; margins still need to prove out.",
+  "key_facts": ["Backlog up double digits quarter-over-quarter."],
+  "quoted_statements": [],
+  "named_actions": []
 }
 ```"""
                             }
@@ -49,12 +70,14 @@ async def test_news_summarizer_parses_valid_openrouter_response() -> None:
                 api_key="test-openrouter-key",
             )
 
-    assert brief.bullish_evidence == ["Data center backlog improved"]
-    assert brief.bearish_evidence == ["Margins still need to prove out"]
-    assert brief.news_confidence == 74
+    assert brief.summary == "Data center backlog improved; margins still need to prove out."
+    assert brief.key_facts == ["Backlog up double digits quarter-over-quarter."]
+    assert brief.key_uncertainty == "Guidance wording could still move the stock sharply."
 
 
-async def test_news_summarizer_rejects_schema_invalid_openrouter_response() -> None:
+async def test_news_summarizer_returns_failure_brief_on_schema_invalid_response() -> None:
+    """When Gemini returns a payload missing required fields, return the explicit
+    failure brief instead of raising. Opus then sees the unavailable marker."""
     async with httpx.AsyncClient() as client:
         router = LLMRouter(client=client)
         summarizer = NewsSummarizer(router=router)
@@ -66,11 +89,7 @@ async def test_news_summarizer_rejects_schema_invalid_openrouter_response() -> N
                     "choices": [
                         {
                             "message": {
-                                "content": (
-                                    '{"bullish_evidence":["Good backlog"],'
-                                    '"bearish_evidence":[],"neutral_contextual_evidence":[],'
-                                    '"key_uncertainty":"Need cleaner guide"}'
-                                )
+                                "content": '{"unexpected_field":"value"}'
                             }
                         }
                     ],
@@ -78,13 +97,36 @@ async def test_news_summarizer_rejects_schema_invalid_openrouter_response() -> N
                 },
             )
 
-            with pytest.raises(NewsSummaryValidationError, match="invalid NewsBrief"):
-                await summarizer.summarize(
-                    ticker="AMD",
-                    company_name="Advanced Micro Devices",
-                    articles=(_sample_article(),),
-                    api_key="test-openrouter-key",
-                )
+            brief = await summarizer.summarize(
+                ticker="AMD",
+                company_name="Advanced Micro Devices",
+                articles=(_sample_article(),),
+                api_key="test-openrouter-key",
+            )
+
+    assert brief.key_uncertainty == "news service unavailable"
+    assert brief.summary == ""
+
+
+async def test_news_summarizer_uses_zero_temperature() -> None:
+    router = RecordingRouter(
+        response_text=(
+            '{"neutral_contextual_evidence":[],'
+            '"key_uncertainty":"Need guidance.",'
+            '"summary":"Supportive note.","key_facts":[],'
+            '"quoted_statements":[],"named_actions":[]}'
+        )
+    )
+    summarizer = NewsSummarizer(router=router)
+
+    await summarizer.summarize(
+        ticker="AMD",
+        company_name="Advanced Micro Devices",
+        articles=(_sample_article(),),
+        api_key="test-openrouter-key",
+    )
+
+    assert router.captured_temperature == 0
 
 
 def _sample_article() -> NewsArticle:

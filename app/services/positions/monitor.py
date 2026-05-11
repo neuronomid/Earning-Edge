@@ -87,25 +87,22 @@ class PositionMonitor:
         if not group:
             return
 
-        # Extract the first user from the group (all positions in group have same ticker)
-        user = group[0][2]
+        # Close expired positions first so they don't depend on a live quote being
+        # available (yfinance/alpaca may return nothing for an expired symbol).
+        live_group: list[tuple[OpenPosition, Recommendation, User]] = []
+        for position, recommendation, user in group:
+            if today > recommendation.expiry:
+                await self._close_expired_position(session, position, recommendation, user)
+            else:
+                live_group.append((position, recommendation, user))
 
-        # Build list of OCC symbols we need
-        symbols = [
-            build_occ_symbol(
-                rec.ticker,
-                expiry=rec.expiry,
-                option_type=rec.option_type,
-                strike=rec.strike,
-            )
-            for _, rec, _ in group
-        ]
+        if not live_group:
+            return
 
-        # Fetch all positions in this group with one Alpaca call
-        quote_map = await self._fetch_quotes_for_group(ticker, symbols, user, today=today)
+        user = live_group[0][2]
+        quote_map = await self._fetch_quotes_for_group(ticker, live_group, user, today=today)
 
-        # Process each position
-        for position, recommendation, _ in group:
+        for position, recommendation, _ in live_group:
             occ_symbol = build_occ_symbol(
                 recommendation.ticker,
                 expiry=recommendation.expiry,
@@ -118,46 +115,62 @@ class PositionMonitor:
 
             await self._poll_position(session, position, recommendation, user, quote, today=today, now=now)
 
+    async def _close_expired_position(
+        self,
+        session,
+        position: OpenPosition,
+        recommendation: Recommendation,
+        user: User,
+    ) -> None:
+        position.status = "closed_expired"
+        position.close_at = datetime.now(UTC)
+        from app.services.positions.account import apply_pnl_to_account
+
+        apply_pnl_to_account(user, position, recommendation)
+        await session.flush()
+
     async def _fetch_quotes_for_group(
         self,
         ticker: str,
-        symbols: list[str],
+        group: list[tuple[OpenPosition, Recommendation, User]],
         user: User,
         *,
         today: date,
     ) -> dict[str, PremiumQuote]:
-        """Fetch quotes for multiple OCC symbols in one call. Returns map of symbol -> quote."""
-        result: dict[str, PremiumQuote] = {}
-
-        # Try Alpaca first
+        """Fetch quotes for each position in the group. Returns OCC symbol -> quote."""
         api_key = decrypt_or_none(user.alpaca_api_key_encrypted)
         api_secret = decrypt_or_none(user.alpaca_api_secret_encrypted)
         if api_key and api_secret:
             alpaca_result = await self._fetch_alpaca_group(
-                ticker, symbols, api_key, api_secret, today=today
+                ticker, group, api_key, api_secret, today=today
             )
             if alpaca_result:
                 return alpaca_result
 
-        # Fallback to yfinance
-        yfinance_result = await self._fetch_yfinance_group(ticker, symbols, today=today)
-        return yfinance_result
+        return await self._fetch_yfinance_group(ticker, group, today=today)
 
     async def _fetch_alpaca_group(
         self,
         ticker: str,
-        symbols: list[str],
+        group: list[tuple[OpenPosition, Recommendation, User]],
         api_key: str,
         api_secret: str,
         *,
         today: date,
     ) -> dict[str, PremiumQuote]:
-        """Fetch Alpaca quotes for a list of OCC symbols."""
+        """Fetch Alpaca quotes for the positions in the group."""
+        symbols = [
+            build_occ_symbol(
+                rec.ticker,
+                expiry=rec.expiry,
+                option_type=rec.option_type,
+                strike=rec.strike,
+            )
+            for _, rec, _ in group
+        ]
+        max_expiry = max(rec.expiry for _, rec, _ in group)
+        days_to_expiry = max((max_expiry - today).days, 1)
         try:
-            # Estimate expiry window from symbols (all same ticker, so pick any)
-            # Alpaca needs an expiry_window_days to scope the query
-            # Assume the most distant expiry is ~60 days out
-            days_to_expiry = 60
             contracts = await self.alpaca.fetch_chain(
                 ticker,
                 api_key=api_key,
@@ -184,32 +197,37 @@ class PositionMonitor:
     async def _fetch_yfinance_group(
         self,
         ticker: str,
-        symbols: list[str],
+        group: list[tuple[OpenPosition, Recommendation, User]],
         *,
         today: date,
     ) -> dict[str, PremiumQuote]:
-        """Fetch yfinance quotes. Returns best-effort map (may be partial)."""
-        # yfinance doesn't support multi-symbol fetch, so we fetch the full chain once per ticker
-        try:
-            premium = await self.yfinance.fetch_premium(
-                ticker,
-                strike=None,  # Will fetch all
-                expiry=None,
-                option_type=None,
-                today=today,
+        """Fetch yfinance quotes per position. yfinance has no batch chain API."""
+        result: dict[str, PremiumQuote] = {}
+        for _, rec, _ in group:
+            occ_symbol = build_occ_symbol(
+                rec.ticker,
+                expiry=rec.expiry,
+                option_type=rec.option_type,
+                strike=rec.strike,
             )
-        except RuntimeError as exc:
-            self.logger.warning(
-                "position_yfinance_group_failed",
-                ticker=ticker,
-                error=str(exc),
-            )
-            return {}
-
-        # yfinance doesn't return individual symbols, so we return a dummy result
-        # This is a limitation — yfinance should ideally fetch the chain and we match symbols
-        # For now, treat as not found
-        return {}
+            try:
+                premium = await self.yfinance.fetch_premium(
+                    ticker,
+                    strike=rec.strike,
+                    expiry=rec.expiry,
+                    option_type=rec.option_type,
+                    today=today,
+                )
+            except RuntimeError as exc:
+                self.logger.warning(
+                    "position_yfinance_group_failed",
+                    ticker=ticker,
+                    error=str(exc),
+                )
+                continue
+            if premium is not None:
+                result[occ_symbol] = PremiumQuote(premium=premium, source="yfinance")
+        return result
 
     async def _poll_position(
         self,
@@ -222,16 +240,6 @@ class PositionMonitor:
         today: date,
         now: datetime,
     ) -> None:
-        # Check expiry
-        if today > recommendation.expiry:
-            position.status = "closed_expired"
-            position.close_at = datetime.now(UTC)
-            from app.services.positions.account import apply_pnl_to_account
-
-            apply_pnl_to_account(user, position, recommendation)
-            await session.flush()
-            return
-
         position.last_premium = quote.premium
         position.last_polled_at = datetime.now(UTC)
         position.last_data_source = quote.source

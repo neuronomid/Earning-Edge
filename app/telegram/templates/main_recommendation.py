@@ -83,6 +83,15 @@ def render_main_recommendation(
             f"<b>Earnings date:</b> {_earnings_date(recommendation).isoformat()}",
             f"<b>Confidence:</b> {recommendation.confidence_score}/100",
             f"<b>Risk level:</b> {recommendation.risk_level}",
+        ]
+    )
+    news_coverage = getattr(recommendation, "news_coverage", None)
+    if news_coverage in {"none", "sparse"}:
+        lines.append(f"📰 <b>News:</b> {news_coverage}")
+    if getattr(recommendation, "stale_news", False):
+        lines.append("⚠️ <b>Stale news</b> (most recent article > 14 days old)")
+    lines.extend(
+        [
             "",
             f"{_action_emoji(watchlist_only)} <b>Action:</b>",
             _action_text(watchlist_only),

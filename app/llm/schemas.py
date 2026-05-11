@@ -20,6 +20,9 @@ RiskProfile = Literal["Conservative", "Balanced", "Aggressive"]
 DecisionAction = Literal["recommend", "no_trade", "watchlist"]
 OptionType = Literal["call", "put"]
 PositionSide = Literal["long", "short"]
+DirectionTier = Literal["bullish", "neutral", "bearish"]
+DirectionStrength = Literal["weak", "moderate", "strong"]
+ConfidenceBand = Literal["strong", "standard", "watchlist", "no_trade"]
 
 
 class _Frozen(BaseModel):
@@ -57,6 +60,9 @@ class CandidateBundle(_Frozen):
     sector_comparison: dict[str, float] = Field(default_factory=dict)
     market_comparison: dict[str, float] = Field(default_factory=dict)
     news_summary: str = ""
+    structural_direction_tier: DirectionTier | None = None
+    news_coverage: Literal["none", "sparse", "adequate", "rich"] = "adequate"
+    stale_news: bool = False
     option_chain_candidates: list[OptionChainCandidate] = Field(default_factory=list)
     expected_move: Decimal | None = None
     previous_earnings_move: Decimal | None = None
@@ -83,12 +89,22 @@ class ChosenContract(_Frozen):
 
 
 class StructuredDecision(_Frozen):
-    """Heavy-model response (PRD §7.4 final decision authority)."""
+    """Heavy-model response (PRD §7.4 final decision authority).
+
+    The LLM provides qualitative outputs only — `action`, `confidence_band`,
+    `direction_tier`, `direction_strength`, and prose. Numeric fields
+    (`contract_score`, `final_score`) are populated deterministically by the
+    decide-step validator from structural scoring, not by the model. This
+    keeps the user-visible confidence bit-deterministic across runs.
+    """
 
     action: DecisionAction
     chosen_ticker: str | None = None
     chosen_contract: ChosenContract | None = None
-    direction_score: int | None = Field(default=None, ge=0, le=100)
+    direction_tier: DirectionTier | None = None
+    direction_strength: DirectionStrength | None = None
+    confidence_band: ConfidenceBand | None = None
+    rationale: str = ""
     contract_score: int | None = Field(default=None, ge=0, le=100)
     final_score: int | None = Field(default=None, ge=0, le=100)
     reasoning: str

@@ -68,9 +68,7 @@ async def test_llm_decision_step_accepts_valid_contract_from_visible_candidates(
                     expiry=date(2026, 5, 15),
                     rationale="Slightly cheaper while still close to the current price.",
                 ),
-                direction_score=73,
-                contract_score=71,
-                final_score=72,
+                confidence_band="standard",
                 reasoning="MCD had the clearest bearish setup with a liquid put chain.",
                 key_evidence=["Relative strength rolled over.", "Put volume stayed active."],
                 key_concerns=["Earnings reaction could reverse quickly."],
@@ -92,6 +90,9 @@ async def test_llm_decision_step_accepts_valid_contract_from_visible_candidates(
     matched = resolve_selected_contract(candidate, result.decision.chosen_contract)
     assert matched is not None
     assert matched.contract.strike == Decimal("265")
+    # final_score is deterministic — combine_scores(direction=74, contract=74) = 74
+    assert result.decision.final_score == 74
+    assert result.decision.contract_score == 74
 
 
 async def test_llm_decision_step_falls_back_when_model_selects_unknown_contract() -> None:
@@ -109,9 +110,7 @@ async def test_llm_decision_step_falls_back_when_model_selects_unknown_contract(
                     expiry=date(2026, 5, 15),
                     rationale="Not actually in the visible chain.",
                 ),
-                direction_score=73,
-                contract_score=71,
-                final_score=72,
+                confidence_band="standard",
                 reasoning="This should fail validation.",
                 key_evidence=["Relative strength rolled over.", "Put volume stayed active."],
                 key_concerns=["Earnings reaction could reverse quickly."],
@@ -173,9 +172,7 @@ async def test_llm_decision_step_falls_back_when_model_selects_non_viable_visibl
                     expiry=date(2026, 5, 15),
                     rationale="Still visible in the chain, but it was rejected by scoring.",
                 ),
-                direction_score=73,
-                contract_score=71,
-                final_score=72,
+                confidence_band="standard",
                 reasoning="This should fail validation.",
                 key_evidence=["Relative strength rolled over."],
                 key_concerns=["Spread is too wide."],
@@ -195,7 +192,9 @@ async def test_llm_decision_step_falls_back_when_model_selects_non_viable_visibl
     assert result.decision.chosen_contract.strike == Decimal("270")
 
 
-async def test_llm_decision_step_falls_back_when_model_escalates_watchlist_to_recommend() -> None:
+async def test_llm_decision_step_downgrades_action_when_model_escalates_watchlist_to_recommend(
+) -> None:
+    # Structural: direction=74, contract=54 → combine = (74*0.45 + 54*0.55) ≈ 63 → watchlist
     candidate = _candidate(
         "MCD",
         chosen_index=0,
@@ -216,10 +215,8 @@ async def test_llm_decision_step_falls_back_when_model_escalates_watchlist_to_re
                     expiry=date(2026, 5, 15),
                     rationale="The model tried to promote a weaker setup.",
                 ),
-                direction_score=80,
-                contract_score=80,
-                final_score=80,
-                reasoning="This should fail because the scorer only produced a watchlist.",
+                confidence_band="standard",
+                reasoning="The scorer only allows watchlist for this contract.",
                 key_evidence=["Relative strength rolled over."],
                 key_concerns=["Contract score stayed average."],
                 watchlist_tickers=[],
@@ -233,12 +230,21 @@ async def test_llm_decision_step_falls_back_when_model_escalates_watchlist_to_re
         openrouter_api_key="sk-or-test",
     )
 
-    assert result.trace.engine == "heuristic_fallback"
+    assert result.trace.engine == "llm"
     assert result.decision.action == "watchlist"
+    assert result.decision.confidence_band == "watchlist"
+    assert result.decision.chosen_ticker == "MCD"
+    assert result.decision.chosen_contract is not None
+    assert result.decision.chosen_contract.strike == Decimal("270")
+    # final_score is structural: combine_scores(74, 54) = 63
+    assert result.decision.final_score == 63
 
 
 async def test_llm_decision_step_accepts_conservative_watchlist_on_recommend_quality_setup(
 ) -> None:
+    # Structural says recommend (72), but LLM picks watchlist for news reasons.
+    # The conservative call wins on action; the displayed final_score remains
+    # the deterministic structural number.
     candidate = _candidate(
         "MCD",
         chosen_index=0,
@@ -259,9 +265,8 @@ async def test_llm_decision_step_accepts_conservative_watchlist_on_recommend_qua
                     expiry=date(2026, 5, 15),
                     rationale="Catalyst quality is too thin for a full recommendation.",
                 ),
-                direction_score=68,
-                contract_score=61,
-                final_score=64,
+                direction_tier="bullish",
+                confidence_band="watchlist",
                 reasoning="The setup is structurally sound, but conviction is not high enough.",
                 key_evidence=["Relative strength rolled over."],
                 key_concerns=["Catalyst coverage is sparse."],
@@ -278,9 +283,11 @@ async def test_llm_decision_step_accepts_conservative_watchlist_on_recommend_qua
 
     assert result.trace.engine == "llm"
     assert result.decision.action == "watchlist"
-    assert result.decision.direction_score == 74
+    assert result.decision.confidence_band == "watchlist"
+    assert result.decision.direction_tier == "bullish"
+    # Structural: combine_scores(74, 70) = 72
     assert result.decision.contract_score == 70
-    assert result.decision.final_score == 64
+    assert result.decision.final_score == 72
 
 
 async def test_default_decision_step_uses_heuristic_in_tests_and_llm_elsewhere() -> None:
@@ -461,11 +468,10 @@ def _news_bundle(ticker: str) -> NewsBundle:
         search_results=(),
         articles=(),
         brief=NewsBrief(
-            bullish_evidence=[],
-            bearish_evidence=[f"{ticker} saw softer traffic commentary."],
             neutral_contextual_evidence=["Staples peers held up better."],
             key_uncertainty="Guidance can still reset the setup.",
-            news_confidence=68,
+            summary=f"{ticker} saw softer traffic commentary going into earnings.",
+            key_facts=[f"{ticker} traffic ran below internal plan over the past month."],
         ),
         used_ir_fallback=False,
         used_llm_summary=False,

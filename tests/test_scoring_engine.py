@@ -27,19 +27,19 @@ from app.services.news.types import NewsBrief
             None,
             82,
             "bullish",
-            98,
+            84,
         ),
         (
             "bearish",
             80,
             "bearish",
-            89,
+            76,
         ),
         (
             "mixed",
             72,
             "neutral",
-            54,
+            49,
         ),
     ],
 )
@@ -264,14 +264,13 @@ def test_soft_penalty_stacking_accumulates() -> None:
     penalties = collect_soft_penalties(candidate, user, contract, direction)
 
     assert [penalty.code for penalty in penalties] == [
-        "mixed_news",
         "weak_sector_trend",
         "light_volume",
         "moderate_spread",
         "elevated_iv",
         "inconsistent_history",
     ]
-    assert sum(penalty.score_delta for penalty in penalties) == -41
+    assert sum(penalty.score_delta for penalty in penalties) == -33
 
 
 def test_confidence_override_blocks_recommendation_despite_high_score() -> None:
@@ -280,8 +279,8 @@ def test_confidence_override_blocks_recommendation_despite_high_score() -> None:
 
     result = score_candidate(candidate, user)
 
-    assert result.final_score == 98
-    assert result.confidence.score == 100
+    assert result.final_score == 92
+    assert result.confidence.score == 97
     assert result.action == "no_trade"
     assert result.confidence.blockers == ("OpenRouter API key is unavailable or invalid.",)
 
@@ -328,7 +327,7 @@ def test_data_confidence_logs_source_conflict_without_forcing_blocker() -> None:
         require_selected_contract=True,
     )
 
-    assert result.score == 96
+    assert result.score == 93
     assert result.blockers == ()
     assert any("market_cap" in note for note in result.notes)
 
@@ -513,10 +512,9 @@ def _market_snapshot(
 
 
 def _news_brief(*, bullish: int, bearish: int, confidence: int) -> NewsBrief:
+    del bullish, bearish, confidence
     return NewsBrief(
-        bullish_evidence=[f"bullish-{index}" for index in range(bullish)],
-        bearish_evidence=[f"bearish-{index}" for index in range(bearish)],
         neutral_contextual_evidence=["sector context"],
         key_uncertainty="Guidance still matters.",
-        news_confidence=confidence,
+        summary="Fixture brief for scoring tests.",
     )

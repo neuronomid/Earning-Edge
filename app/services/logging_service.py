@@ -15,6 +15,7 @@ from app.db.models.recommendation import Recommendation
 from app.db.models.user import User
 from app.db.models.workflow_run import WorkflowRun
 from app.pipeline.types import PipelineCandidate, PipelineOutcome
+from app.scoring.direction import structural_direction_tier
 from app.scoring.types import ContractScoreResult
 from app.services.results_export_service import ResultsExportService
 
@@ -73,6 +74,7 @@ class LoggingService:
         run.recommendation_card_json = artifacts.recommendation_card
         run.telegram_message_text = artifacts.telegram_message
         self._archive(run.id, artifacts)
+        self._log_tier_divergence(run_id=run.id, outcome=outcome)
         self._export_results(run=run, user=user, outcome=outcome, recommendation=recommendation)
         self.logger.info(
             "run_artifacts_captured",
@@ -131,9 +133,11 @@ class LoggingService:
         confidence_score = (
             recommendation.confidence_score
             if recommendation is not None
-            else outcome.decision.final_score
-            if outcome.decision.final_score is not None
-            else 0 if top_candidate is None else top_candidate.evaluation.final_score
+            else (
+                selected.evaluation.final_score
+                if selected is not None
+                else 0 if top_candidate is None else top_candidate.evaluation.final_score
+            )
         )
         data_confidence = (
             selected.evaluation.confidence.score
@@ -276,6 +280,92 @@ class LoggingService:
             )
         except OSError as exc:
             self.logger.warning("run_artifact_archive_failed", run_id=str(run_id), error=str(exc))
+
+    def write_news_brief(
+        self,
+        *,
+        run_id: UUID,
+        ticker: str,
+        brief: dict[str, Any],
+    ) -> None:
+        if self.archive_root is None:
+            return
+        run_dir = self.archive_root / str(run_id) / "news_briefs"
+        try:
+            run_dir.mkdir(parents=True, exist_ok=True)
+            _write_json(run_dir / f"{ticker.upper()}.json", brief)
+        except OSError as exc:
+            self.logger.warning(
+                "news_brief_archive_failed", run_id=str(run_id), ticker=ticker, error=str(exc)
+            )
+
+    def write_scoring_snapshot(
+        self,
+        *,
+        run_id: UUID,
+        ticker: str,
+        snapshot: dict[str, Any],
+    ) -> None:
+        if self.archive_root is None:
+            return
+        run_dir = self.archive_root / str(run_id) / "scoring_snapshots"
+        try:
+            run_dir.mkdir(parents=True, exist_ok=True)
+            _write_json(run_dir / f"{ticker.upper()}.json", snapshot)
+        except OSError as exc:
+            self.logger.warning(
+                "scoring_snapshot_archive_failed",
+                run_id=str(run_id),
+                ticker=ticker,
+                error=str(exc),
+            )
+
+    def append_divergence(
+        self,
+        *,
+        run_id: UUID,
+        ticker: str,
+        structural_tier: str,
+        opus_tier: str,
+        key_facts: list[str],
+        rationale: str,
+    ) -> None:
+        if self.archive_root is None:
+            return
+        run_dir = self.archive_root / str(run_id)
+        line = {
+            "run_id": str(run_id),
+            "ticker": ticker.upper(),
+            "structural_tier": structural_tier,
+            "opus_tier": opus_tier,
+            "key_facts": key_facts,
+            "rationale": rationale,
+        }
+        try:
+            run_dir.mkdir(parents=True, exist_ok=True)
+            with (run_dir / "divergence.jsonl").open("a", encoding="utf-8") as f:
+                f.write(json.dumps(line) + "\n")
+        except OSError as exc:
+            self.logger.warning(
+                "divergence_log_failed", run_id=str(run_id), ticker=ticker, error=str(exc)
+            )
+
+    def _log_tier_divergence(self, *, run_id: UUID, outcome: PipelineOutcome) -> None:
+        selected = outcome.selected
+        decision = outcome.decision
+        if selected is None or decision.direction_tier is None:
+            return
+        structural_tier = structural_direction_tier(selected.evaluation.direction.score)
+        if structural_tier == decision.direction_tier:
+            return
+        self.append_divergence(
+            run_id=run_id,
+            ticker=selected.record.ticker,
+            structural_tier=structural_tier,
+            opus_tier=decision.direction_tier,
+            key_facts=list(selected.news_bundle.brief.key_facts)[:8],
+            rationale=decision.rationale,
+        )
 
     def _export_results(
         self,

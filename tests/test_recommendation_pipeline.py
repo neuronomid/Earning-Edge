@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from types import SimpleNamespace
@@ -85,14 +85,17 @@ class FakeMarketDataStep:
 @dataclass(slots=True)
 class FakeNewsStep:
     bundles: dict[str, NewsBundle]
+    calls: list[str] = field(default_factory=list)
 
     async def execute(
         self,
         record: CandidateRecord,
         *,
         openrouter_api_key: str,
+        reference_dt: datetime | None = None,
     ) -> NewsBundle:
-        del openrouter_api_key
+        del openrouter_api_key, reference_dt
+        self.calls.append(record.ticker)
         return self.bundles[record.ticker]
 
 
@@ -117,7 +120,7 @@ class ScoringPlan:
     action: str
     final_score: int
     direction: str
-    direction_score: int
+    direction_score: int | None = None
     contract_score: int | None = None
     confidence_score: int = 88
     reasoning: tuple[str, ...] = ("Momentum and contract quality lined up.",)
@@ -180,7 +183,7 @@ class FakeScoringStep:
             direction=DirectionResult(
                 classification=plan.direction,  # type: ignore[arg-type]
                 bias=Decimal("0.70"),
-                score=plan.direction_score,
+                score=plan.direction_score if plan.direction_score is not None else plan.final_score,
                 factors=(),
                 reasons=plan.reasoning,
             ),
@@ -292,7 +295,10 @@ async def _make_run(
 async def _contract_count(session: AsyncSession, run_id) -> int:
     candidates = await CandidateRepository(session).list_for_run(run_id)
     repo = OptionContractRepository(session)
-    return sum(len(await repo.list_for_candidate(candidate.id)) for candidate in candidates)
+    total = 0
+    for candidate in candidates:
+        total += len(await repo.list_for_candidate(candidate.id))
+    return total
 
 
 def _batch() -> CandidateBatch:
@@ -378,11 +384,10 @@ def _bundle(record: CandidateRecord) -> NewsBundle:
         search_results=(),
         articles=(),
         brief=NewsBrief(
-            bullish_evidence=[f"{record.ticker} had supportive setup notes."],
-            bearish_evidence=[],
             neutral_contextual_evidence=["Sector context stayed constructive."],
             key_uncertainty="Guidance tone still matters.",
-            news_confidence=72,
+            summary=f"{record.ticker} had supportive setup notes going into print.",
+            key_facts=[f"{record.ticker} setup remained supportive over the past month."],
         ),
         used_ir_fallback=False,
     )
@@ -433,7 +438,6 @@ async def test_pipeline_persists_recommendation_and_sends_card(
                     action="recommend",
                     final_score=82,
                     direction="bullish",
-                    direction_score=80,
                     contract_score=84,
                     reasoning=("AMD had the strongest momentum and the cleanest contract.",),
                 ),
@@ -441,26 +445,22 @@ async def test_pipeline_persists_recommendation_and_sends_card(
                     action="watchlist",
                     final_score=64,
                     direction="bullish",
-                    direction_score=70,
                     contract_score=66,
                 ),
                 "MSFT": ScoringPlan(
                     action="no_trade",
                     final_score=55,
                     direction="neutral",
-                    direction_score=52,
                 ),
                 "NFLX": ScoringPlan(
                     action="no_trade",
                     final_score=48,
                     direction="bearish",
-                    direction_score=50,
                 ),
                 "JPM": ScoringPlan(
                     action="no_trade",
                     final_score=44,
                     direction="neutral",
-                    direction_score=46,
                 ),
             }
         ),
@@ -521,7 +521,6 @@ async def test_pipeline_watchlist_path_sets_zero_quantity(
                     action="watchlist",
                     final_score=63,
                     direction="bullish",
-                    direction_score=68,
                     contract_score=65,
                 ),
                 "AAPL": ScoringPlan("no_trade", 52, "neutral", 54),
@@ -546,6 +545,39 @@ async def test_pipeline_watchlist_path_sets_zero_quantity(
     assert run.status == "success"
     assert "watching, but not sizing yet" in notifier.calls[1].text
     assert "Watchlist only" in notifier.calls[2].text
+
+
+@pytest.mark.asyncio
+async def test_pipeline_fetches_live_news_only_for_top_finalists(
+    db_session: AsyncSession,
+) -> None:
+    batch = _batch()
+    news_step = FakeNewsStep({record.ticker: _bundle(record) for record in batch.candidates})
+    orchestrator = PipelineOrchestrator(
+        candidate_step=FakeCandidateStep(batch),
+        market_data_step=FakeMarketDataStep(
+            {record.ticker: _snapshot(record) for record in batch.candidates}
+        ),
+        news_step=news_step,
+        options_step=FakeOptionsStep({"AMD": (_long_call("AMD", strike="104"),)}),
+        scoring_step=FakeScoringStep(
+            {
+                "AMD": ScoringPlan("recommend", 82, "bullish", 80, 84),
+                "AAPL": ScoringPlan("watchlist", 64, "bullish", 70, 66),
+                "MSFT": ScoringPlan("watchlist", 62, "bullish", 68, 64),
+                "NFLX": ScoringPlan("watchlist", 60, "bullish", 65, 62),
+                "JPM": ScoringPlan("no_trade", 45, "neutral", 46),
+            }
+        ),
+        sizing_step=FakeSizingStep(),
+        notifier=FakeNotifier(),
+    )
+    user = await _make_user(db_session, telegram_chat_id="92345")
+
+    await orchestrator.evaluate_batch(batch, user)
+
+    assert set(news_step.calls) == {"AMD", "AAPL", "MSFT", "NFLX"}
+    assert "JPM" not in news_step.calls
 
 
 @pytest.mark.asyncio
@@ -641,7 +673,6 @@ async def test_alternative_service_reuses_candidate_universe_and_persists_watchl
                 expiry=date(2026, 5, 16),
                 rationale="AAPL became the strongest remaining setup.",
             ),
-            direction_score=70,
             contract_score=67,
             final_score=64,
             reasoning="AAPL was the best remaining setup, but only at watchlist strength.",
@@ -742,7 +773,6 @@ async def test_alternative_service_second_click_returns_third_best_option(
                 expiry=date(2026, 5, 16),
                 rationale="AAPL was the strongest remaining setup.",
             ),
-            direction_score=70,
             contract_score=67,
             final_score=64,
             reasoning="AAPL was the next best setup.",
@@ -796,7 +826,6 @@ async def test_alternative_service_second_click_returns_third_best_option(
                 expiry=date(2026, 5, 16),
                 rationale="MSFT was the strongest remaining setup after AAPL was removed.",
             ),
-            direction_score=68,
             contract_score=65,
             final_score=62,
             reasoning="MSFT became the third-best setup once AMD and AAPL were excluded.",
