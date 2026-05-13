@@ -7,7 +7,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 
 class SettingsCB(CallbackData, prefix="set"):
-    field: str  # account_size, risk_profile, timezone, broker, strategy, max_contracts, alert_mute_duration
+    field: str  # account_size, risk_profile, timezone, broker, strategy, max_contracts
 
 
 class ApiKeyCB(CallbackData, prefix="key"):
@@ -124,7 +124,22 @@ class AltRecCB(CallbackData, prefix="alt"):
 
 
 class PosCB(CallbackData, prefix="pos"):
-    action: str  # sold, holding, delete, mute_tp, mute_sl, okay_tp, okay_sl
+    action: str  # sold, holding, delete, adjust, mute_tp, mute_sl, okay_tp, okay_sl
+    position_id: str
+
+
+class ValCB(CallbackData, prefix="val"):
+    action: str  # validate, history
+    position_id: str
+
+
+class ValApplyCB(CallbackData, prefix="vap"):
+    action: str  # apply_target, apply_stop, apply_both
+    validation_id: str
+
+
+class PositionAdjustCB(CallbackData, prefix="padj"):
+    action: str  # target, stop, both
     position_id: str
 
 
@@ -151,9 +166,7 @@ def recommendation_keyboard(
         action_row.append(
             InlineKeyboardButton(
                 text="📈 Alternatives",
-                callback_data=AltRecCB(
-                    cursor_rec_id=alternative_cursor_id or rec_id
-                ).pack(),
+                callback_data=AltRecCB(cursor_rec_id=alternative_cursor_id or rec_id).pack(),
             )
         )
     action_row.append(
@@ -178,7 +191,10 @@ def recommendation_keyboard(
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def position_alert_keyboard(position_id: str, alert_type: str | None = None) -> InlineKeyboardMarkup:
+def position_alert_keyboard(
+    position_id: str,
+    alert_type: str | None = None,
+) -> InlineKeyboardMarkup:
     if alert_type in ("tp", "sl"):
         # Price-level alert: show Sold, Mute, Okay buttons
         mute_action = f"mute_{alert_type}"
@@ -224,6 +240,22 @@ def position_list_keyboard(position_id: str) -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
+                    text="Validate now",
+                    callback_data=ValCB(action="validate", position_id=position_id).pack(),
+                ),
+                InlineKeyboardButton(
+                    text="Validation history",
+                    callback_data=ValCB(action="history", position_id=position_id).pack(),
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="Adjust",
+                    callback_data=PosCB(action="adjust", position_id=position_id).pack(),
+                ),
+            ],
+            [
+                InlineKeyboardButton(
                     text="🔒 Close",
                     callback_data=PosCB(action="sold", position_id=position_id).pack(),
                 ),
@@ -231,6 +263,90 @@ def position_list_keyboard(position_id: str) -> InlineKeyboardMarkup:
                     text="🗑 Delete",
                     callback_data=PosCB(action="delete", position_id=position_id).pack(),
                 ),
+            ],
+        ]
+    )
+
+
+def validation_result_keyboard(revalidation) -> InlineKeyboardMarkup | None:
+    proposed = getattr(revalidation, "proposed_adjustment_json", None)
+    if not isinstance(proposed, dict):
+        return None
+
+    has_target = proposed.get("target_option_price") is not None
+    has_stop = proposed.get("stop_loss_option_price") is not None
+    rows: list[list[InlineKeyboardButton]] = []
+    validation_id = str(revalidation.id)
+    if has_target and has_stop:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="Apply TP and SL",
+                    callback_data=ValApplyCB(
+                        action="apply_both",
+                        validation_id=validation_id,
+                    ).pack(),
+                )
             ]
+        )
+    else:
+        row: list[InlineKeyboardButton] = []
+        if has_target:
+            row.append(
+                InlineKeyboardButton(
+                    text="Apply target",
+                    callback_data=ValApplyCB(
+                        action="apply_target",
+                        validation_id=validation_id,
+                    ).pack(),
+                )
+            )
+        if has_stop:
+            row.append(
+                InlineKeyboardButton(
+                    text="Apply stop",
+                    callback_data=ValApplyCB(
+                        action="apply_stop",
+                        validation_id=validation_id,
+                    ).pack(),
+                )
+            )
+        if row:
+            rows.append(row)
+    if not rows:
+        return None
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def position_adjust_keyboard(position_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🟢 Target Price",
+                    callback_data=PositionAdjustCB(
+                        action="target",
+                        position_id=position_id,
+                    ).pack(),
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🛑 Stop Loss",
+                    callback_data=PositionAdjustCB(
+                        action="stop",
+                        position_id=position_id,
+                    ).pack(),
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="⚪️ TP and SL",
+                    callback_data=PositionAdjustCB(
+                        action="both",
+                        position_id=position_id,
+                    ).pack(),
+                )
+            ],
         ]
     )

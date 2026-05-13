@@ -30,6 +30,11 @@ class Settings(BaseSettings):
 
     app_encryption_key: str = Field(default="")
     workflow_run_lock_ttl_seconds: int = 900
+    position_validation_lock_ttl_seconds: int = 300
+    position_validation_auto_cooldown_minutes: int = 30
+    position_validation_auto_daily_cap: int = 20
+    position_validation_shadow_mode: bool = True
+    position_validation_monitor_enabled: bool = True
 
     telegram_bot_token: str = Field(default="")
     telegram_use_webhook: bool = False

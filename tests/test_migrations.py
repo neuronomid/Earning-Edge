@@ -3,11 +3,11 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-from alembic import command
 from alembic.config import Config
 from sqlalchemy import inspect
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from alembic import command
 from app.core.config import get_settings
 from tests.dbutil import postgres_authenticates
 
@@ -18,6 +18,9 @@ EXPECTED_TABLES = {
     "candidates",
     "option_contracts",
     "open_positions",
+    "position_plan_overrides",
+    "position_revalidations",
+    "position_theses",
     "recommendations",
     "feedback_events",
 }

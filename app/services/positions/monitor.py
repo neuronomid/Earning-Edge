@@ -7,13 +7,16 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 
+from app.core.config import Settings, get_settings
 from app.core.logging import get_logger
 from app.db.models.open_position import OpenPosition
 from app.db.models.recommendation import Recommendation
 from app.db.models.user import User
 from app.db.repositories.open_position_repo import OpenPositionRepository
+from app.db.repositories.position_plan_override_repo import PositionPlanOverrideRepository
 from app.db.session import get_sessionmaker
 from app.pipeline.orchestrator import AiogramNotifier, TelegramNotifier
+from app.services.market_hours import current_market_session, is_market_open
 from app.services.options.alpaca_client import (
     AlpacaAuthenticationError,
     AlpacaOptionsClient,
@@ -21,6 +24,10 @@ from app.services.options.alpaca_client import (
     build_occ_symbol,
 )
 from app.services.options.yfinance_client import YFinanceOptionsClient
+from app.services.positions.drift import evaluate_position_drift
+from app.services.positions.plans import ActivePositionPlan, active_position_plan
+from app.services.positions.snapshots import PositionSnapshotService
+from app.services.positions.thesis_builder import PositionThesisBuilder
 from app.services.user_service import decrypt_or_none
 from app.telegram.keyboards.settings import position_alert_keyboard
 
@@ -44,15 +51,31 @@ class PositionMonitor:
         notifier: TelegramNotifier | None = None,
         today_factory: Callable[[], date] | None = None,
         logger: Any | None = None,
+        market_open_checker: Callable[[], bool] | None = None,
+        snapshot_service: PositionSnapshotService | None = None,
+        settings: Settings | None = None,
+        validation_enabled: bool | None = None,
     ) -> None:
+        self.settings = settings or get_settings()
         self.sessionmaker = sessionmaker or get_sessionmaker()
         self.yfinance = yfinance or YFinanceOptionsClient()
         self.alpaca = alpaca or AlpacaOptionsClient()
         self.notifier = notifier or AiogramNotifier()
         self.today_factory = today_factory or date.today
         self.logger = logger or get_logger(__name__)
+        self.market_open_checker = market_open_checker or is_market_open
+        self.snapshot_service = snapshot_service or PositionSnapshotService()
+        self.validation_enabled = (
+            self.settings.position_validation_monitor_enabled and self.settings.app_env != "test"
+            if validation_enabled is None
+            else validation_enabled
+        )
 
     async def poll_open_positions(self) -> None:
+        if not self.market_open_checker():
+            self.logger.info("position_monitor_market_closed")
+            return
+
         today = self.today_factory()
         now = datetime.now(UTC)
         async with self.sessionmaker() as session:
@@ -100,6 +123,9 @@ class PositionMonitor:
         if not live_group:
             return
 
+        overrides = await PositionPlanOverrideRepository(session).latest_for_positions(
+            tuple(position.id for position, _, _ in live_group)
+        )
         user = live_group[0][2]
         quote_map = await self._fetch_quotes_for_group(ticker, live_group, user, today=today)
 
@@ -114,8 +140,16 @@ class PositionMonitor:
             if quote is None:
                 continue
 
+            plan = active_position_plan(recommendation, overrides.get(position.id))
             await self._poll_position(
-                session, position, recommendation, user, quote, today=today, now=now
+                session,
+                position,
+                recommendation,
+                user,
+                quote,
+                plan,
+                today=today,
+                now=now,
             )
 
     async def _close_expired_position(
@@ -239,18 +273,31 @@ class PositionMonitor:
         recommendation: Recommendation,
         user: User,
         quote: PremiumQuote,
+        plan: ActivePositionPlan,
         *,
         today: date,
         now: datetime,
     ) -> None:
         alert_keys = _alerts_for_position(
-            position, recommendation, quote.premium, today=today, now=now
+            position,
+            recommendation,
+            quote.premium,
+            plan=plan,
+            today=today,
+            now=now,
         )
         position.last_premium = quote.premium
         position.last_polled_at = datetime.now(UTC)
         position.last_data_source = quote.source
         for alert_key in alert_keys:
-            await self._send_alert(position, recommendation, user, alert_key, quote.premium)
+            await self._send_alert(
+                position,
+                recommendation,
+                user,
+                alert_key,
+                quote.premium,
+                plan,
+            )
             # Increment alert counts for TP/SL (not for date-based alerts)
             if alert_key == "target_hit":
                 position.target_alert_count += 1
@@ -261,6 +308,90 @@ class PositionMonitor:
                 position.alerts_sent = [*list(position.alerts_sent or []), alert_key]
 
         await session.flush()
+        await self._maybe_evaluate_validation_drift(
+            session,
+            position,
+            recommendation,
+            user,
+            plan,
+            now=now,
+        )
+
+    async def _maybe_evaluate_validation_drift(
+        self,
+        session: Any,
+        position: OpenPosition,
+        recommendation: Recommendation,
+        user: User,
+        plan: ActivePositionPlan,
+        *,
+        now: datetime,
+    ) -> None:
+        if not self.validation_enabled:
+            return
+        market_session = current_market_session(now)
+        if market_session is None:
+            return
+        try:
+            thesis = await PositionThesisBuilder(session).ensure_thesis_for_position(
+                position=position,
+                recommendation=recommendation,
+                user=user,
+                entry_snapshot=None,
+                backfilled=True,
+            )
+            current = await self.snapshot_service.fetch_current(
+                user=user,
+                recommendation=recommendation,
+                today=market_session.session_date,
+            )
+            drift = evaluate_position_drift(
+                thesis=thesis,
+                current=current,
+                session=market_session,
+                new_headlines=(),
+                plan=plan,
+            )
+        except Exception as exc:
+            self.logger.warning(
+                "position_drift_evaluation_failed",
+                position_id=str(position.id),
+                ticker=recommendation.ticker,
+                error=str(exc),
+            )
+            return
+
+        trigger_codes = drift.auto_trigger_codes
+        if not trigger_codes:
+            return
+        if self.settings.position_validation_shadow_mode:
+            self.logger.info(
+                "position_drift_shadow",
+                position_id=str(position.id),
+                ticker=recommendation.ticker,
+                fired_codes=list(trigger_codes),
+                snapshot=drift.snapshot,
+            )
+            return
+
+        from app.services.positions.revalidation_service import RevalidationService
+
+        result = await RevalidationService(
+            sessionmaker=self.sessionmaker,
+            snapshot_service=self.snapshot_service,
+            notifier=self.notifier,
+            settings=self.settings,
+        ).validate_position_auto(
+            position_id=position.id,
+            trigger_codes=trigger_codes,
+            drift_snapshot=drift.snapshot,
+        )
+        self.logger.info(
+            "position_validation_auto_result",
+            position_id=str(position.id),
+            ticker=recommendation.ticker,
+            status=result.status,
+        )
 
     async def _send_alert(
         self,
@@ -269,6 +400,7 @@ class PositionMonitor:
         user: User,
         alert_key: str,
         current_premium: Decimal,
+        plan: ActivePositionPlan,
     ) -> None:
         # Determine alert type for keyboard
         alert_type = None
@@ -281,7 +413,7 @@ class PositionMonitor:
 
         await self.notifier.send_text(
             user.telegram_chat_id,
-            _render_alert(recommendation, alert_key, current_premium),
+            _render_alert(recommendation, alert_key, current_premium, plan=plan),
             reply_markup=keyboard,
         )
 
@@ -295,16 +427,18 @@ def _alerts_for_position(
     recommendation: Recommendation,
     current_premium: Decimal,
     *,
+    plan: ActivePositionPlan | None = None,
     today: date,
     now: datetime,
 ) -> list[str]:
     alerts: list[str] = []
+    plan = plan or active_position_plan(recommendation)
 
     # Target price alert
     if not position.target_dismissed:
         # Check if mute period has expired
         if position.target_muted_until is None or now >= position.target_muted_until:
-            target = recommendation.target_option_price
+            target = plan.target_option_price
             if target is not None and target > 0:
                 if position.target_alert_count == 0 and _target_reached(
                     recommendation,
@@ -324,7 +458,7 @@ def _alerts_for_position(
     if not position.stop_dismissed:
         # Check if mute period has expired
         if position.stop_muted_until is None or now >= position.stop_muted_until:
-            stop = recommendation.stop_loss_option_price
+            stop = plan.stop_loss_option_price
             if stop is not None and stop > 0:
                 if position.stop_alert_count == 0 and _stop_reached(
                     recommendation,
@@ -410,7 +544,10 @@ def _render_alert(
     recommendation: Recommendation,
     alert_key: str,
     current_premium: Decimal,
+    *,
+    plan: ActivePositionPlan | None = None,
 ) -> str:
+    plan = plan or active_position_plan(recommendation)
     header = f"<b>{recommendation.ticker} position alert</b>"
     current = f"Current option premium: ${current_premium:.2f}"
     if alert_key == "target_hit":
@@ -425,7 +562,7 @@ def _render_alert(
                 "",
                 target_label,
                 current,
-                f"Target: ${recommendation.target_option_price:.2f}",
+                f"Target: ${plan.target_option_price:.2f}",
                 "",
                 "Review the position and choose Sold, Mute, or Okay.",
             ]
@@ -436,10 +573,10 @@ def _render_alert(
             "",
             "Stop level has been reached.",
             current,
-            f"Stop: ${recommendation.stop_loss_option_price:.2f}",
+            f"Stop: ${plan.stop_loss_option_price:.2f}",
         ]
-        if recommendation.underlying_stop_price is not None:
-            stop_lines.append(f"Underlying stop alert: ${recommendation.underlying_stop_price:.2f}")
+        if plan.underlying_stop_price is not None:
+            stop_lines.append(f"Underlying stop alert: ${plan.underlying_stop_price:.2f}")
         stop_lines.extend(
             [
                 "",

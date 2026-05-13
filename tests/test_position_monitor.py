@@ -20,6 +20,7 @@ from app.db.repositories.user_repo import UserRepository
 from app.services.options.alpaca_client import build_occ_symbol
 from app.services.options.types import OptionContract
 from app.services.positions.monitor import PositionMonitor, _alerts_for_position
+from app.services.positions.plans import ActivePositionPlan
 
 pytestmark = pytest.mark.asyncio
 
@@ -155,6 +156,7 @@ async def test_monitor_sends_target_alert_once(db_session: AsyncSession) -> None
         alpaca=FakePremiumClient(None),
         notifier=notifier,
         today_factory=lambda: date(2026, 5, 10),
+        market_open_checker=lambda: True,
     )
 
     await monitor.poll_open_positions()
@@ -186,6 +188,7 @@ async def test_monitor_switches_to_alpaca_near_expiry(db_session: AsyncSession) 
         alpaca=alpaca,
         notifier=notifier,
         today_factory=lambda: date(2026, 5, 10),
+        market_open_checker=lambda: True,
     )
 
     await monitor.poll_open_positions()
@@ -208,6 +211,7 @@ async def test_monitor_closes_expired_position(db_session: AsyncSession) -> None
         alpaca=FakePremiumClient(None),
         notifier=notifier,
         today_factory=lambda: date(2026, 5, 17),
+        market_open_checker=lambda: True,
     )
 
     await monitor.poll_open_positions()
@@ -275,3 +279,49 @@ async def test_short_position_alerts_invert_premium_thresholds() -> None:
 
     assert "target_hit" in target_alerts
     assert "stop_hit" in stop_alerts
+
+
+async def test_alerts_use_active_plan_thresholds_when_provided() -> None:
+    position = SimpleNamespace(
+        target_dismissed=False,
+        target_muted_until=None,
+        target_alert_count=0,
+        stop_dismissed=False,
+        stop_muted_until=None,
+        stop_alert_count=0,
+        alerts_sent=[],
+        last_premium=None,
+    )
+    recommendation = SimpleNamespace(
+        position_side="long",
+        target_option_price=Decimal("2.00"),
+        stop_loss_option_price=Decimal("0.50"),
+        exit_by_date=None,
+        expiry=date(2026, 5, 16),
+    )
+    plan = ActivePositionPlan(
+        target_option_price=Decimal("2.50"),
+        stop_loss_option_price=Decimal("0.80"),
+        underlying_stop_price=None,
+        source="user",
+    )
+
+    original_target_crossed = _alerts_for_position(
+        position,
+        recommendation,
+        Decimal("2.10"),
+        plan=plan,
+        today=date(2026, 5, 10),
+        now=datetime(2026, 5, 10, tzinfo=UTC),
+    )
+    adjusted_target_crossed = _alerts_for_position(
+        position,
+        recommendation,
+        Decimal("2.60"),
+        plan=plan,
+        today=date(2026, 5, 10),
+        now=datetime(2026, 5, 10, tzinfo=UTC),
+    )
+
+    assert "target_hit" not in original_target_crossed
+    assert "target_hit" in adjusted_target_crossed

@@ -12,8 +12,10 @@ from aiogram import F, Router
 from aiogram.types import Message
 
 from app.db.repositories.open_position_repo import OpenPositionRepository
+from app.db.repositories.position_plan_override_repo import PositionPlanOverrideRepository
 from app.db.repositories.recommendation_repo import RecommendationRepository
 from app.scheduler.jobs import RUN_ALREADY_ACTIVE_TEXT, get_workflow_runner
+from app.services.positions.plans import active_position_plan
 from app.services.positions.quotes import fetch_bid_ask
 from app.services.user_service import UserService
 from app.telegram.deps import session_scope, user_service_scope
@@ -119,6 +121,7 @@ async def last_recommendation(message: Message) -> None:
         reply_markup=recommendation_keyboard(str(recommendation.id)),
     )
 
+
 @router.message(F.text == BTN_POSITIONS)
 async def show_positions(message: Message) -> None:
     chat_id = str(message.chat.id)
@@ -136,6 +139,9 @@ async def show_positions(message: Message) -> None:
         repo = OpenPositionRepository(session)
         await repo.expire_past_due_for_user(user.id, today)
         rows = await repo.list_active_with_recommendations_for_user(user.id)
+        overrides = await PositionPlanOverrideRepository(session).latest_for_positions(
+            tuple(position.id for position, _ in rows)
+        )
         await session.commit()
 
     if not rows:
@@ -148,9 +154,10 @@ async def show_positions(message: Message) -> None:
 
     for position, recommendation in rows:
         quote = await fetch_bid_ask(user=user, recommendation=recommendation, today=today)
+        plan = active_position_plan(recommendation, overrides.get(position.id))
         await send_text(
             message,
-            render_position_card(position, recommendation, quote),
+            render_position_card(position, recommendation, quote, plan),
             reply_markup=position_list_keyboard(str(position.id)),
         )
 

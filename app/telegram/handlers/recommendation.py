@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from decimal import Decimal, InvalidOperation
 from typing import Any
 from uuid import UUID
@@ -9,6 +10,7 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
+from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.db.models.feedback_event import FeedbackEvent
 from app.db.models.open_position import OpenPosition
@@ -16,6 +18,8 @@ from app.db.repositories.feedback_repo import FeedbackEventRepository
 from app.db.repositories.open_position_repo import OpenPositionRepository
 from app.db.repositories.recommendation_repo import RecommendationRepository
 from app.services.alternative_recommendation_service import AlternativeRecommendationService
+from app.services.positions.snapshots import PositionQuoteSnapshot, PositionSnapshotService
+from app.services.positions.thesis_builder import PositionThesisBuilder
 from app.services.user_service import UserService
 from app.telegram.deps import session_scope
 from app.telegram.fsm.onboarding_states import BoughtPositionStates
@@ -174,6 +178,7 @@ async def capture_entry_quantity(message: Message, state: FSMContext) -> None:
         )
         return
 
+    entry_snapshot: PositionQuoteSnapshot | None = None
     async with session_scope() as session:
         user = await UserService(session).get_by_chat_id(str(message.chat.id))
         if user is None:
@@ -196,6 +201,38 @@ async def capture_entry_quantity(message: Message, state: FSMContext) -> None:
 
         position_repo = OpenPositionRepository(session)
         existing = await position_repo.get_active_for_recommendation(recommendation.id)
+        if existing is not None:
+            await state.clear()
+            await send_text(
+                message,
+                "I am already tracking this position.",
+                reply_markup=main_menu_keyboard(),
+            )
+            return
+
+    entry_snapshot = await _fetch_entry_snapshot_best_effort(user, recommendation)
+
+    async with session_scope() as session:
+        user = await UserService(session).get_by_chat_id(str(message.chat.id))
+        if user is None:
+            await state.clear()
+            await send_text(
+                message,
+                "Send /start to finish setup first.",
+                reply_markup=main_menu_keyboard(),
+            )
+            return
+        recommendation = await RecommendationRepository(session).get(UUID(recommendation_id))
+        if recommendation is None or recommendation.user_id != user.id:
+            await state.clear()
+            await send_text(
+                message,
+                "That recommendation is unavailable.",
+                reply_markup=main_menu_keyboard(),
+            )
+            return
+        position_repo = OpenPositionRepository(session)
+        existing = await position_repo.get_active_for_recommendation(recommendation.id)
         if existing is None:
             await FeedbackEventRepository(session).add(
                 FeedbackEvent(
@@ -205,7 +242,7 @@ async def capture_entry_quantity(message: Message, state: FSMContext) -> None:
                     entry_price=entry_price,
                 )
             )
-            await position_repo.add(
+            position = await position_repo.add(
                 OpenPosition(
                     recommendation_id=recommendation.id,
                     user_id=user.id,
@@ -213,6 +250,13 @@ async def capture_entry_quantity(message: Message, state: FSMContext) -> None:
                     entry_quantity=entry_quantity,
                     status="active",
                 )
+            )
+            await PositionThesisBuilder(session).ensure_thesis_for_position(
+                position=position,
+                recommendation=recommendation,
+                user=user,
+                entry_snapshot=entry_snapshot,
+                backfilled=False,
             )
 
     await state.clear()
@@ -338,6 +382,30 @@ def _normalize_string_list(value: Any) -> list[str]:
         if isinstance(items, list):
             return [str(item) for item in items]
     return []
+
+
+async def _fetch_entry_snapshot_best_effort(
+    user,
+    recommendation,
+) -> PositionQuoteSnapshot | None:
+    if get_settings().app_env == "test":
+        return None
+    try:
+        return await asyncio.wait_for(
+            PositionSnapshotService().fetch_current(
+                user=user,
+                recommendation=recommendation,
+            ),
+            timeout=8,
+        )
+    except Exception as exc:
+        logger.warning(
+            "position_entry_snapshot_failed",
+            recommendation_id=str(recommendation.id),
+            ticker=recommendation.ticker,
+            error=str(exc),
+        )
+        return None
 
 
 def _parse_positive_decimal(value: str | None) -> Decimal | None:
