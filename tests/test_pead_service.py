@@ -77,7 +77,13 @@ class FakeSurpriseSource:
 class FakeOpenPositions:
     tickers: frozenset[str] = frozenset()
 
-    async def active_catalyst_tickers(self, *, as_of: date) -> frozenset[str]:
+    async def active_catalyst_tickers(
+        self,
+        *,
+        as_of: date,
+        user_id: object | None = None,
+    ) -> frozenset[str]:
+        del user_id
         assert as_of == TODAY
         return self.tickers
 

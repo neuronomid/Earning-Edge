@@ -18,6 +18,7 @@ from app.services.multi_strategy_service import (
     CATALYST_ONLY_WARNING,
     COILED_FAILED_WARNING,
     COILED_ONLY_WARNING,
+    LEGACY_ARMS_EMPTY_WARNING,
     MultiStrategyCandidateService,
 )
 from app.services.strategy_catalog import build_strategy_report
@@ -47,7 +48,13 @@ class FakeArm:
     warning_text: str | None = None
     error: Exception | None = None
 
-    async def get_top_five(self, *, limit: int = 5) -> CandidateBatch:
+    async def get_top_five(
+        self,
+        *,
+        limit: int = 5,
+        user_id: object | None = None,
+    ) -> CandidateBatch:
+        del user_id
         if self.error is not None:
             raise self.error
         rows = self.rows[:limit]
@@ -328,6 +335,33 @@ async def test_propagates_fallback_used_from_catalyst() -> None:
     assert batch.fallback_used is True
     assert batch.screener_status == "success"
     assert batch.warning_text == "catalyst-fallback warning"
+
+
+async def test_legacy_arms_empty_warning_when_only_new_strategies_return_rows() -> None:
+    """When A and B both produce zero rows but C/D/E succeed, the user must
+    see a warning explaining that the legacy screens came up empty."""
+    service = MultiStrategyCandidateService(
+        (
+            FakeArm(slug="catalyst_confluence", rows=(), screener_status="empty"),
+            FakeArm(
+                slug="pead_continuation",
+                rows=(_row("PEAD", rank=1, strategy_source="pead_continuation"),),
+            ),
+            FakeArm(slug="coiled_setup", rows=(), screener_status="empty"),
+            FakeArm(
+                slug="sector_relative_strength",
+                rows=(_row("SRSX", rank=1, strategy_source="sector_relative_strength"),),
+            ),
+            FakeArm(
+                slug="activist_13d_followthrough",
+                rows=(_row("AKTV", rank=1, strategy_source="activist_13d_followthrough"),),
+            ),
+        )
+    )
+    batch = await service.get_candidates()
+    assert batch.warning_text == LEGACY_ARMS_EMPTY_WARNING
+    assert len(batch.candidates) == 3
+    assert batch.screener_status == "partial"
 
 
 async def test_legacy_warning_strings_unchanged() -> None:

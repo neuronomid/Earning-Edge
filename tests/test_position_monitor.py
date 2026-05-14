@@ -281,6 +281,96 @@ async def test_short_position_alerts_invert_premium_thresholds() -> None:
     assert "stop_hit" in stop_alerts
 
 
+async def test_alerts_for_pead_sector_rs_and_activist_13d_positions(
+    db_session: AsyncSession,
+) -> None:
+    """Phase 5: the monitor reads positions strategy-agnostically.
+
+    Three positions sourced from PEAD, sector-RS, and activist-13D recommendations
+    must each emit a target-hit alert with no special-casing for ``strategy_source``.
+    """
+    notifier = FakeNotifier()
+    strategies = (
+        "pead_continuation",
+        "sector_relative_strength",
+        "activist_13d_followthrough",
+    )
+    tickers = ("PEAD", "SRSX", "AKTV")
+    crypto.reset_cache()
+    user = await UserRepository(db_session).add(
+        User(
+            telegram_chat_id="12345",
+            account_size=Decimal("15000.00"),
+            risk_profile="Balanced",
+            broker="IBKR",
+            timezone_label="ET",
+            timezone_iana="America/Toronto",
+            strategy_permission="long_and_short",
+            max_contracts=3,
+            openrouter_api_key_encrypted=crypto.encrypt("sk-or-test"),
+        )
+    )
+    run = WorkflowRun(user_id=user.id, trigger_type="manual", status="success")
+    db_session.add(run)
+    await db_session.flush()
+
+    position_repo = OpenPositionRepository(db_session)
+    for ticker, strategy_source in zip(tickers, strategies, strict=True):
+        recommendation = Recommendation(
+            user_id=user.id,
+            run_id=run.id,
+            ticker=ticker,
+            company_name=f"{ticker} Corp.",
+            strategy_source=strategy_source,
+            strategy="long_call",
+            option_type="call",
+            position_side="long",
+            strike=Decimal("100.00"),
+            expiry=date(2026, 5, 16),
+            suggested_entry=Decimal("1.25"),
+            target_option_price=Decimal("2.00"),
+            stop_loss_option_price=Decimal("0.50"),
+            exit_by_date=date(2026, 5, 15),
+            suggested_quantity=2,
+            estimated_max_loss="$125.00 max loss per contract",
+            account_risk_percent=Decimal("2.0000"),
+            confidence_score=82,
+            risk_level="High",
+            reasoning_summary=f"{strategy_source} cleared the bar.",
+            key_evidence_json=["Momentum held."],
+            key_concerns_json=["IV crush."],
+        )
+        db_session.add(recommendation)
+        await db_session.flush()
+        await position_repo.add(
+            OpenPosition(
+                recommendation_id=recommendation.id,
+                user_id=user.id,
+                entry_price=Decimal("1.25"),
+                entry_quantity=2,
+                status="active",
+            )
+        )
+    await db_session.commit()
+
+    monitor = PositionMonitor(
+        sessionmaker=_sessionmaker_for(db_session),
+        yfinance=FakePremiumClient(Decimal("2.05")),
+        alpaca=FakePremiumClient(None),
+        notifier=notifier,
+        today_factory=lambda: date(2026, 5, 10),
+        market_open_checker=lambda: True,
+    )
+
+    await monitor.poll_open_positions()
+
+    assert len(notifier.calls) == 3
+    notified_tickers = sorted(call["text"].split()[0].replace("<b>", "") for call in notifier.calls)
+    assert notified_tickers == sorted(tickers)
+    for call in notifier.calls:
+        assert "Target price has been reached." in call["text"]
+
+
 async def test_alerts_use_active_plan_thresholds_when_provided() -> None:
     position = SimpleNamespace(
         target_dismissed=False,

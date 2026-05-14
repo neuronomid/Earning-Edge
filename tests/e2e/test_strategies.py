@@ -106,6 +106,6 @@ async def test_end_to_end_strategy_paths(
     assert recommendation.strategy == strategy
     assert recommendation.option_type == option_type
     assert recommendation.position_side == position_side
-    assert expected_text in notifier.calls[2].text
+    assert expected_text in notifier.calls[3].text
     if strategy == "short_call":
-        assert "Undefined for naked short call" in notifier.calls[2].text
+        assert "Undefined for naked short call" in notifier.calls[3].text

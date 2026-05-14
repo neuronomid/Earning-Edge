@@ -8,6 +8,7 @@ from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any, Protocol
+from uuid import UUID
 
 import httpx
 
@@ -63,7 +64,12 @@ class PEADSurpriseSource(Protocol):
 
 
 class OpenCatalystPositionSource(Protocol):
-    async def active_catalyst_tickers(self, *, as_of: date) -> frozenset[str]: ...
+    async def active_catalyst_tickers(
+        self,
+        *,
+        as_of: date,
+        user_id: UUID | None = None,
+    ) -> frozenset[str]: ...
 
 
 @dataclass(slots=True, frozen=True)
@@ -111,7 +117,12 @@ class PEADCandidateService:
         self.today_provider = today_provider or date.today
         self.logger = logger or get_logger(__name__)
 
-    async def get_top_five(self, *, limit: int = 5) -> CandidateBatch:
+    async def get_top_five(
+        self,
+        *,
+        limit: int = 5,
+        user_id: UUID | None = None,
+    ) -> CandidateBatch:
         try:
             rows = await self.runner.run_with_swap(
                 STRATEGY_C_BASE,
@@ -127,7 +138,7 @@ class PEADCandidateService:
         if not rows:
             return self._build_batch((), raw_row_count=0, report_status="empty")
 
-        active_catalyst_tickers = await self._active_catalyst_tickers()
+        active_catalyst_tickers = await self._active_catalyst_tickers(user_id=user_id)
         enriched_results = await asyncio.gather(
             *(self._enrich(row) for row in rows),
             return_exceptions=True,
@@ -263,9 +274,16 @@ class PEADCandidateService:
             self.logger.warning("pead_market_data_failed", ticker=row.ticker, error=str(exc))
             return None
 
-    async def _active_catalyst_tickers(self) -> frozenset[str]:
+    async def _active_catalyst_tickers(
+        self,
+        *,
+        user_id: UUID | None,
+    ) -> frozenset[str]:
         try:
-            return await self.open_positions.active_catalyst_tickers(as_of=self.today_provider())
+            return await self.open_positions.active_catalyst_tickers(
+                as_of=self.today_provider(),
+                user_id=user_id,
+            )
         except Exception as exc:
             self.logger.warning("pead_open_position_lookup_failed", error=str(exc))
             return frozenset()
@@ -459,8 +477,13 @@ class AlphaVantagePEADSurpriseSource:
 
 
 class _NoOpenCatalystPositionSource:
-    async def active_catalyst_tickers(self, *, as_of: date) -> frozenset[str]:
-        del as_of
+    async def active_catalyst_tickers(
+        self,
+        *,
+        as_of: date,
+        user_id: UUID | None = None,
+    ) -> frozenset[str]:
+        del as_of, user_id
         return frozenset()
 
 
@@ -474,10 +497,19 @@ class DatabaseOpenCatalystPositionSource:
         self.sessionmaker = sessionmaker or get_sessionmaker()
         self.lookback_days = lookback_days
 
-    async def active_catalyst_tickers(self, *, as_of: date) -> frozenset[str]:
+    async def active_catalyst_tickers(
+        self,
+        *,
+        as_of: date,
+        user_id: UUID | None = None,
+    ) -> frozenset[str]:
         cutoff = as_of - timedelta(days=self.lookback_days)
         async with self.sessionmaker() as session:
-            rows = await OpenPositionRepository(session).list_active_with_recommendations()
+            repo = OpenPositionRepository(session)
+            if user_id is not None:
+                rows = await repo.list_active_with_recommendations_for_user(user_id)
+            else:
+                rows = await repo.list_active_with_recommendations()
         return frozenset(
             recommendation.ticker.upper()
             for position, recommendation in rows

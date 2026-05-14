@@ -5,6 +5,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from decimal import Decimal, InvalidOperation
 from typing import Any, Protocol
+from uuid import UUID
 
 from app.core.config import Settings, get_settings
 from app.core.logging import get_logger
@@ -85,7 +86,13 @@ class SectorRelativeStrengthService:
         self.settings = settings or get_settings()
         self.logger = logger or get_logger(__name__)
 
-    async def get_top_five(self, *, limit: int = 5) -> CandidateBatch:
+    async def get_top_five(
+        self,
+        *,
+        limit: int = 5,
+        user_id: UUID | None = None,
+    ) -> CandidateBatch:
+        del user_id
         try:
             ranked_sectors = await self._rank_sectors()
         except Exception as exc:

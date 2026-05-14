@@ -70,5 +70,5 @@ async def test_critical_missing_field_returns_specific_no_trade_reason(
     assert outcome.decision.reasoning == "Current price is unavailable."
     assert run.status == "no_trade"
     assert recommendations == []
-    assert "Current price is unavailable." in notifier.calls[2].text
-    assert "1. AMD" in notifier.calls[2].text
+    assert "Current price is unavailable." in notifier.calls[3].text
+    assert "1. AMD" in notifier.calls[3].text

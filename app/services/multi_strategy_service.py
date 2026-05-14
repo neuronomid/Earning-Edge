@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from functools import lru_cache
 from typing import Any, Protocol, cast
+from uuid import UUID
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
@@ -40,12 +41,20 @@ COILED_FAILED_WARNING = (
 CATALYST_FAILED_WARNING = (
     "⚠️ Catalyst screen failed this scan — showing structure-driven candidates only."
 )
+LEGACY_ARMS_EMPTY_WARNING = (
+    "⚠️ Both legacy screens returned no setups this scan — showing alternative strategies only."
+)
 
 
 class ArmRunner(Protocol):
     slug: StrategySource
 
-    async def get_top_five(self, *, limit: int = 5) -> CandidateBatch: ...
+    async def get_top_five(
+        self,
+        *,
+        limit: int = 5,
+        user_id: UUID | None = None,
+    ) -> CandidateBatch: ...
 
 
 class _ArmOutcome:
@@ -73,12 +82,12 @@ class MultiStrategyCandidateService:
         self.arms = arms
         self.logger = logger or get_logger(__name__)
 
-    async def get_top_five(self) -> CandidateBatch:
-        return await self.get_candidates()
+    async def get_top_five(self, *, user_id: UUID | None = None) -> CandidateBatch:
+        return await self.get_candidates(user_id=user_id)
 
-    async def get_candidates(self) -> CandidateBatch:
+    async def get_candidates(self, *, user_id: UUID | None = None) -> CandidateBatch:
         results = await asyncio.gather(
-            *(arm.get_top_five() for arm in self.arms),
+            *(arm.get_top_five(user_id=user_id) for arm in self.arms),
             return_exceptions=True,
         )
 
@@ -246,6 +255,8 @@ def _resolve_warning(
     if coiled_rows and not catalyst_rows and not non_legacy_rows:
         catalyst_failed = catalyst is not None and catalyst.failed
         return CATALYST_FAILED_WARNING if catalyst_failed else COILED_ONLY_WARNING
+    if non_legacy_rows and not catalyst_rows and not coiled_rows:
+        return LEGACY_ARMS_EMPTY_WARNING
     return fallback_warning
 
 

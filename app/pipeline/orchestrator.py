@@ -61,6 +61,7 @@ from app.telegram.handlers._common import enforce_tone
 from app.telegram.keyboards.settings import recommendation_keyboard
 from app.telegram.templates.main_recommendation import render_main_recommendation
 from app.telegram.templates.no_trade import render_no_trade
+from app.telegram.templates.run_summary import render_strategy_status_rows
 from app.telegram.templates.status import render_scan_started, render_weekly_scan_ready
 
 ZERO = Decimal("0")
@@ -146,7 +147,7 @@ class PipelineOrchestrator:
 
         reference_dt = datetime.now(UTC)
 
-        batch = await self.candidate_step.execute()
+        batch = await self.candidate_step.execute(user_id=run.user_id)
         run.screener_status = batch.screener_status
         run.selected_candidate_count = len(batch.candidates)
         outcome = await self.evaluate_batch(batch, user, reference_dt=reference_dt)
@@ -607,6 +608,7 @@ class PipelineOrchestrator:
         outcome: PipelineOutcome,
         recommendation: Recommendation | None,
     ) -> str:
+        strategy_summary = render_strategy_status_rows(outcome.batch.strategy_reports)
         if recommendation is None:
             await self.notifier.send_text(
                 user.telegram_chat_id,
@@ -615,6 +617,7 @@ class PipelineOrchestrator:
                     action="no_trade",
                 ),
             )
+            await self.notifier.send_text(user.telegram_chat_id, strategy_summary)
             final_message = render_no_trade(
                 reason=outcome.decision.reasoning,
                 watchlist_tickers=outcome.decision.watchlist_tickers,
@@ -636,6 +639,7 @@ class PipelineOrchestrator:
             user.telegram_chat_id,
             render_weekly_scan_ready(trigger_type=trigger_type, action=action),
         )
+        await self.notifier.send_text(user.telegram_chat_id, strategy_summary)
         message_id = await self.notifier.send_text(
             user.telegram_chat_id,
             final_message,

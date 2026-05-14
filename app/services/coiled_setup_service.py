@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 from decimal import Decimal
 from typing import Any
+from uuid import UUID
 
 from app.core.logging import get_logger
 from app.services.candidate_models import (
@@ -34,7 +35,13 @@ class CoiledSetupCandidateService:
         self.runner = runner
         self.logger = logger or get_logger(__name__)
 
-    async def get_top_five(self, *, limit: int = 5) -> CandidateBatch:
+    async def get_top_five(
+        self,
+        *,
+        limit: int = 5,
+        user_id: UUID | None = None,
+    ) -> CandidateBatch:
+        del user_id
         try:
             rows = await self.runner.run_with_swap(
                 STRATEGY_B_BASE,

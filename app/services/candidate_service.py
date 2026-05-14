@@ -8,6 +8,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 from functools import lru_cache
 from typing import Any, Protocol
+from uuid import UUID
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
@@ -77,7 +78,13 @@ class CandidateService:
         self.today_provider = today_provider or date.today
         self.logger = logger or get_logger(__name__)
 
-    async def get_top_five(self, *, limit: int = 5) -> CandidateBatch:
+    async def get_top_five(
+        self,
+        *,
+        limit: int = 5,
+        user_id: UUID | None = None,
+    ) -> CandidateBatch:
+        del user_id
         window = next_week_window(self.today_provider())
 
         try:

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Any, Protocol, cast
+from uuid import UUID
 
 from app.core.config import Settings, get_settings
 from app.core.logging import get_logger
@@ -64,7 +65,13 @@ class Activist13DCandidateService:
         self.today_provider = today_provider or date.today
         self.logger = logger or get_logger(__name__)
 
-    async def get_top_five(self, *, limit: int = _TIER1_LIMIT) -> CandidateBatch:
+    async def get_top_five(
+        self,
+        *,
+        limit: int = _TIER1_LIMIT,
+        user_id: UUID | None = None,
+    ) -> CandidateBatch:
+        del user_id
         try:
             tier1_headers = await self.client.fetch_recent_filings(
                 form_type="SC 13D",
@@ -189,6 +196,10 @@ class Activist13DCandidateService:
             return None
         if not self._passes_universe(snapshot):
             return None
+        # TODO(v2): option_liquidity_score should be derived from the real options
+        # chain (OI, spread, volume bands) once it is wired through the activist arm;
+        # days_to_next_earnings should come from the earnings calendar so the
+        # earnings_collision_penalty fires within 5 days of a print.
         inputs = EventScoreInputs(
             stake_percent=filing.stake_percent,
             active_intent=filing.item4_active_intent,

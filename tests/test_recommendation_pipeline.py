@@ -64,7 +64,8 @@ class FakeNotifier:
 class FakeCandidateStep:
     batch: CandidateBatch
 
-    async def execute(self) -> CandidateBatch:
+    async def execute(self, *, user_id: object | None = None) -> CandidateBatch:
+        del user_id
         return self.batch
 
 
@@ -484,9 +485,9 @@ async def test_pipeline_persists_recommendation_and_sends_card(
     assert len(candidates) == 5
     assert run.run_summary_json is not None
     assert run.recommendation_card_json is not None
-    assert run.telegram_message_text == notifier.calls[2].text
+    assert run.telegram_message_text == notifier.calls[3].text
     assert run.recommendation_card_json["selected_ticker"] == "AMD"
-    assert run.recommendation_card_json["telegram_message"] == notifier.calls[2].text
+    assert run.recommendation_card_json["telegram_message"] == notifier.calls[3].text
     assert run.run_summary_json["contracts_considered_count"] == 3
     assert run.run_summary_json["rejected_contract_count"] == 1
     assert run.option_contracts_json is not None
@@ -496,8 +497,9 @@ async def test_pipeline_persists_recommendation_and_sends_card(
     )
     assert notifier.calls[0].text == "🧠 Starting a fresh earnings-options scan now."
     assert notifier.calls[1].text == "✅ Scan complete. Here is the strongest setup I found."
-    assert "<b>Weekly Earnings Options Signal</b>" in notifier.calls[2].text
-    assert notifier.calls[2].reply_markup is not None
+    assert "<b>Strategy scan summary</b>" in notifier.calls[2].text
+    assert "<b>Weekly Earnings Options Signal</b>" in notifier.calls[3].text
+    assert notifier.calls[3].reply_markup is not None
 
 
 @pytest.mark.asyncio
@@ -542,7 +544,8 @@ async def test_pipeline_watchlist_path_sets_zero_quantity(
     assert recommendation.suggested_quantity == 0
     assert run.status == "success"
     assert "watching, but not sizing yet" in notifier.calls[1].text
-    assert "Watchlist only" in notifier.calls[2].text
+    assert "<b>Strategy scan summary</b>" in notifier.calls[2].text
+    assert "Watchlist only" in notifier.calls[3].text
 
 
 @pytest.mark.asyncio
@@ -615,8 +618,9 @@ async def test_pipeline_no_trade_path_marks_run_no_trade(
     assert run.status == "no_trade"
     assert recommendations == []
     assert "No trade looks strong enough this time" in notifier.calls[1].text
-    assert "<b>Weekly Earnings Options Scan Complete</b>" in notifier.calls[2].text
-    assert "1. AMD" in notifier.calls[2].text
+    assert "<b>Strategy scan summary</b>" in notifier.calls[2].text
+    assert "<b>Weekly Earnings Options Scan Complete</b>" in notifier.calls[3].text
+    assert "1. AMD" in notifier.calls[3].text
 
 
 @pytest.mark.asyncio

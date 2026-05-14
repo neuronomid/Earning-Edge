@@ -128,7 +128,7 @@ async def test_invalid_openrouter_key_blocks_recommendation(db_session: AsyncSes
     assert outcome.decision.reasoning == "OpenRouter API key is unavailable or invalid."
     assert run.status == "no_trade"
     assert recommendations == []
-    assert "OpenRouter API key is unavailable or invalid." in notifier.calls[2].text
+    assert "OpenRouter API key is unavailable or invalid." in notifier.calls[3].text
 
 
 async def test_missing_option_chain_returns_no_trade_without_invented_contracts(
@@ -164,7 +164,7 @@ async def test_missing_option_chain_returns_no_trade_without_invented_contracts(
     assert outcome.decision.action == "no_trade"
     assert outcome.decision.reasoning == "No usable option contract was selected."
     assert run.option_contracts_json == []
-    assert "No usable option contract was selected." in notifier.calls[2].text
+    assert "No usable option contract was selected." in notifier.calls[3].text
 
 
 async def test_yfinance_option_fallback_lowers_data_confidence(
