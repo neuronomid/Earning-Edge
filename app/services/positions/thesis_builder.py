@@ -73,10 +73,20 @@ class PositionThesisBuilder:
         backfilled: bool = False,
     ) -> PositionThesis:
         run = await self.session.get(WorkflowRun, recommendation.run_id)
+        candidate_card = _match_candidate_card(
+            () if run is None else tuple(run.candidate_cards_json or ()),
+            recommendation,
+        )
         metadata = await self._resolve_contract_metadata(recommendation, run)
         entry_status = _entry_snapshot_status(entry_snapshot, backfilled=backfilled)
         entry_notes = _entry_snapshot_notes(entry_snapshot, backfilled=backfilled)
         news = _news_baseline(run, recommendation, backfilled=backfilled)
+        strategy_source = _strategy_source(recommendation)
+        catalyst_baseline = _catalyst_baseline(
+            recommendation=recommendation,
+            candidate_card=candidate_card,
+            strategy_source=strategy_source,
+        )
         entry_underlying_price = _first_decimal(
             None if entry_snapshot is None else entry_snapshot.underlying_price,
             metadata.underlying_price,
@@ -159,16 +169,9 @@ class PositionThesisBuilder:
             expected_holding_days=recommendation.expected_holding_days,
             expected_move_percent=getattr(recommendation, "expected_move_percent", None),
             expected_trajectory_json=trajectory,
-            catalyst_kind="earnings" if recommendation.earnings_date is not None else "none",
+            catalyst_kind=_catalyst_kind(strategy_source, recommendation),
             catalyst_event_date=recommendation.earnings_date,
-            catalyst_baseline_json={
-                "earnings_date": _date_json(recommendation.earnings_date),
-                "strategy_source": getattr(
-                    recommendation,
-                    "strategy_source",
-                    "catalyst_confluence",
-                ),
-            },
+            catalyst_baseline_json=catalyst_baseline,
             invalidation_criteria_json=criteria,
             direction_score=metadata.direction_score,
             final_score=metadata.final_score,
@@ -345,7 +348,8 @@ def _invalidation_criteria(
     news_baseline_status: str,
 ) -> list[dict[str, Any]]:
     side = _direction(recommendation)
-    return [
+    strategy_source = _strategy_source(recommendation)
+    criteria = [
         _criterion(
             "option_stop_breach",
             "kill",
@@ -420,6 +424,8 @@ def _invalidation_criteria(
             {},
         ),
     ]
+    criteria.extend(_strategy_specific_criteria(strategy_source))
+    return criteria
 
 
 def _criterion(
@@ -438,6 +444,121 @@ def _criterion(
         "condition_human": code.replace("_", " "),
         "params": params,
     }
+
+
+def _strategy_specific_criteria(strategy_source: str) -> list[dict[str, Any]]:
+    if strategy_source == "pead_continuation":
+        return [
+            _criterion(
+                "pead_follow_through_failure",
+                "degrade",
+                True,
+                ["current_underlying_price", "entry_underlying_price", "catalyst_baseline"],
+                {"strategy_source": strategy_source},
+            )
+        ]
+    if strategy_source == "sector_relative_strength":
+        criterion = _criterion(
+            "sector_regime_warning",
+            "degrade",
+            False,
+            ["sector_etf", "sector_etf_current_price", "sector_etf_entry_price"],
+            {
+                "strategy_source": strategy_source,
+                "note": "reserved_for_sector_etf_monitoring",
+            },
+        )
+        criterion["source"] = "strategy_specific"
+        criterion["condition_human"] = "leading sector ETF loses its entry-day regime support"
+        return [criterion]
+    if strategy_source == "activist_13d_followthrough":
+        criterion = _criterion(
+            "activist_filing_thesis_invalidated",
+            "kill",
+            True,
+            ["catalyst_baseline", "new_headlines"],
+            {"strategy_source": strategy_source},
+        )
+        criterion["source"] = "llm"
+        criterion["condition_human"] = (
+            "new filing or company news directly invalidates the activist 13D thesis"
+        )
+        return [criterion]
+    return []
+
+
+def _strategy_source(recommendation: Recommendation) -> str:
+    return str(getattr(recommendation, "strategy_source", None) or "catalyst_confluence")
+
+
+def _catalyst_kind(strategy_source: str, recommendation: Recommendation) -> str:
+    if strategy_source == "activist_13d_followthrough":
+        return "filing"
+    if strategy_source in {"coiled_setup", "sector_relative_strength"}:
+        return "technical"
+    if recommendation.earnings_date is not None:
+        return "earnings"
+    return "none"
+
+
+def _catalyst_baseline(
+    *,
+    recommendation: Recommendation,
+    candidate_card: dict[str, Any] | None,
+    strategy_source: str,
+) -> dict[str, Any]:
+    validation_notes = _string_list(
+        None if candidate_card is None else candidate_card.get("validation_notes")
+    )
+    baseline: dict[str, Any] = {
+        "strategy_source": strategy_source,
+        "strategy_thesis": _strategy_thesis(strategy_source),
+        "earnings_date": _date_json(recommendation.earnings_date),
+        "candidate_sources": _string_list(
+            None if candidate_card is None else candidate_card.get("candidate_sources")
+        ),
+        "candidate_origin": (
+            None if candidate_card is None else candidate_card.get("candidate_origin")
+        ),
+        "validation_notes": validation_notes,
+        "validation_metadata": _validation_metadata(validation_notes),
+    }
+    if candidate_card is not None:
+        baseline["sector"] = candidate_card.get("sector")
+        baseline["screener_rank"] = candidate_card.get("screener_rank")
+        baseline["event_signal_detail"] = candidate_card.get("event_signal_detail")
+        baseline["event_signal_score"] = candidate_card.get("event_signal_score")
+        baseline["event_signal_supportive"] = candidate_card.get("event_signal_supportive")
+    return baseline
+
+
+def _strategy_thesis(strategy_source: str) -> str:
+    return {
+        "catalyst_confluence": "pre-earnings catalyst confluence",
+        "coiled_setup": "technical coiled setup near highs",
+        "pead_continuation": "post-earnings drift continuation after a positive surprise",
+        "sector_relative_strength": "stock momentum inside a leading non-tech sector",
+        "activist_13d_followthrough": "fresh activist 13D follow-through",
+    }.get(strategy_source, strategy_source.replace("_", " "))
+
+
+def _validation_metadata(notes: list[str]) -> dict[str, str]:
+    metadata: dict[str, str] = {}
+    for note in notes:
+        if "=" in note:
+            key, value = note.split("=", 1)
+            metadata[key.strip().lower()] = value.strip()
+            continue
+        if ":" in note:
+            key, value = note.split(":", 1)
+            metadata[key.strip().lower().replace(" ", "_")] = value.strip()
+    return metadata
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list | tuple):
+        return []
+    return [str(item) for item in value if item is not None]
 
 
 def _news_baseline(
@@ -484,10 +605,15 @@ def _match_candidate_card(
     cards: tuple[Any, ...],
     recommendation: Recommendation,
 ) -> dict[str, Any] | None:
+    strategy_source = _strategy_source(recommendation)
     for item in cards:
         if not isinstance(item, dict):
             continue
-        if str(item.get("ticker", "")).upper() == recommendation.ticker.upper():
+        item_strategy = str(item.get("strategy_source") or strategy_source)
+        if (
+            str(item.get("ticker", "")).upper() == recommendation.ticker.upper()
+            and item_strategy == strategy_source
+        ):
             return item
     return None
 

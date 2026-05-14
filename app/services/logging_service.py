@@ -447,6 +447,7 @@ def _candidate_card(
     final_reasoning: str,
 ) -> dict[str, Any]:
     best_contract = _best_contract(candidate)
+    event_signal = candidate.context.event_signal
     return {
         "ticker": candidate.record.ticker,
         "screener_rank": candidate.record.screener_rank,
@@ -468,6 +469,9 @@ def _candidate_card(
         "final_opportunity_score": candidate.evaluation.final_score,
         "best_strategy": None if best_contract is None else best_contract.strategy,
         "strategy_source": candidate.record.strategy_source,
+        "event_signal_detail": None if event_signal is None else event_signal.detail,
+        "event_signal_score": None if event_signal is None else event_signal.score,
+        "event_signal_supportive": None if event_signal is None else event_signal.is_supportive,
         "candidate_sources": list(candidate.record.sources),
         "candidate_origin": "finviz_row"
         if "finviz" in candidate.record.sources

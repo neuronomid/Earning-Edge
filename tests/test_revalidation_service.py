@@ -23,6 +23,7 @@ from app.services.positions.plans import ActivePositionPlan
 from app.services.positions.revalidation_service import (
     RevalidationService,
     _normalize_validation,
+    _thesis_json,
 )
 from app.services.positions.snapshots import PositionQuoteSnapshot
 from app.services.positions.validation_schemas import (
@@ -310,3 +311,40 @@ def test_adjust_stop_must_tighten_risk() -> None:
     assert normalized.action_final == "adjust_stop"
     assert normalized.proposed_adjustment is not None
     assert normalized.proposed_adjustment["stop_loss_option_price"] == "0.7500"
+
+
+def test_thesis_payload_includes_strategy_3_context() -> None:
+    thesis = SimpleNamespace(
+        id="thesis-id",
+        ticker="AKTV",
+        strategy_source="activist_13d_followthrough",
+        strategy="long_call",
+        entry_option_premium=Decimal("1.25"),
+        entry_underlying_price=Decimal("42.00"),
+        entry_implied_volatility=Decimal("0.44"),
+        target_option_price=Decimal("2.10"),
+        stop_loss_option_price=Decimal("0.70"),
+        underlying_stop_price=Decimal("39.00"),
+        expected_move_percent=None,
+        expected_trajectory_json={"method": "linear_market_sessions"},
+        catalyst_kind="filing",
+        catalyst_event_date=None,
+        catalyst_baseline_json={
+            "strategy_source": "activist_13d_followthrough",
+            "validation_metadata": {"sc_13d_accession": "0001234567-26-000123"},
+        },
+        invalidation_criteria_json=[],
+        reasoning_summary="Fresh activist filing with active intent.",
+        key_evidence_json=["13D active intent."],
+        key_concerns_json=[],
+        news_baseline_status="metadata_missing",
+    )
+
+    payload = _thesis_json(thesis)
+
+    assert payload["strategy_source"] == "activist_13d_followthrough"
+    assert payload["catalyst_kind"] == "filing"
+    assert (
+        payload["catalyst_baseline"]["validation_metadata"]["sc_13d_accession"]
+        == "0001234567-26-000123"
+    )

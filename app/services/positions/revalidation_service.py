@@ -679,6 +679,7 @@ def _thesis_json(thesis: Any) -> dict[str, Any]:
     return {
         "id": str(thesis.id),
         "ticker": thesis.ticker,
+        "strategy_source": getattr(thesis, "strategy_source", "catalyst_confluence"),
         "strategy": thesis.strategy,
         "entry_option_premium": _decimal_json(thesis.entry_option_premium),
         "entry_underlying_price": _decimal_json(thesis.entry_underlying_price),
@@ -688,6 +689,9 @@ def _thesis_json(thesis: Any) -> dict[str, Any]:
         "underlying_stop_price": _decimal_json(thesis.underlying_stop_price),
         "expected_move_percent": _decimal_json(thesis.expected_move_percent),
         "expected_trajectory": thesis.expected_trajectory_json,
+        "catalyst_kind": getattr(thesis, "catalyst_kind", "none"),
+        "catalyst_event_date": _date_json(getattr(thesis, "catalyst_event_date", None)),
+        "catalyst_baseline": getattr(thesis, "catalyst_baseline_json", {}),
         "invalidation_criteria": thesis.invalidation_criteria_json,
         "reasoning_summary": thesis.reasoning_summary,
         "key_evidence": thesis.key_evidence_json,
@@ -750,6 +754,14 @@ def _decimal_json(value: Decimal | None) -> str | None:
     if value is None:
         return None
     return str(value.quantize(Decimal("0.0001")))
+
+
+def _date_json(value: Any) -> str | None:
+    if value is None:
+        return None
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
 
 
 @lru_cache(maxsize=1)

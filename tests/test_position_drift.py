@@ -26,6 +26,7 @@ def _thesis(**overrides):
         "underlying_stop_price": Decimal("95.00"),
         "expected_holding_days": 5,
         "expected_move_percent": Decimal("6.0"),
+        "strategy_source": "catalyst_confluence",
         "expected_trajectory_json": {
             "method": "linear_market_sessions",
             "points": [
@@ -43,6 +44,10 @@ def _thesis(**overrides):
         },
         "catalyst_kind": "earnings",
         "catalyst_event_date": date(2026, 5, 11),
+        "catalyst_baseline_json": {
+            "strategy_source": "catalyst_confluence",
+            "strategy_thesis": "pre-earnings catalyst confluence",
+        },
         "invalidation_criteria_json": [
             {"code": "option_stop_breach", "enabled": True},
             {"code": "underlying_stop_breach", "enabled": True},
@@ -132,3 +137,46 @@ def test_missing_quote_only_fires_data_unavailable() -> None:
 
     assert [item.code for item in result.fired] == ["data_unavailable"]
     assert result.auto_trigger_codes == ()
+
+
+def test_strategy_3_metadata_is_preserved_in_drift_snapshot() -> None:
+    result = evaluate_position_drift(
+        thesis=_thesis(
+            strategy_source="activist_13d_followthrough",
+            catalyst_kind="filing",
+            catalyst_event_date=None,
+            catalyst_baseline_json={
+                "strategy_source": "activist_13d_followthrough",
+                "strategy_thesis": "fresh activist 13D follow-through",
+                "validation_metadata": {
+                    "sc_13d_accession": "0001234567-26-000123",
+                    "sc_13d_url": "https://www.sec.gov/Archives/example.txt",
+                },
+            },
+        ),
+        current=_snapshot(underlying_price=Decimal("102.00"), liquidation_premium=Decimal("1.55")),
+        session=_session(),
+    )
+
+    assert result.snapshot["strategy_source"] == "activist_13d_followthrough"
+    assert result.snapshot["catalyst_kind"] == "filing"
+    assert (
+        result.snapshot["catalyst_baseline"]["validation_metadata"]["sc_13d_accession"]
+        == "0001234567-26-000123"
+    )
+
+
+def test_pead_follow_through_failure_can_fire_as_strategy_specific_drift() -> None:
+    result = evaluate_position_drift(
+        thesis=_thesis(
+            strategy_source="pead_continuation",
+            invalidation_criteria_json=[
+                {"code": "pead_follow_through_failure", "enabled": True},
+                {"code": "data_unavailable", "enabled": True},
+            ],
+        ),
+        current=_snapshot(underlying_price=Decimal("100.50"), liquidation_premium=Decimal("1.20")),
+        session=_session(),
+    )
+
+    assert "pead_follow_through_failure" in {item.code for item in result.fired}

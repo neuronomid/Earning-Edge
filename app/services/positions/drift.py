@@ -62,6 +62,7 @@ def evaluate_position_drift(
 
     snapshot = {
         "ticker": thesis.ticker,
+        "strategy_source": getattr(thesis, "strategy_source", "catalyst_confluence"),
         "direction": direction,
         "session_date": session.session_date.isoformat(),
         "sessions_held": sessions_held,
@@ -100,6 +101,7 @@ def evaluate_position_drift(
         "catalyst_event_date": (
             None if thesis.catalyst_event_date is None else thesis.catalyst_event_date.isoformat()
         ),
+        "catalyst_baseline": getattr(thesis, "catalyst_baseline_json", {}),
         "new_headline_count": len(new_headlines),
         "new_headline_ids": [headline.id for headline in new_headlines],
         "quote_status": current.status,
@@ -222,6 +224,21 @@ def evaluate_position_drift(
                 code="catalyst_passed_no_follow_through",
                 severity="degrade",
                 observation="Catalyst passed without enough favorable follow-through.",
+            )
+        )
+
+    if (
+        "pead_follow_through_failure" in criteria
+        and getattr(thesis, "strategy_source", None) == "pead_continuation"
+        and adverse_drift is not None
+        and expected_move is not None
+        and adverse_drift < expected_move * Decimal("0.25")
+    ):
+        fired.append(
+            FiredCriterion(
+                code="pead_follow_through_failure",
+                severity="degrade",
+                observation="Post-earnings drift has not held enough follow-through.",
             )
         )
 
