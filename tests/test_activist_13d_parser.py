@@ -62,6 +62,29 @@ and proposals for strategic alternatives.</p>
 """
 
 
+_SHALLOW_AMENDMENT_BODY = """
+<html><body>
+<p>Cover page: The Reporting Person beneficially owns 7.4% of the outstanding shares.</p>
+<h2>Item 4. Purpose of Transaction</h2>
+<p>This amendment reports continued engagement with management regarding strategic
+alternatives and operational changes.</p>
+<h2>Item 5. Interest in Securities of the Issuer</h2>
+</body></html>
+"""
+
+
+_ITEM4_CHANGED_AMENDMENT_BODY = """
+<html><body>
+<p>Cover page: The Reporting Person beneficially owns 7.4% of the outstanding shares.</p>
+<p>Item 4 is hereby amended and supplemented as follows.</p>
+<h2>Item 4. Purpose of Transaction</h2>
+<p>The Reporting Persons intend to engage with the Issuer's board and may seek changes
+to the capital allocation policy.</p>
+<h2>Item 5. Interest in Securities of the Issuer</h2>
+</body></html>
+"""
+
+
 _UNPARSEABLE_STAKE_BODY = """
 <html><body>
 <p>Cover page: The Reporting Person beneficially owns shares.</p>
@@ -92,6 +115,39 @@ def test_parses_sc_13d_a_amendment_with_stake_change() -> None:
     assert parsed.form_type == "SC 13D/A"
     assert parsed.stake_percent == Decimal("9.3")
     assert parsed.is_substantive is True
+
+
+def test_sc_13d_a_active_intent_without_substantive_change_is_not_substantive() -> None:
+    parsed = parse_filing(_header(form_type="SC 13D/A"), _SHALLOW_AMENDMENT_BODY)
+
+    assert parsed is not None
+    assert parsed.item4_active_intent is True
+    assert parsed.is_substantive is False
+
+
+def test_sc_13d_a_item4_change_and_escalation_is_substantive() -> None:
+    parsed = parse_filing(_header(form_type="SC 13D/A"), _ITEM4_CHANGED_AMENDMENT_BODY)
+
+    assert parsed is not None
+    assert parsed.item4_active_intent is True
+    assert parsed.is_substantive is True
+
+
+def test_active_intent_catches_board_engagement_and_capital_allocation() -> None:
+    body = """
+    <html><body>
+    <p>Cover page: The Reporting Person beneficially owns 6.4% of the outstanding shares.</p>
+    <h2>Item 4. Purpose of Transaction</h2>
+    <p>The Reporting Persons intend to engage with the Issuer's board and may seek
+    changes to the capital allocation policy.</p>
+    <h2>Item 5. Interest in Securities of the Issuer</h2>
+    </body></html>
+    """
+
+    parsed = parse_filing(_header(), body)
+
+    assert parsed is not None
+    assert parsed.item4_active_intent is True
 
 
 def test_excludes_sc_13g_passive_filings() -> None:

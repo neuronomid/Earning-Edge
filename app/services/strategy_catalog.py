@@ -108,12 +108,13 @@ _ACTIVIST_13D_DEFINITION = StrategyDefinition(
     filter_codes=(),
     criteria_summary=(
         "Recent activist Schedule 13D and 13D/A filings parsed from SEC EDGAR, "
-        "gated on Item 4 active-intent language and an optionable USA universe "
-        "(price >= $15, average volume >= 750k, market cap >= $500M). Ranked by "
-        "a deterministic event score blending stake size, recency, filer "
-        "reputation, relative volume, and price confirmation."
+        "gated on Item 4 active-intent language, substantive amendment evidence, "
+        "real option-chain liquidity, and a USA universe (price >= $15, average "
+        "volume >= 750k, market cap >= $500M). Ranked by a deterministic event "
+        "score blending stake size, recency, filer reputation, relative volume, "
+        "price confirmation, earnings-collision risk, and option liquidity."
     ),
-    sort_summary="Event score descending (stake, intent, recency, filer quality)",
+    sort_summary="Event score descending (13D components, options liquidity, penalties)",
     query_urls=(
         "https://efts.sec.gov/LATEST/search-index?q=&forms=SC+13D",
         "https://efts.sec.gov/LATEST/search-index?q=&forms=SC+13D%2FA",

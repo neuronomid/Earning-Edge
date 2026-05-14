@@ -1,14 +1,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Literal
 
 import pytest
 
 from app.core.config import Settings
-from app.services.activist_13d_service import Activist13DCandidateService
+from app.scoring.types import OptionContractInput, StrategyPermission
+from app.services.activist_13d_service import (
+    Activist13DCandidateService,
+    _calendar_days_for_trading_lookback,
+)
+from app.services.candidate_models import CandidateRecord
 from app.services.market_data.types import MarketSnapshot, ReturnMetrics
 from app.services.sec.filings_client import FilingHeader
 
@@ -46,11 +51,12 @@ class FakeFilingsClient:
         form_type: Literal["SC 13D", "SC 13D/A"],
         lookback_days: int,
     ) -> tuple[FilingHeader, ...]:
+        sc_13d_call_count = sum(1 for form, _ in self.tier_calls if form == "SC 13D")
         self.tier_calls.append((form_type, lookback_days))
         if form_type in self.raise_on:
             raise self.raise_on[form_type]
         if form_type == "SC 13D":
-            if lookback_days <= 5:
+            if sc_13d_call_count == 0:
                 return self.tier1
             return self.tier3
         return self.tier2
@@ -82,6 +88,51 @@ class FakeMarketData:
         return self.snapshots[ticker]
 
 
+@dataclass
+class FakeOptionsService:
+    chains: dict[str, tuple[OptionContractInput, ...]]
+    fetch_failures: dict[str, Exception] = field(default_factory=dict)
+
+    async def get_chain(
+        self,
+        ticker: str,
+        *,
+        alpaca_api_key: str | None,
+        alpaca_api_secret: str | None,
+        strategy_permission: StrategyPermission,
+        earnings_date: date | None = None,
+        today: date | None = None,
+    ) -> tuple[OptionContractInput, ...]:
+        del alpaca_api_key, alpaca_api_secret, strategy_permission, earnings_date, today
+        if ticker in self.fetch_failures:
+            raise self.fetch_failures[ticker]
+        return self.chains.get(ticker, ())
+
+
+@dataclass
+class FakeEarningsSource:
+    dates: dict[str, date | None] = field(default_factory=dict)
+
+    async def get_candidate_details(
+        self,
+        ticker: str,
+        *,
+        window: tuple[date, date],
+    ) -> CandidateRecord | None:
+        del window
+        earnings_date = self.dates.get(ticker)
+        if earnings_date is None:
+            return None
+        return CandidateRecord(
+            ticker=ticker,
+            company_name=f"{ticker} Industries",
+            market_cap=Decimal("1500000000"),
+            earnings_date=earnings_date,
+            current_price=Decimal("50"),
+            sources=("fixture",),
+        )
+
+
 def _header(
     *,
     accession: str,
@@ -110,10 +161,11 @@ def _snapshot(
     market_cap: Decimal = Decimal("1500000000"),
     avg_vol: Decimal = Decimal("1000000"),
     one_day: Decimal = Decimal("0.03"),
+    five_day: Decimal = Decimal("0.05"),
 ) -> MarketSnapshot:
     returns = ReturnMetrics(
         one_day=one_day,
-        five_day=Decimal("0.05"),
+        five_day=five_day,
         twenty_day=Decimal("0.07"),
         fifty_day=None,
     )
@@ -142,13 +194,48 @@ def _snapshot(
     )
 
 
+def _option_contract(
+    ticker: str,
+    *,
+    bid: Decimal = Decimal("0.95"),
+    ask: Decimal = Decimal("1.05"),
+    volume: int = 50,
+    open_interest: int = 200,
+    expiry: date = TODAY + timedelta(days=21),
+) -> OptionContractInput:
+    return OptionContractInput(
+        ticker=ticker,
+        option_type="call",
+        position_side="long",
+        strike=Decimal("55"),
+        expiry=expiry,
+        bid=bid,
+        ask=ask,
+        mid=(bid + ask) / Decimal("2"),
+        volume=volume,
+        open_interest=open_interest,
+        implied_volatility=Decimal("0.35"),
+        delta=Decimal("0.45"),
+        source="fixture",
+    )
+
+
 def _build_service(
     client: FakeFilingsClient,
     market_data: FakeMarketData,
+    *,
+    options_service: FakeOptionsService | None = None,
+    earnings_source: FakeEarningsSource | None = None,
 ) -> Activist13DCandidateService:
+    resolved_options = options_service or FakeOptionsService(
+        chains={ticker: (_option_contract(ticker),) for ticker in market_data.snapshots}
+    )
+    resolved_earnings = earnings_source or FakeEarningsSource()
     return Activist13DCandidateService(
         client,  # type: ignore[arg-type]
         market_data=market_data,
+        options_service=resolved_options,
+        earnings_sources=(resolved_earnings,),
         settings=Settings(),
         today_provider=lambda: TODAY,
     )
@@ -156,6 +243,10 @@ def _build_service(
 
 def _body(stake: str = "7.5") -> str:
     return _BASE_ACTIVE_BODY.format(stake=stake)
+
+
+async def test_lookback_settings_are_interpreted_as_trading_days() -> None:
+    assert _calendar_days_for_trading_lookback(TODAY, 5) == 6
 
 
 async def test_tier_progression_until_5_candidates() -> None:
@@ -200,6 +291,7 @@ async def test_tier_progression_until_5_candidates() -> None:
 
     assert {row.ticker for row in batch.candidates} == {"AAA", "BBB", "CCC", "DDD", "EEE"}
     assert [form for form, _ in client.tier_calls] == ["SC 13D", "SC 13D/A", "SC 13D"]
+    assert client.tier_calls[0] == ("SC 13D", 6)
     assert batch.screener_status == "success"
 
 
@@ -219,6 +311,9 @@ async def test_returns_partial_batch_when_universe_smaller_than_5() -> None:
 
     assert [row.ticker for row in batch.candidates] == ["AAA", "BBB"]
     assert batch.screener_status == "partial"
+    assert batch.warning_text is not None
+    assert "only 2 of 5" in batch.warning_text
+    assert batch.strategy_reports[0].warning_text == batch.warning_text
 
 
 async def test_excludes_illiquid_options() -> None:
@@ -247,6 +342,102 @@ async def test_excludes_illiquid_options() -> None:
     batch = await service.get_top_five()
 
     assert [row.ticker for row in batch.candidates] == ["LIQ"]
+
+
+async def test_excludes_unusable_option_chains_and_wide_spreads() -> None:
+    tier1 = (
+        _header(accession="ACC-1", cik="0000000001", ticker="GOOD"),
+        _header(accession="ACC-2", cik="0000000002", ticker="WIDE"),
+        _header(accession="ACC-3", cik="0000000003", ticker="DEAD"),
+    )
+    client = FakeFilingsClient(
+        tier1=tier1,
+        documents={
+            "ACC-1": _body("8.0"),
+            "ACC-2": _body("8.0"),
+            "ACC-3": _body("8.0"),
+        },
+    )
+    market = FakeMarketData(
+        snapshots={
+            "GOOD": _snapshot("GOOD"),
+            "WIDE": _snapshot("WIDE"),
+            "DEAD": _snapshot("DEAD"),
+        }
+    )
+    options = FakeOptionsService(
+        chains={
+            "GOOD": (_option_contract("GOOD"),),
+            "WIDE": (
+                _option_contract("WIDE", bid=Decimal("0.50"), ask=Decimal("1.50")),
+            ),
+            "DEAD": (_option_contract("DEAD", volume=0, open_interest=0),),
+        }
+    )
+    service = _build_service(client, market, options_service=options)
+
+    batch = await service.get_top_five()
+
+    assert [row.ticker for row in batch.candidates] == ["GOOD"]
+
+
+async def test_earnings_collision_penalty_feeds_event_score() -> None:
+    tier1 = (
+        _header(accession="ACC-1", cik="0000000001", ticker="CLEAR"),
+        _header(accession="ACC-2", cik="0000000002", ticker="EARN"),
+    )
+    client = FakeFilingsClient(
+        tier1=tier1,
+        documents={"ACC-1": _body("8.0"), "ACC-2": _body("8.0")},
+    )
+    market = FakeMarketData(snapshots={"CLEAR": _snapshot("CLEAR"), "EARN": _snapshot("EARN")})
+    service = _build_service(
+        client,
+        market,
+        earnings_source=FakeEarningsSource(dates={"EARN": TODAY + timedelta(days=3)}),
+    )
+
+    batch = await service.get_top_five()
+
+    scores = {row.ticker: row.event_signal.score for row in batch.candidates if row.event_signal}
+    assert scores["CLEAR"] > scores["EARN"]
+    earn_notes = next(row.validation_notes for row in batch.candidates if row.ticker == "EARN")
+    assert "Activist 13D earnings_collision_penalty: 10.00" in earn_notes
+
+
+async def test_tier3_excludes_exhausted_price_moves() -> None:
+    tier3 = (
+        _header(accession="ACC-1", cik="0000000001", ticker="LIVE"),
+        _header(accession="ACC-2", cik="0000000002", ticker="GAPPED"),
+    )
+    client = FakeFilingsClient(
+        tier3=tier3,
+        documents={"ACC-1": _body("8.0"), "ACC-2": _body("8.0")},
+    )
+    market = FakeMarketData(
+        snapshots={
+            "LIVE": _snapshot("LIVE"),
+            "GAPPED": _snapshot("GAPPED", one_day=Decimal("0.12")),
+        }
+    )
+    service = _build_service(client, market)
+
+    batch = await service.get_top_five()
+
+    assert [row.ticker for row in batch.candidates] == ["LIVE"]
+
+
+async def test_empty_batch_attaches_strategy_e_warning() -> None:
+    client = FakeFilingsClient()
+    market = FakeMarketData(snapshots={})
+    service = _build_service(client, market)
+
+    batch = await service.get_top_five()
+
+    assert batch.candidates == ()
+    assert batch.warning_text is not None
+    assert "Strategy E found no qualified activist 13D candidates" in batch.warning_text
+    assert batch.strategy_reports[0].warning_text == batch.warning_text
 
 
 async def test_persists_accession_and_filing_url_in_validation_notes() -> None:
@@ -286,3 +477,8 @@ async def test_event_signal_populated_from_event_score() -> None:
     assert 0 <= record.event_signal.score <= 100
     assert "Elliott" in record.event_signal.detail
     assert "active intent" in record.event_signal.detail
+    assert "option_liquidity_score=" in record.event_signal.detail
+    assert any(
+        note.startswith("Activist 13D option liquidity quality:")
+        for note in record.validation_notes
+    )

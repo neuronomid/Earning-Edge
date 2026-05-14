@@ -10,12 +10,27 @@ from app.services.sec.filings_client import FilingHeader
 
 _ACTIVE_INTENT_PHRASES: tuple[str, ...] = (
     "board representation",
+    "board of directors",
+    "issuer's board",
+    "issuers board",
+    "engage with the board",
+    "engage with the issuer's board",
     "engagement with management",
+    "engage with management",
     "strategic alternatives",
     "operational changes",
     "shareholder rights",
+    "capital allocation",
+    "capital allocation policy",
+    "governance changes",
+    "management changes",
     "proposals",
     "nominate directors",
+    "nomination of directors",
+    "proxy contest",
+    "consent solicitation",
+    "special meeting",
+    "sale of the issuer",
     "spin-off",
     "spinoff",
     "review strategic",
@@ -34,6 +49,37 @@ _NEXT_ITEM_RE = re.compile(r"item\s*5\b", re.IGNORECASE)
 _TAG_RE = re.compile(r"<[^>]+>")
 _WHITESPACE_RE = re.compile(r"\s+")
 _PERCENT_RE = re.compile(r"([0-9]{1,3}(?:[.,][0-9]{1,3})?)\s*%")
+_STAKE_DELTA_RE = re.compile(
+    r"\b("
+    r"increase(?:d)?|decrease(?:d)?|"
+    r"now\s+beneficially\s+owns|"
+    r"previously\s+(?:reported|disclosed|owned)|"
+    r"prior(?:ly)?\s+(?:reported|disclosed|owned)|"
+    r"from\s+[0-9]{1,3}(?:[.,][0-9]{1,3})?\s*%\s+(?:to|previously)"
+    r")\b",
+    re.IGNORECASE,
+)
+_ITEM4_CHANGE_RE = re.compile(
+    r"\b("
+    r"item\s*4\s+(?:is\s+)?(?:hereby\s+)?(?:amended|supplemented)|"
+    r"amend(?:s|ed|ing)?\s+(?:and\s+supplement(?:s|ed|ing)?\s+)?item\s*4|"
+    r"supplement(?:s|ed|ing)?\s+item\s*4"
+    r")\b",
+    re.IGNORECASE,
+)
+_CAMPAIGN_ESCALATION_PHRASES: tuple[str, ...] = (
+    "proxy contest",
+    "consent solicitation",
+    "special meeting",
+    "nominate directors",
+    "nomination of directors",
+    "board representation",
+    "board seats",
+    "replace directors",
+    "capital allocation policy",
+    "sale of the issuer",
+    "strategic review",
+)
 _WORD_PERCENT_RE = re.compile(
     r"\b(zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|"
     r"fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|twenty-five|thirty|"
@@ -168,7 +214,28 @@ def _extract_stake_percent(text: str) -> Decimal | None:
 
 def _is_substantive_amendment(text: str) -> bool:
     item4 = _extract_item4(text) or ""
-    return _classify_active_intent(item4)
+    if not _classify_active_intent(item4):
+        return False
+    item4_lower = item4.lower()
+    return (
+        _has_stake_delta(text)
+        or _ITEM4_CHANGE_RE.search(text) is not None
+        or any(phrase in item4_lower for phrase in _CAMPAIGN_ESCALATION_PHRASES)
+    )
+
+
+def _has_stake_delta(text: str) -> bool:
+    if _STAKE_DELTA_RE.search(text) is None:
+        return False
+    percentages = [
+        value
+        for match in _PERCENT_RE.finditer(text[:8000])
+        if (value := _to_decimal(match.group(1))) is not None
+    ]
+    plausible = [value for value in percentages if Decimal("4") <= value <= Decimal("80")]
+    if len(plausible) < 2:
+        return True
+    return max(plausible) - min(plausible) >= Decimal("0.1")
 
 
 def _to_decimal(value: str) -> Decimal | None:
