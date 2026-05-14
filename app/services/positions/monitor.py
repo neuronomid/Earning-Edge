@@ -7,6 +7,8 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 
+from sqlalchemy import select
+
 from app.core.config import Settings, get_settings
 from app.core.logging import get_logger
 from app.db.models.open_position import OpenPosition
@@ -278,6 +280,15 @@ class PositionMonitor:
         today: date,
         now: datetime,
     ) -> None:
+        if not await self._position_is_active(session, position):
+            self.logger.info(
+                "position_monitor_skipped_inactive",
+                position_id=str(position.id),
+                ticker=recommendation.ticker,
+                status=position.status,
+            )
+            return
+
         alert_keys = _alerts_for_position(
             position,
             recommendation,
@@ -290,6 +301,15 @@ class PositionMonitor:
         position.last_polled_at = datetime.now(UTC)
         position.last_data_source = quote.source
         for alert_key in alert_keys:
+            if not await self._position_is_active(session, position):
+                self.logger.info(
+                    "position_monitor_stopped_inactive",
+                    position_id=str(position.id),
+                    ticker=recommendation.ticker,
+                    status=position.status,
+                )
+                break
+
             await self._send_alert(
                 position,
                 recommendation,
@@ -316,6 +336,15 @@ class PositionMonitor:
             plan,
             now=now,
         )
+
+    async def _position_is_active(self, session: Any, position: OpenPosition) -> bool:
+        result = await session.execute(
+            select(OpenPosition.status).where(OpenPosition.id == position.id)
+        )
+        status = result.scalar_one_or_none()
+        if status is not None:
+            position.status = status
+        return status == "active"
 
     async def _maybe_evaluate_validation_drift(
         self,
@@ -433,6 +462,8 @@ def _alerts_for_position(
 ) -> list[str]:
     alerts: list[str] = []
     plan = plan or active_position_plan(recommendation)
+    if getattr(position, "status", "active") != "active":
+        return alerts
 
     # Target price alert
     if not position.target_dismissed:
@@ -560,7 +591,7 @@ def _render_alert(
             [
                 header,
                 "",
-                target_label,
+                f"🟢 {target_label}",
                 current,
                 f"Target: ${plan.target_option_price:.2f}",
                 "",
@@ -571,7 +602,7 @@ def _render_alert(
         stop_lines = [
             header,
             "",
-            "Stop level has been reached.",
+            "🛑 Stop level has been reached.",
             current,
             f"Stop: ${plan.stop_loss_option_price:.2f}",
         ]
