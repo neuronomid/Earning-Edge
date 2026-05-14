@@ -23,9 +23,9 @@ from app.services.api_key_validators import (
 )
 from app.services.user_service import (
     DEFAULT_MAX_CONTRACTS,
-    OnboardingPayload,
     TIMEZONE_DISPLAY,
     TIMEZONE_MAP,
+    OnboardingPayload,
     RiskProfile,
     StrategyPermission,
     TimezoneLabel,
@@ -35,9 +35,10 @@ from app.telegram.fsm.onboarding_states import Onboarding
 from app.telegram.handlers._common import send_text
 from app.telegram.keyboards.confirm import (
     CANCEL_BTN,
+    CHOICE_CANCEL_VALUE,
+    SKIP_BTN,
     ChoiceCB,
     ConfirmCB,
-    SKIP_BTN,
     cancel_keyboard,
     choice_keyboard,
     confirm_keyboard,
@@ -116,6 +117,17 @@ async def step_account_size(message: Message, state: FSMContext) -> None:
 # ---------- step 2: risk profile ----------
 
 
+@router.callback_query(Onboarding.risk_profile, ChoiceCB.filter(F.value == CHOICE_CANCEL_VALUE))
+@router.callback_query(Onboarding.timezone, ChoiceCB.filter(F.value == CHOICE_CANCEL_VALUE))
+@router.callback_query(Onboarding.broker, ChoiceCB.filter(F.value == CHOICE_CANCEL_VALUE))
+@router.callback_query(
+    Onboarding.strategy_permission,
+    ChoiceCB.filter(F.value == CHOICE_CANCEL_VALUE),
+)
+async def cancel_onboarding_choice(callback: CallbackQuery, state: FSMContext) -> None:
+    await _cancel_from_callback(callback, state)
+
+
 @router.callback_query(Onboarding.risk_profile, ChoiceCB.filter(F.group == "risk"))
 async def step_risk_profile(
     callback: CallbackQuery, callback_data: ChoiceCB, state: FSMContext
@@ -163,9 +175,7 @@ async def step_timezone(
 
 
 @router.callback_query(Onboarding.broker, ChoiceCB.filter(F.group == "broker"))
-async def step_broker(
-    callback: CallbackQuery, callback_data: ChoiceCB, state: FSMContext
-) -> None:
+async def step_broker(callback: CallbackQuery, callback_data: ChoiceCB, state: FSMContext) -> None:
     await state.update_data(broker=callback_data.value)
     await callback.answer()
     await state.set_state(Onboarding.strategy_permission)
@@ -180,9 +190,7 @@ async def step_broker(
 # ---------- step 5: strategy permission ----------
 
 
-@router.callback_query(
-    Onboarding.strategy_permission, ChoiceCB.filter(F.group == "strategy")
-)
+@router.callback_query(Onboarding.strategy_permission, ChoiceCB.filter(F.group == "strategy"))
 async def step_strategy(
     callback: CallbackQuery, callback_data: ChoiceCB, state: FSMContext
 ) -> None:
@@ -394,7 +402,11 @@ async def _show_summary(message: Message, state: FSMContext) -> None:
     await send_text(
         message,
         summary,
-        reply_markup=confirm_keyboard(yes_label="✅ Confirm", no_label="✏️ Start over"),
+        reply_markup=confirm_keyboard(
+            yes_label="✅ Confirm",
+            no_label="✏️ Start over",
+            cancel_label="✖️ Cancel setup",
+        ),
     )
 
 
@@ -449,6 +461,11 @@ async def confirm_yes(callback: CallbackQuery, state: FSMContext) -> None:
         )
 
 
+@router.callback_query(Onboarding.confirm, ConfirmCB.filter(F.action == "cancel"))
+async def confirm_cancel(callback: CallbackQuery, state: FSMContext) -> None:
+    await _cancel_from_callback(callback, state)
+
+
 # ---------- helpers ----------
 
 
@@ -459,6 +476,17 @@ async def _cancel(message: Message, state: FSMContext) -> None:
         "Cancelled. Send /start when you're ready to try again.",
         reply_markup=ReplyKeyboardRemove(),
     )
+
+
+async def _cancel_from_callback(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer("Cancelled")
+    await state.clear()
+    if callback.message:
+        await send_text(
+            callback.message,
+            "Cancelled. Send /start when you're ready to try again.",
+            reply_markup=ReplyKeyboardRemove(),
+        )
 
 
 def _short(text: str, limit: int = 120) -> str:

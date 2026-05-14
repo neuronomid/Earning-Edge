@@ -33,6 +33,8 @@ from app.telegram.keyboards.settings import (
     ValApplyCB,
     ValCB,
     position_adjust_keyboard,
+    position_delete_confirm_keyboard,
+    position_list_keyboard,
 )
 from app.telegram.templates.validation import render_validation_history
 
@@ -67,6 +69,27 @@ async def position_action(
             return
 
         if callback_data.action == "delete":
+            await callback.answer()
+            await send_text(
+                callback.message,
+                (
+                    "Delete this active position? It will stop alerts and will not count "
+                    "toward P/L or account size."
+                ),
+                reply_markup=position_delete_confirm_keyboard(callback_data.position_id),
+            )
+            return
+
+        if callback_data.action == "delete_cancel":
+            await callback.answer("Cancelled")
+            await send_text(
+                callback.message,
+                "Delete cancelled.",
+                reply_markup=position_list_keyboard(callback_data.position_id),
+            )
+            return
+
+        if callback_data.action == "delete_confirm":
             recommendation_id = position.recommendation_id
             await FeedbackEventRepository(session).delete_for_recommendation_user(
                 recommendation_id,
@@ -134,6 +157,16 @@ async def position_adjust_choice(
         )
         if row is None or row[0].status != "active":
             await callback.answer(POSITION_INACTIVE_TEXT)
+            return
+
+        if callback_data.action == "cancel":
+            await callback.answer("Cancelled")
+            await state.clear()
+            await send_text(
+                callback.message,
+                "No changes made.",
+                reply_markup=position_list_keyboard(callback_data.position_id),
+            )
             return
 
         position, recommendation = row

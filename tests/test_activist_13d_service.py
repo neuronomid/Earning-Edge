@@ -311,9 +311,10 @@ async def test_returns_partial_batch_when_universe_smaller_than_5() -> None:
 
     assert [row.ticker for row in batch.candidates] == ["AAA", "BBB"]
     assert batch.screener_status == "partial"
-    assert batch.warning_text is not None
-    assert "only 2 of 5" in batch.warning_text
-    assert batch.strategy_reports[0].warning_text == batch.warning_text
+    assert batch.warning_text is None
+    report_warning = batch.strategy_reports[0].warning_text
+    assert report_warning is not None
+    assert "only 2 of 5" in report_warning
 
 
 async def test_excludes_illiquid_options() -> None:
@@ -435,9 +436,10 @@ async def test_empty_batch_attaches_strategy_e_warning() -> None:
     batch = await service.get_top_five()
 
     assert batch.candidates == ()
-    assert batch.warning_text is not None
-    assert "Strategy E found no qualified activist 13D candidates" in batch.warning_text
-    assert batch.strategy_reports[0].warning_text == batch.warning_text
+    assert batch.warning_text is None
+    report_warning = batch.strategy_reports[0].warning_text
+    assert report_warning is not None
+    assert "Strategy E found no qualified activist 13D candidates" in report_warning
 
 
 async def test_persists_accession_and_filing_url_in_validation_notes() -> None:

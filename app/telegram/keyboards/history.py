@@ -7,7 +7,9 @@ from app.telegram.keyboards.settings import ValCB
 
 
 class HistCB(CallbackData, prefix="hist"):
-    action: str  # mod_open, mod_entry, mod_exit, mod_qty, mod_edate, mod_xdate, del, del_ok, del_no
+    # mod_open, mod_entry, mod_exit, mod_qty, mod_edate, mod_xdate, mod_cancel,
+    # del, del_ok, del_no
+    action: str
     position_id: str
 
 
@@ -61,6 +63,12 @@ def history_modify_keyboard(position_id: str) -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     text="Exit Date",
                     callback_data=HistCB(action="mod_xdate", position_id=position_id).pack(),
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="↩ Back",
+                    callback_data=HistCB(action="mod_cancel", position_id=position_id).pack(),
                 ),
             ],
         ]

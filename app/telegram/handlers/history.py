@@ -118,6 +118,16 @@ async def history_action(
         )
         return
 
+    if action == "mod_cancel":
+        await state.clear()
+        await callback.answer("Cancelled")
+        await send_text(
+            callback.message,
+            "No changes made.",
+            reply_markup=history_card_keyboard(position_id),
+        )
+        return
+
     if action in {"mod_entry", "mod_exit", "mod_qty", "mod_edate", "mod_xdate"}:
         await _start_modify_flow(callback, state, position_id, action)
         return

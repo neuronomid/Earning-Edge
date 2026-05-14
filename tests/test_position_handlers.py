@@ -43,6 +43,7 @@ def _patch_handler_deps(
     position: object | None,
     recommendation: object | None = None,
     feedback_events: list[object] | None = None,
+    deleted_positions: list[object] | None = None,
     overrides: list[object] | None = None,
 ) -> None:
     class StubUserService:
@@ -67,6 +68,10 @@ def _patch_handler_deps(
                 return position, recommendation
             return None
 
+        async def delete(self, instance):
+            if deleted_positions is not None:
+                deleted_positions.append(instance)
+
     class StubRecommendationRepository:
         def __init__(self, session) -> None:
             self.session = session
@@ -84,6 +89,9 @@ def _patch_handler_deps(
             if feedback_events is not None:
                 feedback_events.append(instance)
             return instance
+
+        async def delete_for_recommendation_user(self, recommendation_id, user_id):
+            del recommendation_id, user_id
 
     class StubPositionPlanOverrideRepository:
         def __init__(self, session) -> None:
@@ -203,7 +211,154 @@ async def test_adjust_action_shows_adjust_choices(
         for row in send_recorder.calls[-1].kwargs["reply_markup"].inline_keyboard
         for button in row
     ]
-    assert labels == ["🟢 Target Price", "🛑 Stop Loss", "⚪️ TP and SL"]
+    assert labels == ["🟢 Target Price", "🛑 Stop Loss", "⚪️ TP and SL", "↩ Back"]
+
+
+async def test_adjust_cancel_returns_to_position_actions(
+    monkeypatch: pytest.MonkeyPatch,
+    send_recorder: SendRecorder,
+    patch_session_scope: None,
+) -> None:
+    user = SimpleNamespace(id=uuid4())
+    recommendation = SimpleNamespace(
+        id=uuid4(),
+        target_option_price=Decimal("2.00"),
+        stop_loss_option_price=Decimal("0.50"),
+        underlying_stop_price=None,
+    )
+    position = SimpleNamespace(
+        id=uuid4(),
+        user_id=user.id,
+        recommendation_id=recommendation.id,
+        status="active",
+    )
+    _patch_handler_deps(monkeypatch, user=user, position=position, recommendation=recommendation)
+    callback = make_callback(chat_id=12345, message=make_message(chat_id=12345))
+    state, _ = await make_state(chat_id=12345)
+    await state.set_state(position_handlers.AdjustPositionStates.target_price)
+
+    await position_handlers.position_adjust_choice(
+        callback,
+        PositionAdjustCB(action="cancel", position_id=str(position.id)),
+        state,
+    )
+
+    callback.answer.assert_awaited_once_with("Cancelled")
+    assert send_recorder.calls[-1].text == "No changes made."
+    labels = [
+        button.text
+        for row in send_recorder.calls[-1].kwargs["reply_markup"].inline_keyboard
+        for button in row
+    ]
+    assert "Adjust" in labels
+    assert await state.get_state() is None
+
+
+async def test_delete_action_requires_confirmation(
+    monkeypatch: pytest.MonkeyPatch,
+    send_recorder: SendRecorder,
+    patch_session_scope: None,
+) -> None:
+    user = SimpleNamespace(id=uuid4())
+    position = SimpleNamespace(
+        id=uuid4(),
+        user_id=user.id,
+        recommendation_id=uuid4(),
+        status="active",
+    )
+    deleted_positions: list[object] = []
+    _patch_handler_deps(
+        monkeypatch,
+        user=user,
+        position=position,
+        deleted_positions=deleted_positions,
+    )
+    callback = make_callback(chat_id=12345, message=make_message(chat_id=12345))
+    state, _ = await make_state(chat_id=12345)
+
+    await position_handlers.position_action(
+        callback,
+        PosCB(action="delete", position_id=str(position.id)),
+        state,
+    )
+
+    callback.answer.assert_awaited_once_with()
+    assert "Delete this active position?" in send_recorder.calls[-1].text
+    labels = [
+        button.text
+        for row in send_recorder.calls[-1].kwargs["reply_markup"].inline_keyboard
+        for button in row
+    ]
+    assert labels == ["✅ Delete position", "✖️ Cancel"]
+    assert deleted_positions == []
+
+
+async def test_delete_cancel_returns_to_position_actions(
+    monkeypatch: pytest.MonkeyPatch,
+    send_recorder: SendRecorder,
+    patch_session_scope: None,
+) -> None:
+    user = SimpleNamespace(id=uuid4())
+    position = SimpleNamespace(
+        id=uuid4(),
+        user_id=user.id,
+        recommendation_id=uuid4(),
+        status="active",
+    )
+    deleted_positions: list[object] = []
+    _patch_handler_deps(
+        monkeypatch,
+        user=user,
+        position=position,
+        deleted_positions=deleted_positions,
+    )
+    callback = make_callback(chat_id=12345, message=make_message(chat_id=12345))
+    state, _ = await make_state(chat_id=12345)
+
+    await position_handlers.position_action(
+        callback,
+        PosCB(action="delete_cancel", position_id=str(position.id)),
+        state,
+    )
+
+    callback.answer.assert_awaited_once_with("Cancelled")
+    assert send_recorder.calls[-1].text == "Delete cancelled."
+    assert deleted_positions == []
+
+
+async def test_delete_confirm_removes_active_position(
+    monkeypatch: pytest.MonkeyPatch,
+    send_recorder: SendRecorder,
+    patch_session_scope: None,
+) -> None:
+    user = SimpleNamespace(id=uuid4())
+    position = SimpleNamespace(
+        id=uuid4(),
+        user_id=user.id,
+        recommendation_id=uuid4(),
+        status="active",
+    )
+    deleted_positions: list[object] = []
+    _patch_handler_deps(
+        monkeypatch,
+        user=user,
+        position=position,
+        deleted_positions=deleted_positions,
+    )
+    callback = make_callback(chat_id=12345, message=make_message(chat_id=12345))
+    state, _ = await make_state(chat_id=12345)
+
+    await position_handlers.position_action(
+        callback,
+        PosCB(action="delete_confirm", position_id=str(position.id)),
+        state,
+    )
+
+    callback.answer.assert_awaited_once_with("Deleted")
+    assert send_recorder.calls[-1].text == (
+        "Position deleted. It will not count toward P/L or account size."
+    )
+    assert deleted_positions == [position]
 
 
 async def test_adjust_target_choice_starts_target_state(

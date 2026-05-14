@@ -470,7 +470,7 @@ class Activist13DCandidateService:
             candidates=rows,
             screener_status=resolved_status,
             fallback_used=False,
-            warning_text=warning_text,
+            warning_text=None,
             strategy_reports=(
                 build_strategy_report(
                     ACTIVIST_13D_STRATEGY_SOURCE,
