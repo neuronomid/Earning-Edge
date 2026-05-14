@@ -4,6 +4,7 @@ from collections.abc import Callable
 from dataclasses import replace
 from datetime import date
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 
@@ -16,6 +17,7 @@ from app.scoring.penalties import collect_soft_penalties
 from app.scoring.strategy_select import select_allowed_strategies
 from app.scoring.types import CandidateContext, OptionContractInput, SourceConflict, UserContext
 from app.scoring.vetoes import evaluate_hard_vetoes
+from app.services.candidate_models import StrategyEventSignal
 from app.services.market_data.types import MarketSnapshot, ReturnMetrics
 from app.services.news.types import NewsBrief
 
@@ -417,6 +419,60 @@ def test_data_confidence_logs_source_conflict_without_forcing_blocker() -> None:
     assert any("market_cap" in note for note in result.notes)
 
 
+def test_legacy_a_candidate_score_within_3_points_of_pre_v2(monkeypatch) -> None:
+    candidate = _strong_bullish_candidate(with_options=True)
+    user = _user(account_size="20000", strategy_permission="long")
+
+    _set_scoring_fairness(monkeypatch, enabled=False)
+    legacy = score_candidate(candidate, user)
+    _set_scoring_fairness(monkeypatch, enabled=True)
+    rebalanced = score_candidate(candidate, user)
+
+    assert abs(rebalanced.final_score - legacy.final_score) <= 3
+
+
+def test_legacy_b_candidate_score_within_3_points_of_pre_v2(monkeypatch) -> None:
+    candidate = replace(
+        _strong_bullish_candidate(with_options=True),
+        earnings_date=None,
+        strategy_source="coiled_setup",
+        event_signal=StrategyEventSignal(
+            score=100,
+            is_supportive=True,
+            detail="Coiled setup: 0.0% from 52w high, 3.0x avg volume",
+        ),
+        verified_earnings_date=True,
+    )
+    user = _user(account_size="20000", strategy_permission="long")
+
+    _set_scoring_fairness(monkeypatch, enabled=False)
+    legacy = score_candidate(candidate, user)
+    _set_scoring_fairness(monkeypatch, enabled=True)
+    rebalanced = score_candidate(candidate, user)
+
+    assert abs(rebalanced.final_score - legacy.final_score) <= 3
+
+
+def test_v2_off_restores_byte_identical_legacy_scores(monkeypatch) -> None:
+    with_event = replace(
+        _strong_bullish_candidate(with_options=True),
+        earnings_date=None,
+        strategy_source="coiled_setup",
+        event_signal=StrategyEventSignal(
+            score=100,
+            is_supportive=True,
+            detail="Coiled setup: 0.0% from 52w high, 3.0x avg volume",
+        ),
+        verified_earnings_date=True,
+    )
+    without_event = replace(with_event, event_signal=None)
+    user = _user(account_size="20000", strategy_permission="long")
+
+    _set_scoring_fairness(monkeypatch, enabled=False)
+
+    assert score_candidate(with_event, user) == score_candidate(without_event, user)
+
+
 def _strong_bullish_candidate(
     *,
     with_options: bool = False,
@@ -535,6 +591,12 @@ def _user(
         max_contracts=3,
         has_valid_openrouter_api_key=openrouter_ok,
     )
+
+
+def _set_scoring_fairness(monkeypatch, *, enabled: bool) -> None:
+    settings = SimpleNamespace(scoring_fairness_v2=enabled)
+    monkeypatch.setattr("app.scoring.direction.get_settings", lambda: settings)
+    monkeypatch.setattr("app.scoring.confidence.get_settings", lambda: settings)
 
 
 def _market_snapshot(

@@ -3,6 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from app.scoring.expiry import score_expiry_fit
+from app.scoring.strategy_policy import EARNINGS_HISTORY_RELEVANT_STRATEGIES
 from app.scoring.types import (
     CandidateContext,
     DirectionResult,
@@ -130,18 +131,19 @@ def collect_soft_penalties(
             )
         )
 
-    if (
-        candidate.previous_earnings_move_percent is not None
-        and candidate.expected_move_percent is not None
-        and abs(candidate.previous_earnings_move_percent)
-        < abs(candidate.expected_move_percent) * Decimal("0.75")
-    ):
-        penalties.append(
-            SoftPenalty(
-                "inconsistent_history",
-                "Previous earnings reactions have been smaller than the current implied move.",
-                -5,
+    if candidate.strategy_source in EARNINGS_HISTORY_RELEVANT_STRATEGIES:
+        if (
+            candidate.previous_earnings_move_percent is not None
+            and candidate.expected_move_percent is not None
+            and abs(candidate.previous_earnings_move_percent)
+            < abs(candidate.expected_move_percent) * Decimal("0.75")
+        ):
+            penalties.append(
+                SoftPenalty(
+                    "inconsistent_history",
+                    "Previous earnings reactions have been smaller than the current implied move.",
+                    -5,
+                )
             )
-        )
 
     return tuple(penalties)

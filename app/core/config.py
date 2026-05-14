@@ -1,3 +1,4 @@
+from decimal import Decimal
 from functools import lru_cache
 from typing import Literal
 
@@ -48,8 +49,16 @@ class Settings(BaseSettings):
     finviz_timeout_ms: int = 30000
     finviz_query_cache_ttl_seconds: int = 600
     finnhub_api_key: str = Field(default="")
+    alpha_vantage_api_key: str = Field(default="")
     finnhub_news_lookback_days: int = 120
     sec_edgar_user_agent: str = "Earning-Edge/1.0 (contact: ops@example.com)"
+    scoring_fairness_v2: bool = True
+    pead_min_surprise_pct: Decimal = Decimal("0.05")
+    pead_min_day1_reaction: Decimal = Decimal("0.03")
+    pead_min_market_cap_usd: Decimal = Decimal("300000000")
+    pead_max_market_cap_usd: Decimal = Decimal("10000000000")
+    sector_rs_min_4w_return: Decimal = Decimal("0.02")
+    sector_rs_sma_window: int = 50
 
     news_brief_schema_version: str = "v3"
     news_prompt_version: str = "v3"

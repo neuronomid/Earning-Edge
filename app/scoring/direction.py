@@ -3,11 +3,13 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Literal
 
+from app.core.config import get_settings
 from app.scoring.types import (
     CandidateContext,
     DirectionClassification,
     DirectionResult,
     ScoreFactor,
+    StrategySource,
     clamp_int,
     round_decimal,
 )
@@ -32,7 +34,8 @@ def structural_direction_tier(score: int) -> StructuralDirectionTier:
         return "bullish"
     return "neutral"
 
-_DIRECTION_WEIGHTS: dict[str, int] = {
+
+_LEGACY_WEIGHTS: dict[str, int] = {
     "trend alignment": 20,
     "relative strength": 15,
     "volume confirmation": 10,
@@ -42,10 +45,62 @@ _DIRECTION_WEIGHTS: dict[str, int] = {
     "data confidence": 5,
 }
 
+_V2_WEIGHTS_BY_STRATEGY: dict[StrategySource, dict[str, int]] = {
+    "catalyst_confluence": {
+        "trend alignment": 20,
+        "relative strength": 15,
+        "volume confirmation": 10,
+        "earnings expectation context": 15,
+        "event signal": 0,
+        "market/sector environment": 10,
+        "price structure": 10,
+        "data confidence": 5,
+    },
+    "coiled_setup": {
+        "trend alignment": 20,
+        "relative strength": 18,
+        "volume confirmation": 10,
+        "earnings expectation context": 0,
+        "event signal": 7,
+        "market/sector environment": 10,
+        "price structure": 15,
+        "data confidence": 5,
+    },
+    "pead_continuation": {
+        "trend alignment": 18,
+        "relative strength": 15,
+        "volume confirmation": 12,
+        "earnings expectation context": 8,
+        "event signal": 7,
+        "market/sector environment": 10,
+        "price structure": 10,
+        "data confidence": 5,
+    },
+    "sector_relative_strength": {
+        "trend alignment": 15,
+        "relative strength": 18,
+        "volume confirmation": 10,
+        "earnings expectation context": 0,
+        "event signal": 15,
+        "market/sector environment": 12,
+        "price structure": 10,
+        "data confidence": 5,
+    },
+    "activist_13d_followthrough": {
+        "trend alignment": 15,
+        "relative strength": 15,
+        "volume confirmation": 12,
+        "earnings expectation context": 0,
+        "event signal": 15,
+        "market/sector environment": 10,
+        "price structure": 13,
+        "data confidence": 5,
+    },
+}
 
-def score_direction(
-    candidate: CandidateContext, *, data_confidence_score: int
-) -> DirectionResult:
+
+def score_direction(candidate: CandidateContext, *, data_confidence_score: int) -> DirectionResult:
+    weights = _direction_weights(candidate.strategy_source)
     signals = {
         "trend alignment": _trend_signal(candidate),
         "relative strength": _relative_strength_signal(candidate),
@@ -54,15 +109,15 @@ def score_direction(
         "market/sector environment": _market_signal(candidate),
         "price structure": _price_structure_signal(candidate),
     }
+    if "event signal" in weights:
+        signals["event signal"] = _event_signal(candidate)
 
     signed_total = ZERO
     for name, signal in signals.items():
         if signal is None:
             continue
-        signed_total += Decimal(_DIRECTION_WEIGHTS[name]) * signal
-    total_weight = sum(
-        weight for name, weight in _DIRECTION_WEIGHTS.items() if name != "data confidence"
-    )
+        signed_total += Decimal(weights[name]) * signal
+    total_weight = sum(weight for name, weight in weights.items() if name != "data confidence")
     bias = signed_total / Decimal(total_weight)
 
     if candidate.market_snapshot.current_price is None or data_confidence_score < 40:
@@ -82,8 +137,8 @@ def score_direction(
         *(
             ScoreFactor(
                 name=name,
-                score=_factor_points(signal, _DIRECTION_WEIGHTS[name], polarity),
-                weight=_DIRECTION_WEIGHTS[name],
+                score=_factor_points(signal, weights[name], polarity),
+                weight=weights[name],
                 detail=_factor_detail(name, signal, polarity),
             )
             for name, signal in signals.items()
@@ -91,7 +146,7 @@ def score_direction(
         ScoreFactor(
             name="data confidence",
             score=_confidence_factor_points(data_confidence_score),
-            weight=_DIRECTION_WEIGHTS["data confidence"],
+            weight=weights["data confidence"],
             detail=f"data confidence landed at {data_confidence_score}/100",
         ),
     )
@@ -102,8 +157,7 @@ def score_direction(
     score = clamp_int(score)
 
     reasons = tuple(
-        factor.detail
-        for factor in sorted(factors, key=lambda item: item.score, reverse=True)[:3]
+        factor.detail for factor in sorted(factors, key=lambda item: item.score, reverse=True)[:3]
     )
 
     return DirectionResult(
@@ -113,6 +167,12 @@ def score_direction(
         factors=factors,
         reasons=reasons,
     )
+
+
+def _direction_weights(strategy_source: StrategySource) -> dict[str, int]:
+    if not get_settings().scoring_fairness_v2:
+        return _LEGACY_WEIGHTS
+    return _V2_WEIGHTS_BY_STRATEGY[strategy_source]
 
 
 def _factor_points(signal: Decimal | None, weight: int, polarity: int) -> int:
@@ -202,6 +262,15 @@ def _earnings_signal(candidate: CandidateContext) -> Decimal:
     return signal * Decimal("0.7")
 
 
+def _event_signal(candidate: CandidateContext) -> Decimal | None:
+    event_signal = candidate.event_signal
+    if event_signal is None:
+        return None
+    clamped_score = max(0, min(100, event_signal.score))
+    unit = Decimal(clamped_score) / Decimal("100")
+    return unit if event_signal.is_supportive else -unit
+
+
 def _market_signal(candidate: CandidateContext) -> Decimal | None:
     returns = [
         _signed_strength(candidate.market_snapshot.spy_returns.five_day, Decimal("0.02")),
@@ -248,9 +317,7 @@ def _mean(values: tuple[Decimal | None, ...]) -> Decimal | None:
     return sum(present) / Decimal(len(present))
 
 
-def _weighted_mean(
-    values: tuple[Decimal | None, ...], weights: tuple[int, ...]
-) -> Decimal | None:
+def _weighted_mean(values: tuple[Decimal | None, ...], weights: tuple[int, ...]) -> Decimal | None:
     weighted_total = ZERO
     total_weight = 0
     for value, weight in zip(values, weights, strict=True):

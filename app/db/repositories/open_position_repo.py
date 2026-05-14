@@ -41,6 +41,17 @@ class OpenPositionRepository(BaseRepository[OpenPosition]):
         )
         return [(position, recommendation) for position, recommendation in result.all()]
 
+    async def list_active_with_recommendations(
+        self,
+    ) -> list[tuple[OpenPosition, Recommendation]]:
+        result = await self.session.execute(
+            select(OpenPosition, Recommendation)
+            .join(Recommendation, Recommendation.id == OpenPosition.recommendation_id)
+            .where(OpenPosition.status == "active")
+            .order_by(OpenPosition.created_at.asc(), OpenPosition.id.asc())
+        )
+        return [(position, recommendation) for position, recommendation in result.all()]
+
     async def list_closed_with_recommendations_for_user(
         self,
         user_id: UUID,
