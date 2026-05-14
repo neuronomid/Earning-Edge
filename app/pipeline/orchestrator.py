@@ -320,6 +320,7 @@ class PipelineOrchestrator:
             valuation_date=valuation_date,
             option_chain=option_chain,
             strategy_source=strategy_source,
+            event_signal=record.event_signal,
             verified_earnings_date=record.earnings_date_verified,
             identity_verified=bool(
                 record.ticker and (record.company_name or market_snapshot.company_name)

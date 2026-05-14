@@ -77,3 +77,26 @@ def test_migration_up_and_down() -> None:
     assert not (EXPECTED_TABLES & tables), f"leftover: {EXPECTED_TABLES & tables}"
 
     command.upgrade(cfg, "head")
+
+
+def test_0013_upgrade_downgrade_idempotent() -> None:
+    if not asyncio.run(postgres_authenticates()):
+        pytest.skip("Postgres is not configured; start docker compose to run migration tests")
+
+    settings = get_settings()
+    async_url = settings.database_url
+    cfg = _alembic_config(async_url)
+
+    asyncio.run(_drop_all_tables(async_url))
+    command.upgrade(cfg, "0012_position_validation")
+    before = _table_names(async_url)
+
+    command.upgrade(cfg, "0013_strategy_source_widen")
+    after_upgrade = _table_names(async_url)
+    assert after_upgrade == before
+
+    command.downgrade(cfg, "0012_position_validation")
+    after_downgrade = _table_names(async_url)
+    assert after_downgrade == before
+
+    command.upgrade(cfg, "head")

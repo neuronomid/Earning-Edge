@@ -451,6 +451,10 @@ def _candidate_bundle(candidate: PipelineCandidate) -> CandidateBundle:
         },
         news_summary=_news_summary(candidate),
         structural_direction_tier=structural_direction_tier(candidate.evaluation.direction.score),
+        strategy_source=candidate.context.strategy_source,
+        event_signal_detail=(
+            candidate.context.event_signal.detail if candidate.context.event_signal else None
+        ),
         news_coverage=candidate.news_bundle.news_coverage,
         stale_news=candidate.news_bundle.stale_news,
         option_chain_candidates=[

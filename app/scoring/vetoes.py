@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.scoring.expiry import is_valid_expiry
+from app.scoring.strategy_policy import NO_EARNINGS_REQUIRED_STRATEGIES
 from app.scoring.types import (
     CandidateContext,
     HardVeto,
@@ -21,7 +22,10 @@ def evaluate_hard_vetoes(
 ) -> tuple[HardVeto, ...]:
     vetoes: list[HardVeto] = []
 
-    if candidate.earnings_date is None and candidate.strategy_source != "coiled_setup":
+    if (
+        candidate.earnings_date is None
+        and candidate.strategy_source not in NO_EARNINGS_REQUIRED_STRATEGIES
+    ):
         vetoes.append(HardVeto("earnings_missing", "Earnings date is unavailable."))
     if candidate.earnings_date is not None and not candidate.verified_earnings_date:
         vetoes.append(HardVeto("earnings_unverified", "Earnings date cannot be verified."))

@@ -5,6 +5,7 @@ from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal
 
+from app.services.candidate_models import StrategyEventSignal
 from app.services.market_data.types import MarketSnapshot
 from app.services.news.types import NewsBrief
 
@@ -18,7 +19,13 @@ Strategy = Literal["long_call", "long_put", "short_put", "short_call"]
 EarningsTiming = Literal["BMO", "AMC", "unknown"]
 ConflictSeverity = Literal["slight", "moderate", "severe"]
 TargetMethod = Literal["full_greeks", "delta_fallback", "intrinsic_fallback"]
-StrategySource = Literal["catalyst_confluence", "coiled_setup"]
+StrategySource = Literal[
+    "catalyst_confluence",
+    "coiled_setup",
+    "pead_continuation",
+    "sector_relative_strength",
+    "activist_13d_followthrough",
+]
 ExtendedTargetMethod = Literal[
     "full_greeks",
     "delta_fallback",
@@ -115,6 +122,7 @@ class CandidateContext:
     valuation_date: date | None = None
     option_chain: tuple[OptionContractInput, ...] = ()
     strategy_source: StrategySource = "catalyst_confluence"
+    event_signal: StrategyEventSignal | None = None
     verified_earnings_date: bool = True
     identity_verified: bool = True
     expected_move_percent: Decimal | None = None

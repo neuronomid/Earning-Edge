@@ -26,6 +26,7 @@ from app.pipeline.steps.news import NewsBriefStep, NewsStep
 from app.pipeline.types import PipelineCandidate
 from app.scoring.final import combine_scores
 from app.scoring.final import final_action as structural_action
+from app.scoring.strategy_policy import NO_EARNINGS_REQUIRED_STRATEGIES
 from app.scoring.types import (
     CandidateContext,
     CandidateEvaluation,
@@ -399,7 +400,7 @@ def _candidate_context(
         strategy_source=candidate.strategy_source,  # type: ignore[arg-type]
         verified_earnings_date=(
             True
-            if candidate.strategy_source == "coiled_setup"
+            if candidate.strategy_source in NO_EARNINGS_REQUIRED_STRATEGIES
             else candidate.earnings_date is not None
         ),
         identity_verified=True,

@@ -6,7 +6,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Any, Protocol
 
-from app.services.candidate_models import CandidateRecord, StrategySource
+from app.services.candidate_models import CandidateRecord, StrategyEventSignal, StrategySource
 from app.services.finviz.query import FinvizQuery
 
 
@@ -83,6 +83,7 @@ def _record_to_dict(row: CandidateRecord) -> dict[str, Any]:
         "sources": list(row.sources),
         "validation_notes": list(row.validation_notes),
         "strategy_source": row.strategy_source,
+        "event_signal": _event_signal_to_dict(row.event_signal),
     }
 
 
@@ -102,6 +103,27 @@ def _record_from_dict(data: dict[str, Any]) -> CandidateRecord:
         sources=tuple(data.get("sources", ())),
         validation_notes=tuple(data.get("validation_notes", ())),
         strategy_source=data.get("strategy_source"),
+        event_signal=_event_signal_from_dict(data.get("event_signal")),
+    )
+
+
+def _event_signal_to_dict(signal: StrategyEventSignal | None) -> dict[str, Any] | None:
+    if signal is None:
+        return None
+    return {
+        "score": signal.score,
+        "is_supportive": signal.is_supportive,
+        "detail": signal.detail,
+    }
+
+
+def _event_signal_from_dict(data: Any) -> StrategyEventSignal | None:
+    if not isinstance(data, dict):
+        return None
+    return StrategyEventSignal(
+        score=int(data["score"]),
+        is_supportive=bool(data["is_supportive"]),
+        detail=str(data["detail"]),
     )
 
 

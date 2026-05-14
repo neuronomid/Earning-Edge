@@ -61,6 +61,8 @@ class CandidateBundle(_Frozen):
     market_comparison: dict[str, float] = Field(default_factory=dict)
     news_summary: str = ""
     structural_direction_tier: DirectionTier | None = None
+    strategy_source: str = "catalyst_confluence"
+    event_signal_detail: str | None = None
     news_coverage: Literal["none", "sparse", "adequate", "rich"] = "adequate"
     stale_news: bool = False
     option_chain_candidates: list[OptionChainCandidate] = Field(default_factory=list)

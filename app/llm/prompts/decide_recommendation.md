@@ -10,6 +10,8 @@ For each candidate in `candidates`, weigh:
 - direction: trend, relative strength, sector and market context, earnings
   expectation, price structure, data confidence — the deterministic
   `structural_direction_tier` field carries the math-derived view
+- `strategy_source` identifies the candidate screen; `event_signal_detail`
+  summarizes screen-specific evidence when available
 - news context (`news_summary`, `news_coverage`, `stale_news`): you are the
   only step that interprets news. Use it to confirm or override the
   structural tier when warranted, and explain in `rationale`. Treat

@@ -379,6 +379,8 @@ async def test_decision_input_serializes_each_prd_7_5_field() -> None:
         "previous_earnings_move",
         "data_confidence_score",
         "rejected_contract_reasons",
+        "strategy_source",
+        "event_signal_detail",
     ):
         assert needle in serialized
 

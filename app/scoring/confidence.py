@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.scoring.strategy_policy import NO_EARNINGS_REQUIRED_STRATEGIES
 from app.scoring.types import (
     CandidateContext,
     DataConfidenceResult,
@@ -97,7 +98,7 @@ def _identity_score(candidate: CandidateContext, blockers: list[str]) -> int:
 
 def _earnings_score(candidate: CandidateContext, blockers: list[str]) -> int:
     if candidate.earnings_date is None:
-        if candidate.strategy_source == "coiled_setup":
+        if candidate.strategy_source in NO_EARNINGS_REQUIRED_STRATEGIES:
             return 20
         blockers.append("Earnings date is unavailable.")
         return 0

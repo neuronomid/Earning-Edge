@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
@@ -11,6 +12,7 @@ from app.llm.types import LLMAuthenticationError
 from app.pipeline.steps.decide import (
     HeuristicDecisionStep,
     LLMDecisionStep,
+    build_decision_input,
     get_default_decision_step,
     resolve_selected_contract,
 )
@@ -26,7 +28,7 @@ from app.scoring.types import (
     StrategySelection,
     UserContext,
 )
-from app.services.candidate_models import CandidateRecord
+from app.services.candidate_models import CandidateRecord, StrategyEventSignal
 from app.services.market_data.types import MarketSnapshot, ReturnMetrics
 from app.services.news.types import NewsBrief, NewsBundle
 
@@ -296,6 +298,34 @@ async def test_default_decision_step_uses_heuristic_in_tests_and_llm_elsewhere()
 
     assert isinstance(get_default_decision_step(settings=test_settings), HeuristicDecisionStep)
     assert isinstance(get_default_decision_step(settings=dev_settings), LLMDecisionStep)
+
+
+async def test_build_decision_input_includes_strategy_source_and_event_signal_detail() -> None:
+    signal = StrategyEventSignal(
+        score=91,
+        is_supportive=True,
+        detail="Sector RS: top-decile sector and stock momentum.",
+    )
+    base = _candidate("XLF", chosen_index=0)
+    candidate = replace(
+        base,
+        record=replace(
+            base.record,
+            strategy_source="sector_relative_strength",
+            event_signal=signal,
+        ),
+        context=replace(
+            base.context,
+            strategy_source="sector_relative_strength",
+            event_signal=signal,
+        ),
+    )
+
+    decision_input = build_decision_input([candidate], _user_context())
+    bundle = decision_input.candidates[0]
+
+    assert bundle.strategy_source == "sector_relative_strength"
+    assert bundle.event_signal_detail == signal.detail
 
 
 def _candidate(

@@ -187,6 +187,55 @@ def test_coiled_setup_without_earnings_date_uses_dte_expiry_window() -> None:
 
 
 @pytest.mark.parametrize(
+    "strategy_source",
+    [
+        "coiled_setup",
+        "sector_relative_strength",
+        "activist_13d_followthrough",
+    ],
+)
+def test_no_earnings_exemption_set_covers_non_earnings_strategies(
+    strategy_source: str,
+) -> None:
+    candidate = replace(
+        _strong_bullish_candidate(with_options=True),
+        earnings_date=None,
+        strategy_source=strategy_source,  # type: ignore[arg-type]
+        verified_earnings_date=True,
+    )
+    user = _user(account_size="20000")
+    contract = candidate.option_chain[0]
+
+    vetoes = evaluate_hard_vetoes(candidate, user, contract)
+    confidence = compute_data_confidence(
+        candidate,
+        user,
+        selected_contract=contract,
+        require_selected_contract=True,
+    )
+
+    assert "earnings_missing" not in {veto.code for veto in vetoes}
+    assert "Earnings date is unavailable." not in confidence.blockers
+
+
+@pytest.mark.parametrize("strategy_source", ["catalyst_confluence", "pead_continuation"])
+def test_earnings_required_strategies_still_require_earnings_date(
+    strategy_source: str,
+) -> None:
+    candidate = replace(
+        _strong_bullish_candidate(with_options=True),
+        earnings_date=None,
+        strategy_source=strategy_source,  # type: ignore[arg-type]
+        verified_earnings_date=False,
+    )
+    user = _user(account_size="20000")
+
+    vetoes = evaluate_hard_vetoes(candidate, user, candidate.option_chain[0])
+
+    assert "earnings_missing" in {veto.code for veto in vetoes}
+
+
+@pytest.mark.parametrize(
     ("candidate", "contract", "user", "expected_code"),
     [
         (
