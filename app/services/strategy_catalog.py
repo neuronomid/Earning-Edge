@@ -107,11 +107,17 @@ _ACTIVIST_13D_DEFINITION = StrategyDefinition(
     provider="sec_edgar",
     filter_codes=(),
     criteria_summary=(
-        "Fresh activist Schedule 13D follow-through candidates. Phase 1 wires an "
-        "empty arm until the EDGAR-backed service is implemented."
+        "Recent activist Schedule 13D and 13D/A filings parsed from SEC EDGAR, "
+        "gated on Item 4 active-intent language and an optionable USA universe "
+        "(price >= $15, average volume >= 750k, market cap >= $500M). Ranked by "
+        "a deterministic event score blending stake size, recency, filer "
+        "reputation, relative volume, and price confirmation."
     ),
-    sort_summary="Pending activist 13D implementation",
-    query_urls=(),
+    sort_summary="Event score descending (stake, intent, recency, filer quality)",
+    query_urls=(
+        "https://efts.sec.gov/LATEST/search-index?q=&forms=SC+13D",
+        "https://efts.sec.gov/LATEST/search-index?q=&forms=SC+13D%2FA",
+    ),
 )
 
 _DEFINITIONS: dict[StrategySource, StrategyDefinition] = {

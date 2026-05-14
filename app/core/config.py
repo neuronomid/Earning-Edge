@@ -60,6 +60,16 @@ class Settings(BaseSettings):
     sector_rs_min_4w_return: Decimal = Decimal("0.02")
     sector_rs_sma_window: int = 50
 
+    activist_13d_min_price_usd: Decimal = Decimal("15")
+    activist_13d_min_avg_vol: int = 750_000
+    activist_13d_min_market_cap_usd: Decimal = Decimal("500000000")
+    activist_13d_lookback_tier1_days: int = 5
+    activist_13d_lookback_tier2_days: int = 10
+    activist_13d_lookback_tier3_days: int = 20
+    activist_13d_user_agent: str = "EarningEdge research@earningedge.local"
+    activist_13d_filing_cache_ttl_seconds: int = 86400
+    activist_13d_throttle_rps: int = 8
+
     news_brief_schema_version: str = "v3"
     news_prompt_version: str = "v3"
 

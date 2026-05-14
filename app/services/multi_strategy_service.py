@@ -6,6 +6,7 @@ from typing import Any, Protocol, cast
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
+from app.services.activist_13d_service import get_activist_13d_candidate_service
 from app.services.candidate_models import (
     CandidateBatch,
     CandidateRecord,
@@ -248,26 +249,6 @@ def _resolve_warning(
     return fallback_warning
 
 
-class _EmptyArm:
-    def __init__(self, slug: StrategySource) -> None:
-        self.slug = slug
-
-    async def get_top_five(self, *, limit: int = 5) -> CandidateBatch:
-        return CandidateBatch(
-            candidates=(),
-            screener_status="empty",
-            fallback_used=False,
-            strategy_reports=(
-                build_strategy_report(
-                    self.slug,
-                    status="empty",
-                    raw_row_count=0,
-                    candidate_count=0,
-                ),
-            ),
-        )
-
-
 @lru_cache(maxsize=1)
 def get_multi_strategy_service() -> MultiStrategyCandidateService:
     settings = get_settings()
@@ -290,12 +271,13 @@ def get_multi_strategy_service() -> MultiStrategyCandidateService:
     coiled = CoiledSetupCandidateService(runner)
     pead = get_pead_candidate_service(runner)
     sector_rs = get_sector_relative_strength_service(runner)
+    activist_13d = get_activist_13d_candidate_service()
     return MultiStrategyCandidateService(
         (
             catalyst,
             pead,
             coiled,
             sector_rs,
-            _EmptyArm("activist_13d_followthrough"),
+            activist_13d,
         )
     )
