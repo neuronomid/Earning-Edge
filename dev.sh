@@ -111,6 +111,75 @@ database_tables() {
     'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select tablename from pg_tables where schemaname='\''public'\'' order by tablename;"'
 }
 
+current_alembic_revision() {
+  docker compose exec -T postgres sh -lc \
+    'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select version_num from alembic_version" 2>/dev/null' \
+    | head -n 1 | tr -d '[:space:]'
+}
+
+revision_is_known() {
+  local revision="$1"
+  [ -n "$revision" ] || return 1
+  grep -REq "^revision[^=]*=[[:space:]]*[\"']${revision}[\"']" \
+    "$ROOT_DIR/alembic/versions" 2>/dev/null
+}
+
+column_exists() {
+  local table="$1" column="$2"
+  docker compose exec -T postgres sh -lc \
+    "psql -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -Atc \"select 1 from information_schema.columns where table_schema='public' and table_name='${table}' and column_name='${column}' limit 1\"" \
+    2>/dev/null | grep -qx '1'
+}
+
+recover_unknown_alembic_revision() {
+  # alembic_version may point at a revision file that has been renamed or
+  # squashed out of this branch (e.g. a previous `alembic merge heads`
+  # artifact). In that case `alembic upgrade head` fails with
+  # "Can't locate revision ...". Detect it, probe the schema to figure out
+  # which known revision actually matches the DB, and re-stamp so we can
+  # roll forward from there.
+  local current=""
+  current="$(current_alembic_revision || true)"
+  [ -n "$current" ] || return 0
+
+  if revision_is_known "$current"; then
+    return 0
+  fi
+
+  echo "Detected unknown alembic revision '${current}' (no migration file in this branch)."
+
+  local tables=""
+  tables="$(database_tables)"
+
+  local target=""
+  if printf '%s\n' "$tables" | grep -qx 'position_revalidations'; then
+    target="0012_position_validation"
+  elif printf '%s\n' "$tables" | grep -qx 'position_theses'; then
+    target="0012_position_validation"
+  elif printf '%s\n' "$tables" | grep -qx 'position_plan_overrides'; then
+    target="0011_position_plan_overrides"
+  elif column_exists recommendations expected_move_percent; then
+    target="0010_safety_expected_move"
+  elif column_exists recommendations news_coverage; then
+    target="0009_news_coverage"
+  elif column_exists open_positions target_dismissed; then
+    target="0008_position_mute"
+  elif column_exists open_positions pnl_applied; then
+    target="0007_position_pnl_applied"
+  elif printf '%s\n' "$tables" | grep -qx 'open_positions'; then
+    target="0006_open_positions"
+  else
+    echo "Could not infer a known alembic revision that matches the current schema." >&2
+    echo "Inspect the public schema and run 'alembic stamp <revision>' manually." >&2
+    exit 1
+  fi
+
+  echo "Re-stamping alembic_version to '${target}' to match the existing schema..."
+  # --purge clears the existing alembic_version row first; without it alembic
+  # refuses to operate because the current revision is unknown.
+  docker compose run --rm --no-deps app alembic stamp --purge "$target"
+}
+
 recover_stamped_but_uninitialized_db() {
   # Reset alembic_version when the DB is "stamped" (alembic_version row exists)
   # but the actual schema tables are missing. This can happen after volume
@@ -196,8 +265,12 @@ docker compose up -d postgres redis
 wait_for_container_health "earning-edge-postgres"
 wait_for_container_health "earning-edge-redis"
 
+echo "Building app image (cached layers reused when unchanged)..."
+docker compose build app
+
 echo "Applying database migrations..."
 recover_stamped_but_uninitialized_db
+recover_unknown_alembic_revision
 docker compose run --rm --no-deps app alembic upgrade head
 ensure_database_schema
 
