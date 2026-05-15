@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 from alembic.config import Config
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from alembic import command
@@ -46,6 +46,26 @@ def _table_names(async_url: str) -> set[str]:
     return asyncio.run(_async_table_names(async_url))
 
 
+async def _async_column_default(async_url: str, table: str, column: str) -> str | None:
+    engine = create_async_engine(async_url)
+    try:
+        async with engine.connect() as conn:
+            result = await conn.execute(
+                text(
+                    "select column_default from information_schema.columns "
+                    "where table_schema='public' and table_name=:table and column_name=:column"
+                ),
+                {"table": table, "column": column},
+            )
+            return result.scalar_one_or_none()
+    finally:
+        await engine.dispose()
+
+
+def _column_default(async_url: str, table: str, column: str) -> str | None:
+    return asyncio.run(_async_column_default(async_url, table, column))
+
+
 async def _drop_all_tables(async_url: str) -> None:
     from sqlalchemy import text
 
@@ -71,6 +91,10 @@ def test_migration_up_and_down() -> None:
 
     tables = _table_names(async_url)
     assert EXPECTED_TABLES.issubset(tables), f"missing: {EXPECTED_TABLES - tables}"
+    assert (
+        _column_default(async_url, "recommendations", "news_coverage")
+        == "'none'::character varying"
+    )
 
     command.downgrade(cfg, "base")
     tables = _table_names(async_url)

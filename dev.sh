@@ -117,6 +117,19 @@ current_alembic_revision() {
     | head -n 1 | tr -d '[:space:]'
 }
 
+local_alembic_head() {
+  docker compose run --rm --no-deps -T app python - <<'PY' | head -n 1 | tr -d '[:space:]'
+from alembic.config import Config
+from alembic.script import ScriptDirectory
+
+script = ScriptDirectory.from_config(Config("alembic.ini"))
+heads = script.get_heads()
+if len(heads) != 1:
+    raise SystemExit(f"Expected exactly one alembic head, found: {', '.join(heads)}")
+print(heads[0])
+PY
+}
+
 revision_is_known() {
   local revision="$1"
   [ -n "$revision" ] || return 1
@@ -129,6 +142,13 @@ column_exists() {
   docker compose exec -T postgres sh -lc \
     "psql -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -Atc \"select 1 from information_schema.columns where table_schema='public' and table_name='${table}' and column_name='${column}' limit 1\"" \
     2>/dev/null | grep -qx '1'
+}
+
+column_default() {
+  local table="$1" column="$2"
+  docker compose exec -T postgres sh -lc \
+    "psql -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -Atc \"select coalesce(column_default, '') from information_schema.columns where table_schema='public' and table_name='${table}' and column_name='${column}' limit 1\"" \
+    2>/dev/null | head -n 1
 }
 
 recover_unknown_alembic_revision() {
@@ -202,11 +222,36 @@ recover_stamped_but_uninitialized_db() {
   fi
 }
 
+ensure_alembic_at_head() {
+  local current="" head=""
+
+  current="$(current_alembic_revision || true)"
+  head="$(local_alembic_head || true)"
+  if [ -z "$head" ]; then
+    echo "Could not resolve the local alembic head for this branch." >&2
+    exit 1
+  fi
+  if [ "$current" != "$head" ]; then
+    echo "Database alembic revision is '${current:-none}', expected branch head '${head}'." >&2
+    echo "Run './dev.sh' again after checking the migration output above." >&2
+    exit 1
+  fi
+}
+
 ensure_database_schema() {
-  local tables=""
+  local tables="" news_default=""
 
   tables="$(database_tables)"
   if printf '%s\n' "$tables" | grep -qx 'cron_jobs'; then
+    if ! column_exists recommendations news_coverage; then
+      echo "Database schema is inconsistent after migrations. recommendations.news_coverage is missing." >&2
+      exit 1
+    fi
+    news_default="$(column_default recommendations news_coverage)"
+    if [[ "$news_default" != *none* ]]; then
+      echo "Database schema is not ready for this branch. recommendations.news_coverage default is '${news_default:-unset}', expected 'none'." >&2
+      exit 1
+    fi
     return 0
   fi
 
@@ -272,6 +317,7 @@ echo "Applying database migrations..."
 recover_stamped_but_uninitialized_db
 recover_unknown_alembic_revision
 docker compose run --rm --no-deps app alembic upgrade head
+ensure_alembic_at_head
 ensure_database_schema
 
 echo "Starting backend..."

@@ -10,6 +10,7 @@ from app.scoring.types import (
     CandidateContext,
     ContractScoreResult,
     DirectionResult,
+    ExitTarget,
     HardVeto,
     OptionContractInput,
     ScoreFactor,
@@ -39,12 +40,14 @@ def score_contract(
     current_price = candidate.market_snapshot.current_price
     if current_price is not None and contract.underlying_price is None:
         contract = replace(contract, underlying_price=current_price)
+    exit_target = EXIT_TARGETS.build(candidate, contract, direction)
+    reality_check = assess_option_reality(candidate, contract, exit_target)
     factors = (
         ScoreFactor(
             "breakeven feasibility",
-            _score_breakeven(candidate, contract),
+            _score_breakeven(candidate, contract, exit_target=exit_target),
             20,
-            "breakeven was compared against expected and historical earnings moves",
+            "breakeven was compared against the expected move for the planned exit window",
         ),
         ScoreFactor(
             "option liquidity",
@@ -92,8 +95,6 @@ def score_contract(
     )
 
     base_score = sum(factor.score for factor in factors)
-    exit_target = EXIT_TARGETS.build(candidate, contract, direction)
-    reality_check = assess_option_reality(candidate, contract, exit_target)
     penalties = collect_soft_penalties(candidate, user, contract, direction)
     vetoes = evaluate_hard_vetoes(
         candidate,
@@ -168,13 +169,18 @@ def liquidity_quality(contract: OptionContractInput) -> int:
     return clamp_int(score)
 
 
-def _score_breakeven(candidate: CandidateContext, contract: OptionContractInput) -> int:
+def _score_breakeven(
+    candidate: CandidateContext,
+    contract: OptionContractInput,
+    *,
+    exit_target: ExitTarget | None,
+) -> int:
     current_price = candidate.market_snapshot.current_price
     required_move = breakeven_move_percent(contract, current_price)
     if required_move is None:
         return 0
 
-    context_move = _context_move(candidate)
+    context_move = _context_move(candidate, exit_target=exit_target)
     if contract.position_side == "long":
         if context_move is None or context_move <= ZERO:
             unit = _fallback_long_breakeven_unit(required_move)
@@ -306,16 +312,24 @@ def _score_direction_fit(direction: DirectionResult, contract: OptionContractInp
     return 4
 
 
-def _context_move(candidate: CandidateContext) -> Decimal | None:
+def _context_move(candidate: CandidateContext, *, exit_target: ExitTarget | None) -> Decimal | None:
+    if (
+        exit_target is not None
+        and exit_target.expected_move_to_exit_percent is not None
+        and exit_target.expected_move_to_exit_percent > ZERO
+    ):
+        return abs(exit_target.expected_move_to_exit_percent)
     values = [
         (
             abs(candidate.expected_move_percent)
             if candidate.expected_move_percent is not None
             else None
         ),
-        abs(candidate.previous_earnings_move_percent)
-        if candidate.previous_earnings_move_percent is not None
-        else None,
+        (
+            abs(candidate.previous_earnings_move_percent)
+            if candidate.previous_earnings_move_percent is not None
+            else None
+        ),
     ]
     observed = [value for value in values if value is not None and value > ZERO]
     if not observed:

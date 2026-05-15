@@ -94,6 +94,8 @@ def test_fallback_and_deferred_news_bundles_are_not_adequate() -> None:
 
     assert fallback.news_coverage == "none"
     assert fallback.stale_news is True
+    assert fallback.brief.key_uncertainty == "news service unavailable"
+    assert "news service unavailable" in " ".join(fallback.brief.neutral_contextual_evidence)
     assert deferred.news_coverage == "none"
     assert deferred.stale_news is True
 

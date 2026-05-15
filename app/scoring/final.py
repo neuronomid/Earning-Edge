@@ -89,8 +89,7 @@ def score_candidate(candidate: CandidateContext, user: UserContext) -> Candidate
     if (
         action == "recommend"
         and candidate.strategy_source in NO_EARNINGS_REQUIRED_STRATEGIES
-        and candidate.news_brief.key_uncertainty.strip().lower()
-        == "news service unavailable"
+        and _news_is_unavailable(candidate.news_brief.key_uncertainty)
     ):
         action = "watchlist"
 
@@ -102,7 +101,7 @@ def score_candidate(candidate: CandidateContext, user: UserContext) -> Candidate
         )
         reasons.extend(penalty.reason for penalty in chosen.penalties)
         reasons.extend(veto.reason for veto in chosen.vetoes)
-    if candidate.news_brief.key_uncertainty.strip().lower() == "news service unavailable":
+    if _news_is_unavailable(candidate.news_brief.key_uncertainty):
         reasons.append("News service unavailable; non-catalyst setups cannot be promoted blindly.")
     reasons.extend(final_confidence.blockers)
 
@@ -116,6 +115,16 @@ def score_candidate(candidate: CandidateContext, user: UserContext) -> Candidate
         final_score=final_score,
         action=action,
         reasons=tuple(dict.fromkeys(reasons)),
+    )
+
+
+def _news_is_unavailable(key_uncertainty: str) -> bool:
+    normalized = key_uncertainty.strip().lower()
+    return (
+        normalized == "news service unavailable"
+        or "news service unavailable" in normalized
+        or "coverage was unavailable" in normalized
+        or "not enough recent" in normalized
     )
 
 

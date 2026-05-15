@@ -463,9 +463,11 @@ class PipelineOrchestrator:
                             else contract.exit_target.target_method
                         ),
                         expected_move_percent=item.context.expected_move_percent,
-                        margin_requirement=uncovered_call_margin_requirement(contract.contract)
-                        if contract.strategy == "short_call"
-                        else None,
+                        margin_requirement=(
+                            uncovered_call_margin_requirement(contract.contract)
+                            if contract.strategy == "short_call"
+                            else None
+                        ),
                         spread_percent=ZERO if spread is None else spread * Decimal("100"),
                         liquidity_score=contract.liquidity_score,
                         contract_opportunity_score=contract.score,
@@ -670,12 +672,12 @@ def _build_user_context(user: User, *, has_valid_openrouter_api_key: bool) -> Us
         risk_profile=user.risk_profile,  # type: ignore[arg-type]
         strategy_permission=user.strategy_permission,  # type: ignore[arg-type]
         max_contracts=user.max_contracts,
-        max_option_premium=None
-        if user.max_option_premium is None
-        else Decimal(str(user.max_option_premium)),
-        custom_risk_percent=None
-        if user.custom_risk_percent is None
-        else Decimal(str(user.custom_risk_percent)),
+        max_option_premium=(
+            None if user.max_option_premium is None else Decimal(str(user.max_option_premium))
+        ),
+        custom_risk_percent=(
+            None if user.custom_risk_percent is None else Decimal(str(user.custom_risk_percent))
+        ),
         has_valid_openrouter_api_key=has_valid_openrouter_api_key,
     )
 
@@ -687,9 +689,11 @@ def _option_chain_with_underlying_price(
     if current_price is None or current_price <= ZERO:
         return option_chain
     return tuple(
-        contract
-        if contract.underlying_price is not None
-        else replace(contract, underlying_price=current_price)
+        (
+            contract
+            if contract.underlying_price is not None
+            else replace(contract, underlying_price=current_price)
+        )
         for contract in option_chain
     )
 
@@ -809,8 +813,11 @@ def _fallback_news_bundle(
         search_results=(),
         articles=(),
         brief=NewsBrief(
-            neutral_contextual_evidence=["Recent coverage was unavailable during this run."],
-            key_uncertainty=error,
+            neutral_contextual_evidence=[
+                "Recent coverage was unavailable during this run.",
+                f"News failure reason: {error}",
+            ],
+            key_uncertainty="news service unavailable",
         ),
         used_ir_fallback=False,
         used_llm_summary=False,

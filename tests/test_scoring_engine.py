@@ -571,6 +571,59 @@ def test_pm_weekly_no_catalyst_contract_is_not_recommendable() -> None:
     assert rejected.reality_check.trading_days_to_exit == 1
     assert rejected.exit_target is not None
     assert rejected.exit_target.exit_by_date == date(2026, 5, 15)
+    breakeven_factor = next(
+        factor for factor in rejected.factors if factor.name == "breakeven feasibility"
+    )
+    assert breakeven_factor.score == 4
+
+
+def test_non_catalyst_unavailable_news_caps_recommendation_to_watchlist() -> None:
+    contract = OptionContractInput(
+        ticker="XYZ",
+        option_type="call",
+        position_side="long",
+        strike=Decimal("102"),
+        expiry=date(2026, 5, 29),
+        bid=Decimal("2.20"),
+        ask=Decimal("2.35"),
+        volume=220,
+        open_interest=600,
+        implied_volatility=Decimal("0.32"),
+        delta=Decimal("0.56"),
+        gamma=Decimal("0.03"),
+        theta=Decimal("-0.04"),
+        vega=Decimal("0.10"),
+    )
+    candidate = replace(
+        _strong_bullish_candidate(),
+        ticker="XYZ",
+        company_name="XYZ Inc.",
+        earnings_date=None,
+        strategy_source="sector_relative_strength",
+        event_signal=StrategyEventSignal(
+            score=92,
+            is_supportive=True,
+            detail="Sector RS: top-decile sector and stock momentum.",
+        ),
+        verified_earnings_date=True,
+        news_brief=NewsBrief(
+            neutral_contextual_evidence=[],
+            key_uncertainty=(
+                "There was not enough recent, independent coverage to form a strong "
+                "catalyst view."
+            ),
+        ),
+        valuation_date=date(2026, 5, 1),
+        option_chain=(contract,),
+        expected_move_percent=Decimal("0.06"),
+    )
+    user = _user(account_size="20000", strategy_permission="long")
+
+    result = score_candidate(candidate, user)
+
+    assert result.chosen_contract is not None
+    assert result.final_score >= 68
+    assert result.action == "watchlist"
 
 
 def _strong_bullish_candidate(
