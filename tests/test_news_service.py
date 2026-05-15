@@ -4,6 +4,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -124,8 +125,9 @@ class FakeRouter:
         user: str,
         max_tokens: int = 1024,
         temperature: float = 0.3,
+        response_format: dict[str, Any] | None = None,
     ) -> str:
-        del api_key, system, user, max_tokens, temperature
+        del api_key, system, user, max_tokens, temperature, response_format
         self.calls += 1
         return self.response_text
 

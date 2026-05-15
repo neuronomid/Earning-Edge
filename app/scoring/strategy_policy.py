@@ -29,6 +29,13 @@ class StrategyTradePolicy:
     allow_weeklies_without_named_catalyst: bool
     max_spread_percent: Decimal
     preferred_contract_sides: tuple[Strategy, ...]
+    # Long-premium reality floors. Apply only when the contract is long and no
+    # named catalyst falls before the planned exit — a true catalyst trade can
+    # justify a coin-flip R:R or a thin chain on event-day liquidity, but a
+    # structural sector / coiled / activist setup cannot.
+    min_long_premium_risk_reward: Decimal = Decimal("0.80")
+    min_volume_non_catalyst_long: int = 5
+    min_open_interest_non_catalyst_long: int = 10
 
 
 _POLICIES: dict[StrategySource, StrategyTradePolicy] = {
@@ -41,6 +48,9 @@ _POLICIES: dict[StrategySource, StrategyTradePolicy] = {
         allow_weeklies_without_named_catalyst=True,
         max_spread_percent=Decimal("0.35"),
         preferred_contract_sides=("long_call", "long_put", "short_put", "short_call"),
+        min_long_premium_risk_reward=Decimal("0.50"),
+        min_volume_non_catalyst_long=1,
+        min_open_interest_non_catalyst_long=1,
     ),
     "pead_continuation": StrategyTradePolicy(
         min_dte_calendar=14,
@@ -51,6 +61,9 @@ _POLICIES: dict[StrategySource, StrategyTradePolicy] = {
         allow_weeklies_without_named_catalyst=False,
         max_spread_percent=Decimal("0.30"),
         preferred_contract_sides=("long_call", "long_put"),
+        min_long_premium_risk_reward=Decimal("0.80"),
+        min_volume_non_catalyst_long=5,
+        min_open_interest_non_catalyst_long=10,
     ),
     "coiled_setup": StrategyTradePolicy(
         min_dte_calendar=14,
@@ -61,6 +74,9 @@ _POLICIES: dict[StrategySource, StrategyTradePolicy] = {
         allow_weeklies_without_named_catalyst=False,
         max_spread_percent=Decimal("0.30"),
         preferred_contract_sides=("long_call", "long_put"),
+        min_long_premium_risk_reward=Decimal("0.80"),
+        min_volume_non_catalyst_long=5,
+        min_open_interest_non_catalyst_long=10,
     ),
     "sector_relative_strength": StrategyTradePolicy(
         min_dte_calendar=14,
@@ -71,6 +87,9 @@ _POLICIES: dict[StrategySource, StrategyTradePolicy] = {
         allow_weeklies_without_named_catalyst=False,
         max_spread_percent=Decimal("0.30"),
         preferred_contract_sides=("long_call", "long_put"),
+        min_long_premium_risk_reward=Decimal("0.80"),
+        min_volume_non_catalyst_long=5,
+        min_open_interest_non_catalyst_long=10,
     ),
     "activist_13d_followthrough": StrategyTradePolicy(
         min_dte_calendar=14,
@@ -81,6 +100,9 @@ _POLICIES: dict[StrategySource, StrategyTradePolicy] = {
         allow_weeklies_without_named_catalyst=False,
         max_spread_percent=Decimal("0.30"),
         preferred_contract_sides=("long_call", "long_put"),
+        min_long_premium_risk_reward=Decimal("0.80"),
+        min_volume_non_catalyst_long=5,
+        min_open_interest_non_catalyst_long=10,
     ),
 }
 

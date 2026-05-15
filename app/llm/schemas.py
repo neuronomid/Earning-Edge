@@ -86,6 +86,8 @@ class CandidateBundle(_Frozen):
     news_source_count: int = 0
     news_status: Literal["available", "deferred", "unavailable"] = "unavailable"
     option_chain_candidates: list[OptionChainCandidate] = Field(default_factory=list)
+    tradeable_contracts_available: bool = True
+    catalyst_pending_no_tradeable_contract: bool = False
     expected_move: Decimal | None = None
     previous_earnings_move: Decimal | None = None
     data_confidence_score: int = Field(ge=0, le=100, default=100)

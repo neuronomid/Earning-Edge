@@ -1227,3 +1227,74 @@ This issue is not fixed until all of these are true:
 - Telegram title matches the strategy source instead of always saying earnings.
 
 If only the prompt changes, this file should still be considered unresolved.
+
+## Post-PRMB Follow-Up (2026-05-15)
+
+PRMB sector-RS run `919ed48f-cfa7-4eff-b149-f05663ffb656` produced a
+watchlist-only output instead of a live recommendation, confirming the P0
+fixes landed. Four follow-up issues surfaced during the post-mortem and have
+since been resolved on the `codex/dumb` branch.
+
+### Resolved
+
+1. **News pipeline silently failing.** Finnhub + SEC EDGAR were healthy
+   (84 articles for PRMB), but `NewsSummarizer.summarize()` was burning the
+   completion budget on Gemini 3.1 Pro Preview reasoning tokens, leaving the
+   final JSON truncated mid-string and the brief downgraded to
+   `key_uncertainty="news service unavailable"`. Fix:
+   - `LLMRouter.summarize()` now sends `reasoning={"effort": "low",
+     "exclude": True}` and accepts a `response_format` kwarg.
+   - `NewsSummarizer` requests `response_format={"type": "json_object"}`,
+     runs a primary attempt + retry with a brevity hint, and logs the raw
+     response tail + length on failure for easier debugging next time.
+   - Added a tolerant JSON repair pass (`_repair_loose_json`) that fixes
+     trailing commas and unescaped inner double quotes before falling back to
+     `_failure_brief()`.
+2. **Negative-EV long-premium contracts (R:R floor).**
+   `StrategyTradePolicy.min_long_premium_risk_reward` enforces a 0.80 floor
+   on non-catalyst strategies (0.50 for `catalyst_confluence`). Vetoes emit
+   `weak_long_risk_reward` whenever target_gain / stop_distance falls below
+   the policy floor on a long, non-catalyst contract.
+3. **Tradable-but-not-actually-tradable contracts (liquidity floor).**
+   `min_volume_non_catalyst_long` / `min_open_interest_non_catalyst_long`
+   default to 5 / 10 for non-catalyst strategies and 1 / 1 for catalyst
+   confluence. Vetoes emit `thin_liquidity_no_catalyst` when both fall below
+   the policy floor on a long, non-catalyst contract.
+4. **Catalyst-pending tickers disappearing from the watchlist (Op-3).**
+   `CandidateBundle` now carries `tradeable_contracts_available` and
+   `catalyst_pending_no_tradeable_contract`. The decide-step prompt asks the
+   LLM to surface those tickers on the watchlist, and
+   `_augment_with_catalyst_pending` fills empty slots deterministically when
+   the LLM forgets.
+5. **News-blackout downgrade reason (P2-1).** When the LLM downgrades a
+   setup to `watchlist` while `news_status="unavailable"`,
+   `validate_llm_decision` injects a canonical
+   `"Downgraded to watchlist because news_status=unavailable…"` concern if
+   the model did not already cite one.
+6. **Tailored corrective prompts (P2-3).** `_targeted_retry_hint`
+   detects runway-claim, unknown-contract, and band/action mismatches and
+   appends a focused hint to the retry prompt so the heavy model fixes the
+   exact mistake instead of guessing.
+
+### Acceptance tests added
+
+- `test_weak_long_risk_reward_vetoes_prmb_like_no_catalyst_contract`
+- `test_weak_long_risk_reward_does_not_fire_for_short_premium`
+- `test_thin_liquidity_no_catalyst_vetoes_volume_1_long_option`
+- `test_thin_liquidity_floor_skipped_when_catalyst_is_pending`
+- `test_watchlist_with_news_unavailable_gets_blackout_concern_injected`
+- `test_watchlist_with_news_unavailable_preserves_existing_blackout_concern`
+- `test_catalyst_pending_no_contract_ticker_lands_on_watchlist`
+- `test_bundle_marks_catalyst_pending_no_tradeable_contract`
+- `test_corrective_prompt_includes_targeted_hint_for_runway_violation`
+- `test_corrective_prompt_includes_targeted_hint_for_unknown_contract`
+
+### Still open
+
+- The optional R:R floor for `catalyst_confluence` (0.50) was chosen as a
+  defensive default and has not been backtested. Tune after paper-trade
+  feedback.
+- LLM still has discretion to choose `watchlist` over `no_trade` when the
+  reality flags are borderline. The new structural concern injection is the
+  audit trail, not a hard rule — review whether to harden further once we
+  collect more decision examples.

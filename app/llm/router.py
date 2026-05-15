@@ -83,8 +83,21 @@ class LLMRouter:
         user: str,
         max_tokens: int = 1024,
         temperature: float = 0.3,
+        response_format: dict[str, Any] | None = None,
     ) -> str:
-        """Run the lightweight model. Returns plain text (PRD §7.3)."""
+        """Run the lightweight model. Returns plain text (PRD §7.3).
+
+        Callers that need structured output should pass
+        ``response_format={"type": "json_object"}`` so OpenRouter forwards the
+        constraint to providers that honour it (Gemini, OpenAI, etc.).
+
+        Reasoning is kept minimal on this route and excluded from the response
+        content. Some "Pro Preview" thinking models (e.g. Gemini 3 Pro Preview)
+        reject ``enabled=False`` outright, so we keep the trace on but ask for
+        the lowest effort and hide it from ``message.content`` so the
+        completion budget is spent on the final JSON answer instead of an
+        invisible chain of thought.
+        """
         messages = [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
@@ -96,7 +109,8 @@ class LLMRouter:
             role="summarize",
             max_tokens=max_tokens,
             temperature=temperature,
-            response_format=None,
+            response_format=response_format,
+            reasoning={"effort": "low", "exclude": True},
         )
         return _extract_text(payload)
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Sequence
 from typing import Any, Protocol
 
@@ -20,6 +21,7 @@ class LightweightSummarizer(Protocol):
         user: str,
         max_tokens: int = 1024,
         temperature: float = 0.3,
+        response_format: dict[str, Any] | None = None,
     ) -> str: ...
 
 
@@ -29,6 +31,10 @@ class NewsSummaryError(RuntimeError):
 
 class NewsSummaryValidationError(NewsSummaryError):
     """Raised when the lightweight model does not return a valid NewsBrief."""
+
+
+_PRIMARY_MAX_TOKENS = 4096
+_RETRY_MAX_TOKENS = 8192
 
 
 class NewsSummarizer:
@@ -56,6 +62,7 @@ class NewsSummarizer:
         if not api_key.strip():
             raise ValueError("api_key is required")
 
+        normalized_ticker = ticker.strip().upper()
         schema_json = json.dumps(NewsBrief.model_json_schema(), separators=(",", ":"))
         article_payload = json.dumps(
             [
@@ -76,27 +83,73 @@ class NewsSummarizer:
             ],
             ensure_ascii=True,
         )
-        company_label = company_name.strip() if company_name else ticker.strip().upper()
+        company_label = company_name.strip() if company_name else normalized_ticker
+        user_prompt = (
+            f"TICKER: {normalized_ticker}\n"
+            f"COMPANY: {company_label}\n"
+            f"RESPONSE_SCHEMA: {schema_json}\n"
+            f"ARTICLES_JSON: {article_payload}"
+        )
+
+        brief = await self._attempt(
+            api_key=api_key.strip(),
+            system=_system_prompt(),
+            user=user_prompt,
+            max_tokens=_PRIMARY_MAX_TOKENS,
+            ticker=normalized_ticker,
+            attempt="primary",
+        )
+        if brief is not None:
+            return brief
+
+        # Most failures are JSON truncated mid-string because the model bumped
+        # into max_tokens. Retry once with a larger budget + brevity hint so the
+        # response is forced to fit in a single complete JSON object.
+        retry_brief = await self._attempt(
+            api_key=api_key.strip(),
+            system=_system_prompt()
+            + (
+                "\n\nIMPORTANT: keep `summary` under 600 characters and prefer "
+                "compact `key_facts` entries — the JSON output must be a single "
+                "syntactically complete object that fits in this response."
+            ),
+            user=user_prompt,
+            max_tokens=_RETRY_MAX_TOKENS,
+            ticker=normalized_ticker,
+            attempt="retry",
+        )
+        if retry_brief is not None:
+            return retry_brief
+
+        return _failure_brief()
+
+    async def _attempt(
+        self,
+        *,
+        api_key: str,
+        system: str,
+        user: str,
+        max_tokens: int,
+        ticker: str,
+        attempt: str,
+    ) -> NewsBrief | None:
         try:
             text = await self.router.summarize(
-                api_key=api_key.strip(),
-                system=_system_prompt(),
-                user=(
-                    f"TICKER: {ticker.strip().upper()}\n"
-                    f"COMPANY: {company_label}\n"
-                    f"RESPONSE_SCHEMA: {schema_json}\n"
-                    f"ARTICLES_JSON: {article_payload}"
-                ),
-                max_tokens=1200,
+                api_key=api_key,
+                system=system,
+                user=user,
+                max_tokens=max_tokens,
                 temperature=0,
+                response_format={"type": "json_object"},
             )
         except Exception as exc:
             self.logger.warning(
                 "gemini_brief_failed",
-                ticker=ticker.strip().upper(),
+                ticker=ticker,
+                attempt=attempt,
                 error=str(exc),
             )
-            return _failure_brief()
+            return None
 
         try:
             payload = _parse_json_payload(text)
@@ -104,10 +157,13 @@ class NewsSummarizer:
         except (ValidationError, NewsSummaryValidationError) as exc:
             self.logger.warning(
                 "gemini_brief_invalid",
-                ticker=ticker.strip().upper(),
+                ticker=ticker,
+                attempt=attempt,
                 error=str(exc),
+                response_length=len(text),
+                response_tail=text[-200:] if text else "",
             )
-            return _failure_brief()
+            return None
 
 
 def _failure_brief() -> NewsBrief:
@@ -171,10 +227,84 @@ def _parse_json_payload(text: str) -> dict[str, Any]:
 
     try:
         payload = json.loads(candidate)
-    except json.JSONDecodeError as exc:
-        raise NewsSummaryValidationError(
-            f"Lightweight model returned invalid JSON: {exc}"
-        ) from exc
+    except json.JSONDecodeError as first_exc:
+        repaired = _repair_loose_json(candidate)
+        if repaired is None:
+            raise NewsSummaryValidationError(
+                f"Lightweight model returned invalid JSON: {first_exc}"
+            ) from first_exc
+        try:
+            payload = json.loads(repaired)
+        except json.JSONDecodeError as second_exc:
+            raise NewsSummaryValidationError(
+                f"Lightweight model returned invalid JSON even after repair: {second_exc}"
+            ) from second_exc
     if not isinstance(payload, dict):
         raise NewsSummaryValidationError("Lightweight model returned a non-object payload.")
     return payload
+
+
+def _repair_loose_json(text: str) -> str | None:
+    """Best-effort fix for common Gemini JSON malformations.
+
+    Handles two recurring patterns in summarize() output that we cannot
+    re-prompt for cheaply: trailing commas before ``}``/``]``, and unescaped
+    embedded double quotes inside string values (the column-155 failures we
+    see in practice). Returns ``None`` if the input does not look like a JSON
+    object at all so the caller fails closed.
+    """
+    if "{" not in text or "}" not in text:
+        return None
+    repaired = re.sub(r",(\s*[}\]])", r"\1", text)
+    repaired = _escape_inner_double_quotes(repaired)
+    return repaired
+
+
+def _escape_inner_double_quotes(text: str) -> str:
+    """Escape un-escaped double quotes that appear inside JSON string values.
+
+    Walks the buffer manually because a regex cannot tell the difference
+    between a closing quote and a stray inner one. The heuristic: a ``"`` ends
+    the current string only when the next non-space char is ``,``, ``}``,
+    ``]``, or ``:`` (key-context).
+    """
+    out: list[str] = []
+    in_string = False
+    escape = False
+    i = 0
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if escape:
+            out.append(ch)
+            escape = False
+            i += 1
+            continue
+        if ch == "\\":
+            out.append(ch)
+            escape = True
+            i += 1
+            continue
+        if ch == '"':
+            if not in_string:
+                in_string = True
+                out.append(ch)
+            else:
+                # Look ahead: if the next meaningful char ends the value, this
+                # is a real closing quote. Otherwise treat as a stray quote
+                # inside the string and escape it.
+                j = i + 1
+                while j < n and text[j] in " \t":
+                    j += 1
+                next_char = text[j] if j < n else ""
+                if next_char in {",", "}", "]", ":", "\n", "\r", ""}:
+                    in_string = False
+                    out.append(ch)
+                else:
+                    out.append("\\")
+                    out.append(ch)
+            i += 1
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)

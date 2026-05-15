@@ -278,8 +278,16 @@ def validate_llm_decision(
         )
 
     if _claims_impossible_runway(decision, matched_contract):
+        reality = matched_contract.reality_check
+        dte_calendar = reality.dte_calendar if reality is not None else None
+        dte_text = f"{dte_calendar} calendar days" if dte_calendar is not None else "short-dated"
         raise LLMValidationError(
-            "Heavy model described a short-dated contract as long-dated or months of runway.",
+            (
+                "Heavy model described a contract with "
+                f"{dte_text} to expiry as long-dated or months of runway. "
+                "Restate the rationale using the actual DTE and do not call it "
+                "long-dated unless dte_calendar >= 45."
+            ),
             raw_response=raw_response,
         )
 
@@ -327,6 +335,7 @@ def validate_llm_decision(
         if decision.chosen_ticker is not None and decision.chosen_ticker not in watchlist_seed:
             watchlist_seed.insert(0, decision.chosen_ticker)
         watchlist = _sanitize_watchlist(candidates, watchlist_seed, exclude=None)
+        watchlist = _augment_with_catalyst_pending(candidates, watchlist, exclude=None)
         if not watchlist:
             watchlist = _default_watchlist(candidates, exclude=None)
         return normalized.model_copy(
@@ -343,6 +352,17 @@ def validate_llm_decision(
         normalized.watchlist_tickers,
         exclude=normalized.chosen_ticker,
     )
+    watchlist = _augment_with_catalyst_pending(
+        candidates, watchlist, exclude=normalized.chosen_ticker
+    )
+
+    if normalized.action == "watchlist" and _chosen_news_unavailable(candidates, normalized):
+        normalized = normalized.model_copy(
+            update={
+                "key_concerns": _ensure_news_blackout_concern(normalized.key_concerns),
+            }
+        )
+
     return normalized.model_copy(update={"watchlist_tickers": watchlist})
 
 
@@ -503,6 +523,10 @@ def _candidate_bundle(candidate: PipelineCandidate) -> CandidateBundle:
         option_chain_candidates=[
             _option_chain_candidate(contract) for contract in viable_contracts[:3]
         ],
+        tradeable_contracts_available=bool(viable_contracts),
+        catalyst_pending_no_tradeable_contract=(
+            not viable_contracts and _catalyst_pending_no_viable_contract(candidate)
+        ),
         expected_move=candidate.context.expected_move_percent,
         previous_earnings_move=candidate.context.previous_earnings_move_percent,
         data_confidence_score=candidate.evaluation.confidence.score,
@@ -720,15 +744,47 @@ def _build_corrective_prompt(
     raw_response: str | None,
 ) -> str:
     response_block = "(no parsed JSON available)" if not raw_response else raw_response
+    targeted_hint = _targeted_retry_hint(error_message)
+    targeted_block = f"\n{targeted_hint}\n" if targeted_hint else ""
     return (
         f"{base_prompt}\n\n"
         "## Retry context\n\n"
         "Your previous response was rejected by the validator. Re-read the\n"
         "Hard Rules above carefully and produce a corrected JSON response\n"
         "that satisfies them — do not repeat the same mistake.\n\n"
-        f"Validator error: {error_message}\n\n"
-        f"Previous response (rejected):\n{response_block}"
+        f"Validator error: {error_message}\n"
+        f"{targeted_block}"
+        f"\nPrevious response (rejected):\n{response_block}"
     )
+
+
+def _targeted_retry_hint(error_message: str) -> str | None:
+    lowered = error_message.lower()
+    if (
+        "long-dated" in lowered
+        or "long dated" in lowered
+        or "months of runway" in lowered
+        or "month of runway" in lowered
+    ):
+        return (
+            "Targeted hint: drop every phrase like 'long-dated', 'long runway', "
+            "or 'months/month of runway' from your rationale and key_evidence. "
+            "Quote the contract's actual `dte_calendar` value verbatim. Only "
+            "use long-dated language if dte_calendar >= 45."
+        )
+    if "not present in option_chain_candidates" in lowered:
+        return (
+            "Targeted hint: only choose a contract whose ticker, option_type, "
+            "position_side, strike, and expiry match a row in this candidate's "
+            "`option_chain_candidates` list exactly."
+        )
+    if "confidence_band" in lowered and "does not match action" in lowered:
+        return (
+            "Targeted hint: confidence_band ∈ {strong, standard} requires "
+            "action='recommend'; 'watchlist' requires action='watchlist'; "
+            "'no_trade' requires action='no_trade'. Keep them aligned."
+        )
+    return None
 
 
 def _sanitize_watchlist(
@@ -753,6 +809,96 @@ def _default_watchlist(
 ) -> list[str]:
     ranked = _rank_candidates(candidates)
     return [item.record.ticker for item in ranked if item.record.ticker != exclude][:3]
+
+
+_CATALYST_WINDOW_DAYS = 14
+_NEWS_BLACKOUT_PHRASES = (
+    "news service unavailable",
+    "news_status=unavailable",
+    "news unavailable",
+    "news blackout",
+    "news dark",
+    "news_status unavailable",
+    "no news coverage",
+    "news coverage unavailable",
+)
+_NEWS_BLACKOUT_CONCERN = (
+    "Downgraded to watchlist because news_status=unavailable for the selected setup."
+)
+
+
+def _augment_with_catalyst_pending(
+    candidates: Sequence[PipelineCandidate],
+    watchlist: list[str],
+    *,
+    exclude: str | None,
+) -> list[str]:
+    """Fill empty watchlist slots with catalyst-pending candidates that had no tradable contract.
+
+    NVDA-style outcomes — earnings inside the next two weeks, no contract cleared
+    the hard filters this scan — should not silently disappear from the watchlist
+    behind score-0 noise. The LLM gets first dibs; this only seeds the slots it
+    left open.
+    """
+    if len(watchlist) >= 3:
+        return watchlist[:3]
+    existing = set(watchlist)
+    extras: list[tuple[int, str]] = []
+    for item in candidates:
+        ticker = item.record.ticker
+        if not ticker or ticker == exclude or ticker in existing:
+            continue
+        if not _catalyst_pending_no_viable_contract(item):
+            continue
+        confidence = item.evaluation.confidence.score
+        extras.append((confidence, ticker))
+    extras.sort(reverse=True)
+    augmented = list(watchlist)
+    for _, ticker in extras:
+        if len(augmented) >= 3:
+            break
+        augmented.append(ticker)
+    return augmented
+
+
+def _catalyst_pending_no_viable_contract(item: PipelineCandidate) -> bool:
+    has_viable = any(
+        contract.is_viable for contract in item.evaluation.considered_contracts
+    )
+    if has_viable:
+        return False
+
+    valuation_date = item.context.valuation_date or item.context.market_snapshot.as_of_date
+    earnings_date = item.record.earnings_date or item.context.earnings_date
+    if earnings_date is not None and valuation_date is not None:
+        delta_days = (earnings_date - valuation_date).days
+        if 0 <= delta_days <= _CATALYST_WINDOW_DAYS:
+            return True
+    event = item.context.event_signal
+    return bool(event is not None and event.is_supportive)
+
+
+def _chosen_news_unavailable(
+    candidates: Sequence[PipelineCandidate],
+    decision: StructuredDecision,
+) -> bool:
+    if decision.chosen_ticker is None:
+        return False
+    candidate = next(
+        (item for item in candidates if item.record.ticker == decision.chosen_ticker),
+        None,
+    )
+    if candidate is None:
+        return False
+    return _news_status(candidate) == "unavailable"
+
+
+def _ensure_news_blackout_concern(concerns: Sequence[str]) -> list[str]:
+    concerns_list = list(concerns)
+    haystack = " ".join(concern.lower() for concern in concerns_list)
+    if any(phrase in haystack for phrase in _NEWS_BLACKOUT_PHRASES):
+        return concerns_list
+    return [_NEWS_BLACKOUT_CONCERN, *concerns_list]
 
 
 def _rank_candidates(candidates: Sequence[PipelineCandidate]) -> list[PipelineCandidate]:

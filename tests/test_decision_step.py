@@ -378,6 +378,263 @@ async def test_llm_cannot_claim_months_of_runway_for_7_dte_contract() -> None:
     assert "failed" in result.trace.notes[0].lower()
 
 
+async def test_watchlist_with_news_unavailable_gets_blackout_concern_injected() -> None:
+    """If the LLM downgrades to watchlist while news_status=unavailable, the
+    validator must ensure key_concerns names the news blackout so the audit
+    trail explains the downgrade without relying on the freeform reasoning
+    field. This guards against silent fail-closed behaviour the user can't
+    see in the Telegram card."""
+    candidate = _candidate_with_reality_metrics()
+    step = LLMDecisionStep(
+        router=StubRouter(
+            decision=StructuredDecision(
+                action="watchlist",
+                chosen_ticker="PM",
+                chosen_contract=ChosenContract(
+                    ticker="PM",
+                    option_type="call",
+                    position_side="long",
+                    strike=Decimal("195"),
+                    expiry=date(2026, 5, 22),
+                    rationale="Strong setup but liquidity is thin.",
+                ),
+                confidence_band="watchlist",
+                reasoning="Wait for better news visibility before sizing.",
+                key_evidence=["Sector tailwind holds."],
+                # NOTE: deliberately omits any news-related concern.
+                key_concerns=["Thin liquidity."],
+            )
+        )
+    )
+
+    result = await step.execute([candidate], _user_context(), openrouter_api_key="sk-or-test")
+
+    assert result.decision.action == "watchlist"
+    concerns_lc = " ".join(result.decision.key_concerns).lower()
+    assert "news" in concerns_lc and "unavailable" in concerns_lc, (
+        f"news-blackout concern missing from {result.decision.key_concerns!r}"
+    )
+
+
+async def test_watchlist_with_news_unavailable_preserves_existing_blackout_concern() -> None:
+    """If the LLM already named the news blackout, the validator should not
+    duplicate the concern."""
+    candidate = _candidate_with_reality_metrics()
+    step = LLMDecisionStep(
+        router=StubRouter(
+            decision=StructuredDecision(
+                action="watchlist",
+                chosen_ticker="PM",
+                chosen_contract=ChosenContract(
+                    ticker="PM",
+                    option_type="call",
+                    position_side="long",
+                    strike=Decimal("195"),
+                    expiry=date(2026, 5, 22),
+                    rationale="Setup is clean but news is dark.",
+                ),
+                confidence_band="watchlist",
+                reasoning="Holding off because we cannot independently verify the news.",
+                key_evidence=["RS positive."],
+                key_concerns=["news_status=unavailable — cannot confirm thesis."],
+            )
+        )
+    )
+
+    result = await step.execute([candidate], _user_context(), openrouter_api_key="sk-or-test")
+
+    matching = [
+        concern
+        for concern in result.decision.key_concerns
+        if (
+            "news_status=unavailable" in concern.lower()
+            or "news service unavailable" in concern.lower()
+        )
+    ]
+    # exactly one — the user's own, not duplicated by the injector
+    assert len(matching) == 1, result.decision.key_concerns
+
+
+async def test_catalyst_pending_no_contract_ticker_lands_on_watchlist() -> None:
+    """NVDA-style: real earnings catalyst inside 14 days, but every contract
+    was killed by the deterministic filters. The validator's watchlist seed
+    should keep that ticker visible even when the LLM omitted it."""
+    catalyst_only = _catalyst_pending_candidate("NVDA")
+    actionable = _candidate_with_reality_metrics()
+    step = LLMDecisionStep(
+        router=StubRouter(
+            decision=StructuredDecision(
+                action="watchlist",
+                chosen_ticker="PM",
+                chosen_contract=ChosenContract(
+                    ticker="PM",
+                    option_type="call",
+                    position_side="long",
+                    strike=Decimal("195"),
+                    expiry=date(2026, 5, 22),
+                    rationale="ATM call, sector tailwind.",
+                ),
+                confidence_band="watchlist",
+                reasoning="Cleanest setup of the four candidates.",
+                key_evidence=["XLP +4.4% (4w)."],
+                key_concerns=["news_status=unavailable."],
+                watchlist_tickers=[],  # LLM left every slot empty
+            )
+        )
+    )
+
+    result = await step.execute(
+        [actionable, catalyst_only],
+        _user_context(),
+        openrouter_api_key="sk-or-test",
+    )
+
+    assert "NVDA" in result.decision.watchlist_tickers, (
+        result.decision.watchlist_tickers,
+    )
+
+
+async def test_bundle_marks_catalyst_pending_no_tradeable_contract() -> None:
+    """The LLM payload must surface the `catalyst_pending_no_tradeable_contract`
+    flag so the model can include the ticker on its watchlist explicitly."""
+    catalyst_only = _catalyst_pending_candidate("NVDA")
+    decision_input = build_decision_input([catalyst_only], _user_context())
+    bundle = decision_input.candidates[0]
+    assert bundle.tradeable_contracts_available is False
+    assert bundle.catalyst_pending_no_tradeable_contract is True
+
+
+async def test_corrective_prompt_includes_targeted_hint_for_runway_violation() -> None:
+    """The retry prompt should call the runway phrase out specifically so the
+    second attempt does not silently repeat the same wording."""
+    from app.pipeline.steps.decide import _build_corrective_prompt
+
+    prompt = _build_corrective_prompt(
+        base_prompt="<base prompt>",
+        error_message=(
+            "Heavy model described a contract with 7 calendar days to expiry as "
+            "long-dated or months of runway."
+        ),
+        raw_response='{"reasoning":"6 months of runway"}',
+    )
+    assert "Targeted hint" in prompt
+    assert "long-dated" in prompt.lower()
+    assert "dte_calendar" in prompt
+
+
+async def test_corrective_prompt_includes_targeted_hint_for_unknown_contract() -> None:
+    from app.pipeline.steps.decide import _build_corrective_prompt
+
+    prompt = _build_corrective_prompt(
+        base_prompt="<base prompt>",
+        error_message=(
+            "Heavy model selected a contract that was not present in "
+            "option_chain_candidates."
+        ),
+        raw_response=None,
+    )
+    assert "option_chain_candidates" in prompt
+    assert "Targeted hint" in prompt
+
+
+def _catalyst_pending_candidate(ticker: str) -> PipelineCandidate:
+    """A finalist whose only contract was blocked by the deterministic gates,
+    but whose earnings sits inside the next 14 days."""
+    contract = OptionContractInput(
+        ticker=ticker,
+        option_type="put",
+        position_side="short",
+        strike=Decimal("235"),
+        expiry=date(2026, 5, 15),
+        bid=Decimal("0.50"),
+        ask=Decimal("0.80"),
+        mid=Decimal("0.65"),
+        volume=10,
+        open_interest=50,
+        implied_volatility=Decimal("0.62"),
+        delta=Decimal("-0.18"),
+        source="fixture",
+    )
+    blocked = ContractScoreResult(
+        strategy=contract.strategy,
+        contract=contract,
+        base_score=0,
+        score=0,
+        factors=(),
+        penalties=(),
+        vetoes=(HardVeto("invalid_exit_session", "Exit date is not a session."),),
+        breakeven=None,
+        breakeven_move_percent=None,
+        liquidity_score=40,
+        expiry_days_after_earnings=None,
+        reasons=("Same-day exit, killed by reality gate.",),
+    )
+    bundle = NewsBundle(
+        ticker=ticker,
+        company_name=f"{ticker} Corp.",
+        generated_at=datetime(2026, 5, 15, 0, 0, 0, tzinfo=UTC),
+        search_results=(),
+        articles=(),
+        brief=NewsBrief(
+            neutral_contextual_evidence=[],
+            key_uncertainty="news service unavailable",
+        ),
+        news_coverage="none",
+        stale_news=True,
+    )
+    return PipelineCandidate(
+        record=CandidateRecord(
+            ticker=ticker,
+            company_name=f"{ticker} Corp.",
+            market_cap=Decimal("5000000000000"),
+            earnings_date=date(2026, 5, 20),
+            current_price=Decimal("235"),
+            screener_rank=1,
+            sector="Technology",
+            strategy_source="catalyst_confluence",
+        ),
+        context=CandidateContext(
+            ticker=ticker,
+            company_name=f"{ticker} Corp.",
+            earnings_date=date(2026, 5, 20),
+            earnings_timing="AMC",
+            market_snapshot=_market_snapshot(ticker),
+            news_brief=bundle.brief,
+            valuation_date=date(2026, 5, 14),
+            option_chain=(contract,),
+            strategy_source="catalyst_confluence",
+        ),
+        evaluation=CandidateEvaluation(
+            ticker=ticker,
+            direction=DirectionResult(
+                classification="bullish",
+                bias=Decimal("0.74"),
+                score=72,
+                factors=(),
+                reasons=(f"{ticker} momentum is constructive.",),
+            ),
+            confidence=DataConfidenceResult(
+                score=97,
+                label="excellent",
+                blockers=(),
+                notes=(),
+            ),
+            strategy_selection=StrategySelection(
+                allowed_strategies=("short_put",),
+                preferred_order=("short_put",),
+                reason="Fixture",
+            ),
+            considered_contracts=(blocked,),
+            chosen_contract=None,
+            final_score=0,
+            action="no_trade",
+            reasons=("All contracts blocked by reality gates.",),
+        ),
+        news_bundle=bundle,
+        sizing=None,
+    )
+
+
 async def test_llm_selected_contract_with_p0_reality_flag_forces_no_trade() -> None:
     candidate = _candidate_with_reality_metrics(flags=("weekly_otm_no_catalyst",))
     step = LLMDecisionStep(

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
 from app.scoring.expiry import is_valid_expiry
 from app.scoring.strategy_policy import NO_EARNINGS_REQUIRED_STRATEGIES, trade_policy_for
 from app.scoring.types import (
+    ZERO,
     CandidateContext,
     ExitTarget,
     HardVeto,
@@ -155,6 +158,43 @@ def evaluate_hard_vetoes(
             }:
                 vetoes.append(HardVeto(flag, _reality_flag_reason(flag)))
 
+        if (
+            contract.position_side == "long"
+            and not reality_check.has_named_catalyst_before_exit
+        ):
+            if _is_thin_long_chain(
+                contract,
+                min_volume=policy.min_volume_non_catalyst_long,
+                min_open_interest=policy.min_open_interest_non_catalyst_long,
+            ):
+                vetoes.append(
+                    HardVeto(
+                        "thin_liquidity_no_catalyst",
+                        (
+                            "Non-catalyst long option has volume "
+                            f"<{policy.min_volume_non_catalyst_long} and open interest "
+                            f"<{policy.min_open_interest_non_catalyst_long} — execution risk."
+                        ),
+                    )
+                )
+            if exit_target is not None:
+                risk_reward = _long_premium_risk_reward(contract, exit_target)
+                if (
+                    risk_reward is not None
+                    and risk_reward < policy.min_long_premium_risk_reward
+                ):
+                    vetoes.append(
+                        HardVeto(
+                            "weak_long_risk_reward",
+                            (
+                                "Long-premium target/stop risk-reward is "
+                                f"{risk_reward:.2f} — below the "
+                                f"{policy.min_long_premium_risk_reward:.2f} floor for a "
+                                "non-catalyst setup."
+                            ),
+                        )
+                    )
+
     if exit_target is not None and not exit_target.exit_is_trading_session:
         vetoes.append(
             HardVeto("invalid_exit_session", "Planned exit date is not a NYSE trading session.")
@@ -170,6 +210,39 @@ def evaluate_hard_vetoes(
         vetoes.append(HardVeto("long_disabled", "Long options are disabled for this user."))
 
     return tuple(_dedupe_vetoes(vetoes))
+
+
+def _long_premium_risk_reward(
+    contract: OptionContractInput,
+    exit_target: ExitTarget,
+) -> Decimal | None:
+    entry = option_premium(contract)
+    if entry is None or entry <= ZERO:
+        return None
+    stop = exit_target.stop_loss_option_price
+    if stop is None:
+        return None
+    target = exit_target.target_option_price
+    if target is None:
+        return None
+    risk = entry - stop
+    reward = target - entry
+    if risk <= ZERO or reward <= ZERO:
+        return None
+    return (reward / risk).quantize(Decimal("0.01"))
+
+
+def _is_thin_long_chain(
+    contract: OptionContractInput,
+    *,
+    min_volume: int,
+    min_open_interest: int,
+) -> bool:
+    if min_volume <= 0 and min_open_interest <= 0:
+        return False
+    volume = contract.volume or 0
+    open_interest = contract.open_interest or 0
+    return volume < min_volume and open_interest < min_open_interest
 
 
 def _reality_flag_reason(flag: str) -> str:

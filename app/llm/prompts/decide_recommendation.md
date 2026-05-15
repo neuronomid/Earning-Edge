@@ -102,6 +102,16 @@ the safety net, not the target.
 - If `news_status="unavailable"` for a non-catalyst setup, do not promote it
   to a live recommendation unless the deterministic reality metrics are clean
   and you explicitly explain why the event signal is sufficient.
+- When you downgrade a setup from `recommend` to `watchlist` because
+  `news_status="unavailable"`, you MUST include a `key_concerns` bullet that
+  names the news blackout in plain terms (e.g., "news_status=unavailable —
+  no independent coverage to confirm the thesis"). The system will inject a
+  default concern if you forget, but the audit trail is yours to own.
+- For candidates with `catalyst_pending_no_tradeable_contract=true` and an
+  `earnings_date` inside the next 14 calendar days, include the ticker in
+  `watchlist_tickers` even though no contract is shown — the user wants to be
+  reminded the catalyst is approaching so they can re-scan after the chain
+  liquefies.
 - `key_evidence` and `key_concerns` should each be 2-5 short bullet strings
   citing the structured input — no generic platitudes.
 - Tone is for the heavy model only; Gemini polishes wording downstream

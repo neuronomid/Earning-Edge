@@ -15,7 +15,13 @@ from app.scoring.expiry import is_valid_expiry, score_expiry_fit
 from app.scoring.final import score_candidate
 from app.scoring.penalties import collect_soft_penalties
 from app.scoring.strategy_select import select_allowed_strategies
-from app.scoring.types import CandidateContext, OptionContractInput, SourceConflict, UserContext
+from app.scoring.types import (
+    CandidateContext,
+    OptionContractInput,
+    OptionRealityCheck,
+    SourceConflict,
+    UserContext,
+)
 from app.scoring.vetoes import evaluate_hard_vetoes
 from app.services.candidate_models import StrategyEventSignal
 from app.services.market_data.types import MarketSnapshot, ReturnMetrics
@@ -624,6 +630,199 @@ def test_non_catalyst_unavailable_news_caps_recommendation_to_watchlist() -> Non
     assert result.chosen_contract is not None
     assert result.final_score >= 68
     assert result.action == "watchlist"
+
+
+def _prmb_like_sector_rs_candidate(
+    *,
+    volume: int = 80,
+    open_interest: int = 120,
+    delta: Decimal = Decimal("0.5732"),
+    bid: Decimal = Decimal("1.18"),
+    ask: Decimal = Decimal("1.42"),
+) -> tuple[CandidateContext, OptionContractInput]:
+    """PRMB-shaped sector-relative-strength fixture for the new vetoes."""
+
+    contract = OptionContractInput(
+        ticker="PRMB",
+        option_type="call",
+        position_side="long",
+        strike=Decimal("23"),
+        expiry=date(2026, 6, 18),
+        bid=bid,
+        ask=ask,
+        mid=Decimal("1.30"),
+        volume=volume,
+        open_interest=open_interest,
+        implied_volatility=Decimal("0.3977"),
+        delta=delta,
+        gamma=Decimal("0.1388"),
+        theta=Decimal("-0.0175"),
+        vega=Decimal("0.0279"),
+        underlying_price=Decimal("23.27"),
+        source="fixture",
+    )
+    candidate = CandidateContext(
+        ticker="PRMB",
+        company_name="Primo Brands Corp",
+        earnings_date=None,
+        earnings_timing="unknown",
+        market_snapshot=MarketSnapshot(
+            ticker="PRMB",
+            as_of_date=date(2026, 5, 14),
+            company_name="Primo Brands Corp",
+            sector="Consumer Defensive",
+            sector_etf="XLP",
+            market_cap=Decimal("8440000000"),
+            current_price=Decimal("23.27"),
+            latest_volume=1_000_000,
+            average_volume_20d=Decimal("900000"),
+            volume_vs_average_20d=Decimal("1.20"),
+            stock_returns=ReturnMetrics(
+                one_day=Decimal("0.02"),
+                five_day=Decimal("0.05"),
+                twenty_day=Decimal("0.145"),
+                fifty_day=Decimal("0.18"),
+            ),
+            spy_returns=ReturnMetrics(
+                one_day=Decimal("0.002"),
+                five_day=Decimal("0.012"),
+                twenty_day=Decimal("0.067"),
+                fifty_day=Decimal("0.090"),
+            ),
+            qqq_returns=ReturnMetrics(
+                one_day=Decimal("0.001"),
+                five_day=Decimal("0.010"),
+                twenty_day=Decimal("0.050"),
+                fifty_day=Decimal("0.070"),
+            ),
+            sector_returns=ReturnMetrics(
+                one_day=Decimal("0.002"),
+                five_day=Decimal("0.018"),
+                twenty_day=Decimal("0.044"),
+                fifty_day=Decimal("0.060"),
+            ),
+            relative_strength_vs_spy=Decimal("0.078"),
+            relative_strength_vs_qqq=Decimal("0.095"),
+            relative_strength_vs_sector=Decimal("0.101"),
+            av_news_sentiment=None,
+            price_source="fixture",
+            overview_source="fixture",
+            sources=("fixture",),
+        ),
+        news_brief=NewsBrief(
+            neutral_contextual_evidence=["Sector tape is supportive."],
+            key_uncertainty="Adequate coverage with no clean catalyst.",
+            summary="Bullish trend backed by sector tailwind.",
+        ),
+        valuation_date=date(2026, 5, 14),
+        option_chain=(contract,),
+        strategy_source="sector_relative_strength",
+        event_signal=StrategyEventSignal(
+            score=68,
+            is_supportive=True,
+            detail="XLP sector +4.4% (4w), stock screen percentile 20%",
+        ),
+        verified_earnings_date=True,
+        expected_move_percent=Decimal("0.034884"),
+    )
+    return candidate, contract
+
+
+def test_weak_long_risk_reward_vetoes_prmb_like_no_catalyst_contract() -> None:
+    """PRMB's 0.39 R:R must hard-fail under sector_relative_strength policy."""
+
+    candidate, _ = _prmb_like_sector_rs_candidate()
+    user = _user(account_size="20000", strategy_permission="long")
+
+    result = score_candidate(candidate, user)
+
+    rejected = result.considered_contracts[0]
+    veto_codes = {veto.code for veto in rejected.vetoes}
+    assert "weak_long_risk_reward" in veto_codes
+    assert result.action == "no_trade"
+
+
+def test_weak_long_risk_reward_does_not_fire_for_short_premium() -> None:
+    """Short-premium contracts have no entry/stop/target geometry — skip the check."""
+
+    candidate, _ = _prmb_like_sector_rs_candidate()
+    short_contract = OptionContractInput(
+        ticker="PRMB",
+        option_type="put",
+        position_side="short",
+        strike=Decimal("22"),
+        expiry=date(2026, 6, 18),
+        bid=Decimal("0.62"),
+        ask=Decimal("0.73"),
+        mid=Decimal("0.675"),
+        volume=40,
+        open_interest=120,
+        implied_volatility=Decimal("0.4483"),
+        delta=Decimal("-0.3074"),
+        gamma=Decimal("0.1104"),
+        theta=Decimal("-0.0157"),
+        vega=Decimal("0.025"),
+        underlying_price=Decimal("23.27"),
+        source="fixture",
+    )
+    user = _user(account_size="50000", strategy_permission="long_and_short")
+
+    vetoes = evaluate_hard_vetoes(candidate, user, short_contract)
+    assert "weak_long_risk_reward" not in {veto.code for veto in vetoes}
+
+
+def test_thin_liquidity_no_catalyst_vetoes_volume_1_long_option() -> None:
+    """PRMB volume=1, OI<10 should hard-fail when the strategy is non-catalyst."""
+
+    candidate, _ = _prmb_like_sector_rs_candidate(volume=1, open_interest=2)
+    contract = candidate.option_chain[0]
+    user = _user(account_size="20000", strategy_permission="long")
+
+    vetoes = evaluate_hard_vetoes(
+        candidate,
+        user,
+        contract,
+        reality_check=_reality_for_long_no_catalyst(candidate, contract),
+    )
+    assert "thin_liquidity_no_catalyst" in {veto.code for veto in vetoes}
+
+
+def test_thin_liquidity_floor_skipped_when_catalyst_is_pending() -> None:
+    """A real catalyst before exit should bypass the liquidity floor."""
+
+    candidate, contract = _prmb_like_sector_rs_candidate(volume=1, open_interest=2)
+    candidate_with_catalyst = replace(
+        candidate,
+        earnings_date=date(2026, 5, 16),
+    )
+    user = _user(account_size="20000", strategy_permission="long")
+
+    vetoes = evaluate_hard_vetoes(
+        candidate_with_catalyst,
+        user,
+        contract,
+        reality_check=_reality_for_long_no_catalyst(
+            candidate_with_catalyst, contract, has_named_catalyst=True
+        ),
+    )
+    assert "thin_liquidity_no_catalyst" not in {veto.code for veto in vetoes}
+
+
+def _reality_for_long_no_catalyst(
+    candidate: CandidateContext,
+    contract: OptionContractInput,
+    *,
+    has_named_catalyst: bool = False,
+) -> OptionRealityCheck:
+    from app.scoring.probability import assess_option_reality
+    from app.services.exit_target import ExitTargetService
+
+    direction = score_direction(candidate, data_confidence_score=80)
+    exit_target = ExitTargetService().build(candidate, contract, direction)
+    reality = assess_option_reality(candidate, contract, exit_target)
+    if has_named_catalyst:
+        return replace(reality, has_named_catalyst_before_exit=True)
+    return reality
 
 
 def _strong_bullish_candidate(
