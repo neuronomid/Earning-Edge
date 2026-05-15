@@ -9,7 +9,12 @@ from app.services.market_data.types import MarketSnapshot, ReturnMetrics
 from app.services.news.types import NewsBrief
 
 
-def _context(*, current_price: str, expected_move_percent: str | None = "0.08") -> CandidateContext:
+def _context(
+    *,
+    current_price: str,
+    expected_move_percent: str | None = "0.08",
+    valuation_date: date | None = None,
+) -> CandidateContext:
     return CandidateContext(
         ticker="AMD",
         company_name="AMD Corp.",
@@ -42,6 +47,7 @@ def _context(*, current_price: str, expected_move_percent: str | None = "0.08") 
             neutral_contextual_evidence=[],
             key_uncertainty="None",
         ),
+        valuation_date=valuation_date,
         option_chain=(),
         expected_move_percent=None
         if expected_move_percent is None
@@ -59,7 +65,7 @@ def _direction(score: int = 80) -> DirectionResult:
     )
 
 
-def test_exit_target_service_uses_full_greeks_when_available() -> None:
+def test_exit_target_service_caps_full_greeks_with_black_scholes_when_available() -> None:
     service = ExitTargetService()
     contract = OptionContractInput(
         ticker="AMD",
@@ -80,11 +86,67 @@ def test_exit_target_service_uses_full_greeks_when_available() -> None:
     target = service.build(_context(current_price="100"), contract, _direction())
 
     assert target is not None
-    assert target.target_method == "full_greeks"
+    assert target.target_method == "black_scholes"
     assert target.target_stock_price > Decimal("100")
     assert target.target_option_price > Decimal("1.20")
     assert target.stop_loss_option_price == Decimal("0.65")
     assert target.exit_by_date == date(2026, 5, 8)
+    assert target.target_gain_percent is not None
+
+
+def test_exit_target_service_uses_scan_date_over_stale_market_date() -> None:
+    service = ExitTargetService()
+    contract = OptionContractInput(
+        ticker="AMD",
+        option_type="call",
+        position_side="long",
+        strike=Decimal("104"),
+        expiry=date(2026, 5, 16),
+        bid=Decimal("1.10"),
+        ask=Decimal("1.30"),
+        mid=Decimal("1.20"),
+        implied_volatility=Decimal("0.44"),
+        delta=Decimal("0.52"),
+        gamma=Decimal("0.05"),
+        theta=Decimal("-0.04"),
+        vega=Decimal("0.10"),
+    )
+
+    target = service.build(
+        _context(current_price="100", valuation_date=date(2026, 5, 11)),
+        contract,
+        _direction(),
+    )
+
+    assert target is not None
+    assert target.exit_by_date == date(2026, 5, 15)
+
+
+def test_exit_target_service_rejects_long_targets_below_entry() -> None:
+    service = ExitTargetService()
+    contract = OptionContractInput(
+        ticker="AMD",
+        option_type="put",
+        position_side="long",
+        strike=Decimal("90"),
+        expiry=date(2026, 5, 16),
+        bid=Decimal("1.10"),
+        ask=Decimal("1.30"),
+        mid=Decimal("1.20"),
+        implied_volatility=Decimal("0.44"),
+        delta=Decimal("-0.20"),
+        gamma=Decimal("0.01"),
+        theta=Decimal("-0.40"),
+        vega=Decimal("0.02"),
+    )
+
+    target = service.build(
+        _context(current_price="100", expected_move_percent="0.01"),
+        contract,
+        _direction(score=60),
+    )
+
+    assert target is None
 
 
 def test_exit_target_service_falls_back_to_delta_without_full_greeks() -> None:
@@ -107,3 +169,85 @@ def test_exit_target_service_falls_back_to_delta_without_full_greeks() -> None:
     assert target is not None
     assert target.target_method == "delta_fallback"
     assert target.target_option_price > Decimal("1.20")
+
+
+def test_exit_target_service_adds_short_put_buyback_target_and_stop() -> None:
+    service = ExitTargetService()
+    contract = OptionContractInput(
+        ticker="AMD",
+        option_type="put",
+        position_side="short",
+        strike=Decimal("96"),
+        expiry=date(2026, 5, 16),
+        bid=Decimal("1.20"),
+        ask=Decimal("1.35"),
+        mid=Decimal("1.28"),
+    )
+
+    target = service.build(_context(current_price="100"), contract, _direction())
+
+    assert target is not None
+    assert target.target_stock_price is None
+    assert target.target_option_price == Decimal("0.60")
+    assert target.stop_loss_option_price == Decimal("3.60")
+    assert target.target_gain_percent == Decimal("50.00")
+    assert target.target_method == "short_premium"
+
+
+def test_exit_target_service_adds_short_call_underlying_stop() -> None:
+    service = ExitTargetService()
+    contract = OptionContractInput(
+        ticker="AMD",
+        option_type="call",
+        position_side="short",
+        strike=Decimal("105"),
+        expiry=date(2026, 5, 16),
+        bid=Decimal("1.00"),
+        ask=Decimal("1.20"),
+        mid=Decimal("1.10"),
+        delta=Decimal("0.30"),
+    )
+
+    target = service.build(_context(current_price="100"), contract, _direction())
+
+    assert target is not None
+    assert target.target_option_price == Decimal("0.50")
+    assert target.underlying_stop_price == Decimal("107.10")
+    assert target.stop_loss_option_price == Decimal("3.23")
+    assert target.target_method == "short_call_underlying"
+
+
+def test_exit_target_never_returns_weekend_exit_for_pm_fixture() -> None:
+    service = ExitTargetService()
+    contract = OptionContractInput(
+        ticker="PM",
+        option_type="call",
+        position_side="long",
+        strike=Decimal("195"),
+        expiry=date(2026, 5, 22),
+        bid=Decimal("1.73"),
+        ask=Decimal("1.98"),
+        mid=Decimal("1.855"),
+        implied_volatility=Decimal("0.2735"),
+        delta=Decimal("0.359"),
+        gamma=Decimal("0.0481"),
+        theta=Decimal("-0.1881"),
+        vega=Decimal("0.1062"),
+        volume=144,
+    )
+
+    target = service.build(
+        _context(
+            current_price="191.86",
+            expected_move_percent="0.027889",
+            valuation_date=date(2026, 5, 14),
+        ),
+        contract,
+        _direction(score=75),
+    )
+
+    assert target is not None
+    assert target.exit_by_date == date(2026, 5, 15)
+    assert target.exit_by_date.weekday() < 5
+    assert target.expected_holding_trading_days == 1
+    assert target.expected_move_to_exit_percent == Decimal("0.017229")

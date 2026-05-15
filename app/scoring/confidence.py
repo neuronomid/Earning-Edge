@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
+from app.core.config import get_settings
+from app.scoring.strategy_policy import NO_EARNINGS_REQUIRED_STRATEGIES
 from app.scoring.types import (
     CandidateContext,
     DataConfidenceResult,
     OptionContractInput,
+    StrategySource,
     UserContext,
     clamp_int,
     option_premium,
@@ -13,19 +18,49 @@ from app.scoring.types import (
 # Maximum raw score each component can produce.
 _MAX_IDENTITY: int = 15
 _MAX_EARNINGS: int = 20
+_MAX_EVENT: int = 20
 _MAX_MARKET: int = 15
 _MAX_OPTIONS: int = 20
 _MAX_CROSS_SOURCE: int = 10
 _MAX_CALCULATION: int = 10
 
-# Importance weights — sum to 0.97 after removing the 0.03 news weight.
+
+@dataclass(frozen=True, slots=True)
+class ConfidenceWeights:
+    identity: float
+    earnings: float
+    event: float
+    market: float
+    options: float
+    cross_source: float
+    calculation: float
+
+
 # Not renormalized: max raw confidence is 97 by design (see PLAN_News §8.2).
-_W_EARNINGS: float = 0.25  # wrong date → wrong trade
-_W_OPTIONS: float = 0.22  # can't select contract without chain
-_W_MARKET: float = 0.20  # price drives all sizing/breakeven math
-_W_IDENTITY: float = 0.13  # fundamental but rarely fails
-_W_CROSS_SOURCE: float = 0.10  # data conflicts affect reliability
-_W_CALCULATION: float = 0.07  # errors degrade output quality
+_LEGACY_CONFIDENCE = ConfidenceWeights(
+    identity=0.13,
+    earnings=0.25,
+    event=0.00,
+    market=0.20,
+    options=0.22,
+    cross_source=0.10,
+    calculation=0.07,
+)
+_V2_CONFIDENCE: dict[StrategySource, ConfidenceWeights] = {
+    "catalyst_confluence": ConfidenceWeights(0.13, 0.25, 0.00, 0.20, 0.22, 0.10, 0.07),
+    "coiled_setup": ConfidenceWeights(0.13, 0.00, 0.20, 0.25, 0.22, 0.10, 0.07),
+    "pead_continuation": ConfidenceWeights(0.13, 0.20, 0.05, 0.22, 0.22, 0.10, 0.05),
+    "sector_relative_strength": ConfidenceWeights(0.13, 0.00, 0.20, 0.25, 0.22, 0.10, 0.07),
+    "activist_13d_followthrough": ConfidenceWeights(
+        0.13,
+        0.00,
+        0.20,
+        0.22,
+        0.22,
+        0.10,
+        0.10,
+    ),
+}
 
 
 def compute_data_confidence(
@@ -37,10 +72,12 @@ def compute_data_confidence(
 ) -> DataConfidenceResult:
     notes: list[str] = []
     blockers: list[str] = []
+    weights = _confidence_weights(candidate.strategy_source)
 
     # --- raw component scores (same logic as before) ---
     identity_score = _identity_score(candidate, blockers)
     earnings_score = _earnings_score(candidate, blockers)
+    event_score = _event_score(candidate)
     market_score = _market_score(candidate, blockers)
     options_score = _options_data_score(candidate, selected_contract, notes)
     cross_source_score = _cross_source_score(candidate, notes)
@@ -48,15 +85,16 @@ def compute_data_confidence(
 
     # --- normalize each component to [0, 1] then apply weight ---
     weighted = (
-        (identity_score / _MAX_IDENTITY) * _W_IDENTITY
-        + (earnings_score / _MAX_EARNINGS) * _W_EARNINGS
-        + (market_score / _MAX_MARKET) * _W_MARKET
-        + (options_score / _MAX_OPTIONS) * _W_OPTIONS
-        + (cross_source_score / _MAX_CROSS_SOURCE) * _W_CROSS_SOURCE
-        + (calculation_score / _MAX_CALCULATION) * _W_CALCULATION
+        (identity_score / _MAX_IDENTITY) * weights.identity
+        + (earnings_score / _MAX_EARNINGS) * weights.earnings
+        + (event_score / _MAX_EVENT) * weights.event
+        + (market_score / _MAX_MARKET) * weights.market
+        + (options_score / _MAX_OPTIONS) * weights.options
+        + (cross_source_score / _MAX_CROSS_SOURCE) * weights.cross_source
+        + (calculation_score / _MAX_CALCULATION) * weights.calculation
     )
 
-    raw_score = int(round(weighted * 100)) + candidate.market_snapshot.confidence_adjustment
+    raw_score = round(weighted * 100) + candidate.market_snapshot.confidence_adjustment
 
     if require_selected_contract:
         blockers.extend(_contract_blockers(selected_contract))
@@ -88,6 +126,12 @@ def compute_data_confidence(
     )
 
 
+def _confidence_weights(strategy_source: StrategySource) -> ConfidenceWeights:
+    if not get_settings().scoring_fairness_v2:
+        return _LEGACY_CONFIDENCE
+    return _V2_CONFIDENCE[strategy_source]
+
+
 def _identity_score(candidate: CandidateContext, blockers: list[str]) -> int:
     if not candidate.ticker.strip():
         blockers.append("Ticker is missing.")
@@ -96,10 +140,22 @@ def _identity_score(candidate: CandidateContext, blockers: list[str]) -> int:
 
 
 def _earnings_score(candidate: CandidateContext, blockers: list[str]) -> int:
+    if candidate.earnings_date is None:
+        if candidate.strategy_source in NO_EARNINGS_REQUIRED_STRATEGIES:
+            return 20
+        blockers.append("Earnings date is unavailable.")
+        return 0
     if candidate.verified_earnings_date:
         return 20
     blockers.append("Earnings date could not be verified.")
     return 12
+
+
+def _event_score(candidate: CandidateContext) -> int:
+    if candidate.event_signal is None:
+        return 0
+    clamped_score = max(0, min(100, candidate.event_signal.score))
+    return round((clamped_score / 100) * _MAX_EVENT)
 
 
 def _market_score(candidate: CandidateContext, blockers: list[str]) -> int:

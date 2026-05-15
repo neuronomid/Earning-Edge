@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 from alembic.config import Config
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from alembic import command
@@ -18,6 +18,9 @@ EXPECTED_TABLES = {
     "candidates",
     "option_contracts",
     "open_positions",
+    "position_plan_overrides",
+    "position_revalidations",
+    "position_theses",
     "recommendations",
     "feedback_events",
 }
@@ -41,6 +44,26 @@ async def _async_table_names(async_url: str) -> set[str]:
 
 def _table_names(async_url: str) -> set[str]:
     return asyncio.run(_async_table_names(async_url))
+
+
+async def _async_column_default(async_url: str, table: str, column: str) -> str | None:
+    engine = create_async_engine(async_url)
+    try:
+        async with engine.connect() as conn:
+            result = await conn.execute(
+                text(
+                    "select column_default from information_schema.columns "
+                    "where table_schema='public' and table_name=:table and column_name=:column"
+                ),
+                {"table": table, "column": column},
+            )
+            return result.scalar_one_or_none()
+    finally:
+        await engine.dispose()
+
+
+def _column_default(async_url: str, table: str, column: str) -> str | None:
+    return asyncio.run(_async_column_default(async_url, table, column))
 
 
 async def _drop_all_tables(async_url: str) -> None:
@@ -68,9 +91,36 @@ def test_migration_up_and_down() -> None:
 
     tables = _table_names(async_url)
     assert EXPECTED_TABLES.issubset(tables), f"missing: {EXPECTED_TABLES - tables}"
+    assert (
+        _column_default(async_url, "recommendations", "news_coverage")
+        == "'none'::character varying"
+    )
 
     command.downgrade(cfg, "base")
     tables = _table_names(async_url)
     assert not (EXPECTED_TABLES & tables), f"leftover: {EXPECTED_TABLES & tables}"
+
+    command.upgrade(cfg, "head")
+
+
+def test_0013_upgrade_downgrade_idempotent() -> None:
+    if not asyncio.run(postgres_authenticates()):
+        pytest.skip("Postgres is not configured; start docker compose to run migration tests")
+
+    settings = get_settings()
+    async_url = settings.database_url
+    cfg = _alembic_config(async_url)
+
+    asyncio.run(_drop_all_tables(async_url))
+    command.upgrade(cfg, "0012_position_validation")
+    before = _table_names(async_url)
+
+    command.upgrade(cfg, "0013_strategy_source_widen")
+    after_upgrade = _table_names(async_url)
+    assert after_upgrade == before
+
+    command.downgrade(cfg, "0012_position_validation")
+    after_downgrade = _table_names(async_url)
+    assert after_downgrade == before
 
     command.upgrade(cfg, "head")

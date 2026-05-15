@@ -17,3 +17,4 @@ class SizingResult:
     contract_notional_exposure: Decimal | None = None
     premium_collected: Decimal | None = None
     margin_requirement_text: str | None = None
+    margin_requirement_per_contract: Decimal | None = None

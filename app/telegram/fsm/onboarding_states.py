@@ -48,6 +48,13 @@ class ClosePositionStates(StatesGroup):
     close_price = State()
 
 
+class AdjustPositionStates(StatesGroup):
+    target_price = State()
+    stop_loss = State()
+    both_target_price = State()
+    both_stop_loss = State()
+
+
 class HistoryModifyStates(StatesGroup):
     """States used when a user fixes a typo on a closed history row."""
 

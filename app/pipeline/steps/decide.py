@@ -31,6 +31,7 @@ from app.pipeline.types import (
 )
 from app.scoring.direction import structural_direction_tier
 from app.scoring.final import combine_scores
+from app.scoring.final import final_action as structural_action
 from app.scoring.types import (
     ContractScoreResult,
     UserContext,
@@ -38,6 +39,8 @@ from app.scoring.types import (
     option_mid,
     spread_percent,
 )
+from app.services.market_hours import NEW_YORK_TZ as EASTERN_TZ
+from app.services.market_hours import next_trading_session
 
 ZERO = Decimal("0")
 PROMPT_PATH = Path(__file__).resolve().parents[2] / "llm" / "prompts" / "decide_recommendation.md"
@@ -191,10 +194,38 @@ def build_decision_input(
     candidates: Sequence[PipelineCandidate],
     user: UserContext,
 ) -> DecisionInput:
+    reference_dates = [
+        item.context.valuation_date
+        for item in candidates
+        if item.context.valuation_date is not None
+    ]
+    reference_trading_date = min(reference_dates) if reference_dates else None
+    reference_datetimes = [
+        item.news_bundle.generated_at
+        for item in candidates
+        if item.news_bundle.generated_at is not None
+    ]
+    reference_datetime_et = (
+        min(reference_datetimes).astimezone(EASTERN_TZ) if reference_datetimes else None
+    )
     return DecisionInput(
         user_strategy_permission=_strategy_permission(user.strategy_permission),
         risk_profile=user.risk_profile,
         account_size=user.account_size,
+        reference_datetime_et=reference_datetime_et,
+        reference_trading_date=reference_trading_date,
+        next_market_session=None
+        if reference_trading_date is None
+        else next_trading_session(reference_trading_date),
+        market_calendar_notes=[
+            "All dates are NYSE/Eastern trading-session dates.",
+            "Never recommend a contract with P0 reality_check_flags.",
+            "news_status='available' includes briefs whose summary model failed "
+            "but whose raw article headlines are present in news_summary — treat "
+            "those as decision-grade evidence, not as a blackout.",
+            "Only downgrade to watchlist for news reasons when "
+            "news_status='unavailable' (article_count==0).",
+        ],
         candidates=[_candidate_bundle(item) for item in candidates],
     )
 
@@ -261,11 +292,33 @@ def validate_llm_decision(
             raw_response=raw_response,
         )
 
+    if _claims_impossible_runway(decision, matched_contract):
+        reality = matched_contract.reality_check
+        dte_calendar = reality.dte_calendar if reality is not None else None
+        dte_text = f"{dte_calendar} calendar days" if dte_calendar is not None else "short-dated"
+        raise LLMValidationError(
+            (
+                "Heavy model described a contract with "
+                f"{dte_text} to expiry as long-dated or months of runway. "
+                "Restate the rationale using the actual DTE and do not call it "
+                "long-dated unless dte_calendar >= 45."
+            ),
+            raw_response=raw_response,
+        )
+
     structural_final_score = combine_scores(
         candidate.evaluation.direction.score,
         matched_contract.score,
     )
-    structural_band = _band_from_score(structural_final_score)
+    structural_band = _band_from_action(
+        structural_action(
+            structural_final_score,
+            candidate.evaluation.confidence,
+            matched_contract,
+            direction_score=candidate.evaluation.direction.score,
+        ),
+        structural_final_score,
+    )
     final_band = _min_band(nominated_band, structural_band)
     final_action = _action_for_band(final_band)
 
@@ -278,11 +331,26 @@ def validate_llm_decision(
         }
     )
 
+    blocking_flags = _blocking_reality_flags(matched_contract)
+    if blocking_flags:
+        normalized = normalized.model_copy(
+            update={
+                "action": "no_trade",
+                "confidence_band": "no_trade",
+                "reasoning": (
+                    "Deterministic option reality checks blocked this contract: "
+                    + ", ".join(blocking_flags)
+                ),
+                "key_concerns": list(dict.fromkeys([*decision.key_concerns, *blocking_flags])),
+            }
+        )
+
     if normalized.action == "no_trade":
         watchlist_seed = list(normalized.watchlist_tickers)
         if decision.chosen_ticker is not None and decision.chosen_ticker not in watchlist_seed:
             watchlist_seed.insert(0, decision.chosen_ticker)
         watchlist = _sanitize_watchlist(candidates, watchlist_seed, exclude=None)
+        watchlist = _augment_with_catalyst_pending(candidates, watchlist, exclude=None)
         if not watchlist:
             watchlist = _default_watchlist(candidates, exclude=None)
         return normalized.model_copy(
@@ -299,6 +367,17 @@ def validate_llm_decision(
         normalized.watchlist_tickers,
         exclude=normalized.chosen_ticker,
     )
+    watchlist = _augment_with_catalyst_pending(
+        candidates, watchlist, exclude=normalized.chosen_ticker
+    )
+
+    if normalized.action == "watchlist" and _chosen_news_unavailable(candidates, normalized):
+        normalized = normalized.model_copy(
+            update={
+                "key_concerns": _ensure_news_blackout_concern(normalized.key_concerns),
+            }
+        )
+
     return normalized.model_copy(update={"watchlist_tickers": watchlist})
 
 
@@ -442,11 +521,25 @@ def _candidate_bundle(candidate: PipelineCandidate) -> CandidateBundle:
         },
         news_summary=_news_summary(candidate),
         structural_direction_tier=structural_direction_tier(candidate.evaluation.direction.score),
+        strategy_source=candidate.context.strategy_source,
+        event_signal_detail=(
+            candidate.context.event_signal.detail if candidate.context.event_signal else None
+        ),
         news_coverage=candidate.news_bundle.news_coverage,
         stale_news=candidate.news_bundle.stale_news,
+        news_article_count=len(candidate.news_bundle.articles),
+        news_source_count=len(
+            {result.source or result.url for result in candidate.news_bundle.search_results}
+        ),
+        news_status=_news_status(candidate),
+        news_brief_status=candidate.news_bundle.brief_status,
         option_chain_candidates=[
             _option_chain_candidate(contract) for contract in viable_contracts[:3]
         ],
+        tradeable_contracts_available=bool(viable_contracts),
+        catalyst_pending_no_tradeable_contract=(
+            not viable_contracts and _catalyst_pending_no_viable_contract(candidate)
+        ),
         expected_move=candidate.context.expected_move_percent,
         previous_earnings_move=candidate.context.previous_earnings_move_percent,
         data_confidence_score=candidate.evaluation.confidence.score,
@@ -456,6 +549,8 @@ def _candidate_bundle(candidate: PipelineCandidate) -> CandidateBundle:
 
 def _option_chain_candidate(contract: ContractScoreResult) -> OptionChainCandidate:
     spread = spread_percent(contract.contract)
+    target = contract.exit_target
+    reality = contract.reality_check
     return OptionChainCandidate(
         option_type=contract.contract.option_type,
         position_side=contract.contract.position_side,
@@ -471,12 +566,83 @@ def _option_chain_candidate(contract: ContractScoreResult) -> OptionChainCandida
         open_interest=contract.contract.open_interest,
         liquidity_score=contract.liquidity_score,
         breakeven=breakeven_price(contract.contract),
+        dte_calendar=None if reality is None else reality.dte_calendar,
+        dte_trading_sessions=None if reality is None else reality.dte_trading_sessions,
+        proposed_exit_by=None if target is None else target.exit_by_date,
+        proposed_exit_is_trading_session=None
+        if reality is None
+        else reality.exit_is_trading_session,
+        expected_holding_calendar_days=None
+        if target is None
+        else target.expected_holding_calendar_days,
+        expected_holding_trading_days=None
+        if target is None
+        else target.expected_holding_trading_days,
+        proposed_target_stock=None if target is None else target.target_stock_price,
+        proposed_target_option=None if target is None else target.target_option_price,
+        proposed_stop_option=None if target is None else target.stop_loss_option_price,
+        target_method=None if target is None else target.target_method,
+        required_sigma_to_target=None if reality is None else reality.required_sigma_to_target,
+        required_sigma_to_breakeven=None
+        if reality is None
+        else reality.required_sigma_to_breakeven,
+        approx_probability_touch_target=None
+        if reality is None
+        else reality.approx_probability_touch_target,
+        approx_probability_expire_itm=None
+        if reality is None
+        else reality.approx_probability_expire_itm,
+        theta_cost_to_exit=None if reality is None else reality.theta_cost_to_exit,
+        has_named_catalyst_before_exit=bool(
+            reality is not None and reality.has_named_catalyst_before_exit
+        ),
+        reality_check_flags=[] if reality is None else list(reality.flags),
     )
 
 
+def _news_status(candidate: PipelineCandidate) -> str:
+    """Three-valued news availability signal for the LLM and Telegram.
+
+    "unavailable" means we genuinely could not gather article evidence —
+    article_count == 0 or coverage == "none". Summarizer failures with
+    articles still present are NOT a blackout because we synthesize a raw
+    extractive brief with real headlines that the heavy model can use.
+
+    "deferred" means we intentionally skipped news fetching for a non-finalist
+    candidate; the finalist refresh will fill it in if the candidate advances.
+
+    "available" means we have article evidence (either fully summarized or as
+    a raw extractive headlines list — both are decision-grade context).
+    """
+    bundle = candidate.news_bundle
+    brief_status = bundle.brief_status
+    if bundle.news_coverage == "none" or len(bundle.articles) == 0:
+        if brief_status == "skipped":
+            uncertainty = bundle.brief.key_uncertainty.strip().lower()
+            if "deferred" in uncertainty:
+                return "deferred"
+        return "unavailable"
+    return "available"
+
+
 def _news_summary(candidate: PipelineCandidate) -> str:
-    brief = candidate.news_bundle.brief
+    bundle = candidate.news_bundle
+    brief = bundle.brief
     parts = []
+    if bundle.brief_status == "raw_extractive":
+        # Surface the headline list verbatim instead of pretending we have an
+        # AI summary. The heavy LLM should know this is raw extractive data so
+        # it weights it correctly when reasoning about catalysts.
+        parts.append(
+            f"Brief mode: raw_extractive (lightweight summary model unavailable; "
+            f"{len(bundle.articles)} articles fetched)."
+        )
+        if brief.key_facts:
+            parts.append(f"Headlines: {'; '.join(brief.key_facts[:10])}")
+        if brief.neutral_contextual_evidence:
+            parts.append(f"Context: {'; '.join(brief.neutral_contextual_evidence[:2])}")
+        parts.append(f"Uncertainty: {brief.key_uncertainty}")
+        return " ".join(parts)
     if brief.summary:
         parts.append(f"Summary: {brief.summary}")
     if brief.key_facts:
@@ -554,6 +720,14 @@ def _action_for_band(band: ConfidenceBand) -> str:
     return "no_trade"
 
 
+def _band_from_action(action: str, score: int) -> ConfidenceBand:
+    if action == "recommend":
+        return _band_from_score(score)
+    if action == "watchlist":
+        return "watchlist"
+    return "no_trade"
+
+
 def _band_or_default(band: ConfidenceBand | None, action: str) -> ConfidenceBand:
     """Best-effort fallback when the LLM omits confidence_band."""
     if band is not None:
@@ -614,15 +788,47 @@ def _build_corrective_prompt(
     raw_response: str | None,
 ) -> str:
     response_block = "(no parsed JSON available)" if not raw_response else raw_response
+    targeted_hint = _targeted_retry_hint(error_message)
+    targeted_block = f"\n{targeted_hint}\n" if targeted_hint else ""
     return (
         f"{base_prompt}\n\n"
         "## Retry context\n\n"
         "Your previous response was rejected by the validator. Re-read the\n"
         "Hard Rules above carefully and produce a corrected JSON response\n"
         "that satisfies them — do not repeat the same mistake.\n\n"
-        f"Validator error: {error_message}\n\n"
-        f"Previous response (rejected):\n{response_block}"
+        f"Validator error: {error_message}\n"
+        f"{targeted_block}"
+        f"\nPrevious response (rejected):\n{response_block}"
     )
+
+
+def _targeted_retry_hint(error_message: str) -> str | None:
+    lowered = error_message.lower()
+    if (
+        "long-dated" in lowered
+        or "long dated" in lowered
+        or "months of runway" in lowered
+        or "month of runway" in lowered
+    ):
+        return (
+            "Targeted hint: drop every phrase like 'long-dated', 'long runway', "
+            "or 'months/month of runway' from your rationale and key_evidence. "
+            "Quote the contract's actual `dte_calendar` value verbatim. Only "
+            "use long-dated language if dte_calendar >= 45."
+        )
+    if "not present in option_chain_candidates" in lowered:
+        return (
+            "Targeted hint: only choose a contract whose ticker, option_type, "
+            "position_side, strike, and expiry match a row in this candidate's "
+            "`option_chain_candidates` list exactly."
+        )
+    if "confidence_band" in lowered and "does not match action" in lowered:
+        return (
+            "Targeted hint: confidence_band ∈ {strong, standard} requires "
+            "action='recommend'; 'watchlist' requires action='watchlist'; "
+            "'no_trade' requires action='no_trade'. Keep them aligned."
+        )
+    return None
 
 
 def _sanitize_watchlist(
@@ -649,6 +855,94 @@ def _default_watchlist(
     return [item.record.ticker for item in ranked if item.record.ticker != exclude][:3]
 
 
+_CATALYST_WINDOW_DAYS = 14
+_NEWS_BLACKOUT_PHRASES = (
+    "news service unavailable",
+    "news_status=unavailable",
+    "news unavailable",
+    "news blackout",
+    "news dark",
+    "news_status unavailable",
+    "no news coverage",
+    "news coverage unavailable",
+)
+_NEWS_BLACKOUT_CONCERN = (
+    "Downgraded to watchlist because news_status=unavailable for the selected setup."
+)
+
+
+def _augment_with_catalyst_pending(
+    candidates: Sequence[PipelineCandidate],
+    watchlist: list[str],
+    *,
+    exclude: str | None,
+) -> list[str]:
+    """Fill empty watchlist slots with catalyst-pending candidates that had no tradable contract.
+
+    NVDA-style outcomes — earnings inside the next two weeks, no contract cleared
+    the hard filters this scan — should not silently disappear from the watchlist
+    behind score-0 noise. The LLM gets first dibs; this only seeds the slots it
+    left open.
+    """
+    if len(watchlist) >= 3:
+        return watchlist[:3]
+    existing = set(watchlist)
+    extras: list[tuple[int, str]] = []
+    for item in candidates:
+        ticker = item.record.ticker
+        if not ticker or ticker == exclude or ticker in existing:
+            continue
+        if not _catalyst_pending_no_viable_contract(item):
+            continue
+        confidence = item.evaluation.confidence.score
+        extras.append((confidence, ticker))
+    extras.sort(reverse=True)
+    augmented = list(watchlist)
+    for _, ticker in extras:
+        if len(augmented) >= 3:
+            break
+        augmented.append(ticker)
+    return augmented
+
+
+def _catalyst_pending_no_viable_contract(item: PipelineCandidate) -> bool:
+    has_viable = any(contract.is_viable for contract in item.evaluation.considered_contracts)
+    if has_viable:
+        return False
+
+    valuation_date = item.context.valuation_date or item.context.market_snapshot.as_of_date
+    earnings_date = item.record.earnings_date or item.context.earnings_date
+    if earnings_date is not None and valuation_date is not None:
+        delta_days = (earnings_date - valuation_date).days
+        if 0 <= delta_days <= _CATALYST_WINDOW_DAYS:
+            return True
+    event = item.context.event_signal
+    return bool(event is not None and event.is_supportive)
+
+
+def _chosen_news_unavailable(
+    candidates: Sequence[PipelineCandidate],
+    decision: StructuredDecision,
+) -> bool:
+    if decision.chosen_ticker is None:
+        return False
+    candidate = next(
+        (item for item in candidates if item.record.ticker == decision.chosen_ticker),
+        None,
+    )
+    if candidate is None:
+        return False
+    return _news_status(candidate) == "unavailable"
+
+
+def _ensure_news_blackout_concern(concerns: Sequence[str]) -> list[str]:
+    concerns_list = list(concerns)
+    haystack = " ".join(concern.lower() for concern in concerns_list)
+    if any(phrase in haystack for phrase in _NEWS_BLACKOUT_PHRASES):
+        return concerns_list
+    return [_NEWS_BLACKOUT_CONCERN, *concerns_list]
+
+
 def _rank_candidates(candidates: Sequence[PipelineCandidate]) -> list[PipelineCandidate]:
     return sorted(
         candidates,
@@ -668,6 +962,62 @@ def _contract_matches(contract: ContractScoreResult, chosen_contract: ChosenCont
         and contract.contract.position_side == chosen_contract.position_side
         and contract.contract.strike == chosen_contract.strike
         and contract.contract.expiry == chosen_contract.expiry
+    )
+
+
+def _blocking_reality_flags(contract: ContractScoreResult) -> tuple[str, ...]:
+    hard_codes = {veto.code for veto in contract.vetoes}
+    reality_flags = set(contract.reality_check.flags if contract.reality_check else ())
+    return tuple(
+        sorted(
+            hard_codes
+            | {
+                flag
+                for flag in reality_flags
+                if flag
+                in {
+                    "invalid_exit_session",
+                    "no_actionable_exit_window",
+                    "weekly_otm_no_catalyst",
+                    "too_few_exit_sessions_no_catalyst",
+                    "target_unreachable_by_exit",
+                    "low_pot_no_catalyst",
+                    "breakeven_outside_exit_move",
+                    "missing_exit_horizon_move",
+                }
+            }
+        )
+    )
+
+
+def _claims_impossible_runway(
+    decision: StructuredDecision,
+    contract: ContractScoreResult,
+) -> bool:
+    reality = contract.reality_check
+    dte = None if reality is None else reality.dte_calendar
+    if dte is None or dte >= 45:
+        return False
+    text = " ".join(
+        part
+        for part in (
+            decision.reasoning,
+            decision.rationale,
+            None if decision.chosen_contract is None else decision.chosen_contract.rationale,
+            " ".join(decision.key_evidence),
+        )
+        if part
+    ).lower()
+    return any(
+        phrase in text
+        for phrase in (
+            "months of runway",
+            "month of runway",
+            "long-dated",
+            "long dated",
+            "six months",
+            "6 months",
+        )
     )
 
 

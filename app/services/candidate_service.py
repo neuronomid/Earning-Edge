@@ -7,11 +7,12 @@ from dataclasses import replace
 from datetime import date, timedelta
 from decimal import Decimal
 from functools import lru_cache
-from typing import Protocol
+from typing import Any, Protocol
+from uuid import UUID
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
-from app.services.candidate_models import CandidateBatch, CandidateRecord
+from app.services.candidate_models import CandidateBatch, CandidateRecord, StrategySource
 from app.services.earnings_calendar.finnhub_source import FinnhubEarningsSource
 from app.services.earnings_calendar.reconciler import (
     CandidateReconciler,
@@ -27,7 +28,7 @@ from app.services.finviz.strategies import (
 )
 from app.services.strategy_catalog import build_strategy_report
 
-CATALYST_STRATEGY_SOURCE = "catalyst_confluence"
+CATALYST_STRATEGY_SOURCE: StrategySource = "catalyst_confluence"
 
 # Tickers that appear frequently in screeners but are unsuitable for earnings plays
 # (e.g. AAPL earnings are too well-covered, options are expensive, move is priced in).
@@ -64,6 +65,8 @@ class CandidateDataSource(Protocol):
 
 
 class CandidateService:
+    slug: StrategySource = CATALYST_STRATEGY_SOURCE
+
     def __init__(
         self,
         runner: FinvizQueryRunner,
@@ -71,7 +74,7 @@ class CandidateService:
         sources: Sequence[CandidateDataSource],
         reconciler: CandidateReconciler | None = None,
         today_provider: Callable[[], date] | None = None,
-        logger=None,
+        logger: Any | None = None,
     ) -> None:
         self.runner = runner
         self.sources = tuple(sources)
@@ -79,7 +82,13 @@ class CandidateService:
         self.today_provider = today_provider or date.today
         self.logger = logger or get_logger(__name__)
 
-    async def get_top_five(self) -> CandidateBatch:
+    async def get_top_five(
+        self,
+        *,
+        limit: int = 5,
+        user_id: UUID | None = None,
+    ) -> CandidateBatch:
+        del user_id
         window = next_week_window(self.today_provider())
 
         try:
@@ -87,7 +96,7 @@ class CandidateService:
                 STRATEGY_A_BASE,
                 swap_prefix=STRATEGY_A_EARNINGS_PREFIX,
                 swap_values=STRATEGY_A_EARNINGS_VALUES,
-                limit=5,
+                limit=limit,
                 strategy_source=CATALYST_STRATEGY_SOURCE,
             )
             if not extracted:
@@ -99,15 +108,15 @@ class CandidateService:
                 tickers=[row.ticker for row in extracted],
             )
         except Exception as exc:
-            backup_rows = await self._load_backup_candidates(window=window, limit=5)
-            validated = await self._validate_rows(backup_rows, window=window, limit=5)
+            backup_rows = await self._load_backup_candidates(window=window, limit=limit)
+            validated = await self._validate_rows(backup_rows, window=window, limit=limit)
             self.logger.warning(
                 "candidate_service_finviz_failed",
                 error=str(exc),
-                backup_tickers=[row.ticker for row in validated[:5]],
+                backup_tickers=[row.ticker for row in validated[:limit]],
             )
             final_rows = tuple(
-                replace(row, strategy_source=CATALYST_STRATEGY_SOURCE) for row in validated[:5]
+                replace(row, strategy_source=CATALYST_STRATEGY_SOURCE) for row in validated[:limit]
             )
             warning_text = FINVIZ_FALLBACK_WARNING if final_rows else None
             return CandidateBatch(
@@ -130,25 +139,25 @@ class CandidateService:
                 ),
             )
 
-        validated = await self._validate_rows(extracted, window=window, limit=5)
+        validated = await self._validate_rows(extracted, window=window, limit=limit)
         if not validated:
             raise CandidateSelectionError("Finviz produced no validated candidates")
         self.logger.info(
             "candidate_service_candidates_selected",
             screener_tickers=[row.ticker for row in extracted],
-            final_tickers=[row.ticker for row in validated[:5]],
+            final_tickers=[row.ticker for row in validated[:limit]],
             inferred_tickers=[
-                row.ticker for row in validated[:5] if not row.earnings_date_verified
+                row.ticker for row in validated[:limit] if not row.earnings_date_verified
             ],
-            fallback_used=any("finviz" not in row.sources for row in validated[:5]),
+            fallback_used=any("finviz" not in row.sources for row in validated[:limit]),
         )
         final_rows = tuple(
-            replace(row, strategy_source=CATALYST_STRATEGY_SOURCE) for row in validated[:5]
+            replace(row, strategy_source=CATALYST_STRATEGY_SOURCE) for row in validated[:limit]
         )
         fallback_used = any("finviz" not in row.sources for row in final_rows)
         return CandidateBatch(
             candidates=final_rows,
-            screener_status="success" if len(final_rows) >= 5 else "partial",
+            screener_status="success" if len(final_rows) >= limit else "partial",
             fallback_used=fallback_used,
             warning_text=None,
             strategy_reports=(

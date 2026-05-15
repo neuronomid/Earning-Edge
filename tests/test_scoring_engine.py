@@ -4,6 +4,7 @@ from collections.abc import Callable
 from dataclasses import replace
 from datetime import date
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 
@@ -14,8 +15,15 @@ from app.scoring.expiry import is_valid_expiry, score_expiry_fit
 from app.scoring.final import score_candidate
 from app.scoring.penalties import collect_soft_penalties
 from app.scoring.strategy_select import select_allowed_strategies
-from app.scoring.types import CandidateContext, OptionContractInput, SourceConflict, UserContext
+from app.scoring.types import (
+    CandidateContext,
+    OptionContractInput,
+    OptionRealityCheck,
+    SourceConflict,
+    UserContext,
+)
 from app.scoring.vetoes import evaluate_hard_vetoes
+from app.services.candidate_models import StrategyEventSignal
 from app.services.market_data.types import MarketSnapshot, ReturnMetrics
 from app.services.news.types import NewsBrief
 
@@ -148,6 +156,91 @@ def test_expiry_rule_for_bmo_and_amc(
 
     assert valid is expected_valid
     assert fit == expected_fit
+
+
+def test_coiled_setup_without_earnings_date_uses_dte_expiry_window() -> None:
+    contract = OptionContractInput(
+        ticker="XYZ",
+        option_type="call",
+        position_side="long",
+        strike=Decimal("102"),
+        expiry=date(2026, 5, 16),
+        bid=Decimal("1.20"),
+        ask=Decimal("1.30"),
+        volume=120,
+        open_interest=300,
+        implied_volatility=Decimal("0.42"),
+        delta=Decimal("0.55"),
+    )
+    candidate = replace(
+        _strong_bullish_candidate(),
+        ticker="XYZ",
+        company_name="XYZ Inc.",
+        earnings_date=None,
+        strategy_source="coiled_setup",
+        option_chain=(contract,),
+        verified_earnings_date=True,
+    )
+    user = _user(account_size="20000")
+    direction = score_direction(candidate, data_confidence_score=83)
+
+    vetoes = evaluate_hard_vetoes(candidate, user, contract)
+    result = score_contract(candidate, user, contract, direction)
+
+    assert "earnings_missing" not in {veto.code for veto in vetoes}
+    assert "earnings_unverified" not in {veto.code for veto in vetoes}
+    assert "invalid_expiry" not in {veto.code for veto in vetoes}
+    assert result.expiry_days_after_earnings is None
+    assert result.score > 0
+
+
+@pytest.mark.parametrize(
+    "strategy_source",
+    [
+        "coiled_setup",
+        "sector_relative_strength",
+        "activist_13d_followthrough",
+    ],
+)
+def test_no_earnings_exemption_set_covers_non_earnings_strategies(
+    strategy_source: str,
+) -> None:
+    candidate = replace(
+        _strong_bullish_candidate(with_options=True),
+        earnings_date=None,
+        strategy_source=strategy_source,  # type: ignore[arg-type]
+        verified_earnings_date=True,
+    )
+    user = _user(account_size="20000")
+    contract = candidate.option_chain[0]
+
+    vetoes = evaluate_hard_vetoes(candidate, user, contract)
+    confidence = compute_data_confidence(
+        candidate,
+        user,
+        selected_contract=contract,
+        require_selected_contract=True,
+    )
+
+    assert "earnings_missing" not in {veto.code for veto in vetoes}
+    assert "Earnings date is unavailable." not in confidence.blockers
+
+
+@pytest.mark.parametrize("strategy_source", ["catalyst_confluence", "pead_continuation"])
+def test_earnings_required_strategies_still_require_earnings_date(
+    strategy_source: str,
+) -> None:
+    candidate = replace(
+        _strong_bullish_candidate(with_options=True),
+        earnings_date=None,
+        strategy_source=strategy_source,  # type: ignore[arg-type]
+        verified_earnings_date=False,
+    )
+    user = _user(account_size="20000")
+
+    vetoes = evaluate_hard_vetoes(candidate, user, candidate.option_chain[0])
+
+    assert "earnings_missing" in {veto.code for veto in vetoes}
 
 
 @pytest.mark.parametrize(
@@ -332,6 +425,471 @@ def test_data_confidence_logs_source_conflict_without_forcing_blocker() -> None:
     assert any("market_cap" in note for note in result.notes)
 
 
+def test_legacy_a_candidate_score_within_3_points_of_pre_v2(monkeypatch) -> None:
+    candidate = _strong_bullish_candidate(with_options=True)
+    user = _user(account_size="20000", strategy_permission="long")
+
+    _set_scoring_fairness(monkeypatch, enabled=False)
+    legacy = score_candidate(candidate, user)
+    _set_scoring_fairness(monkeypatch, enabled=True)
+    rebalanced = score_candidate(candidate, user)
+
+    assert abs(rebalanced.final_score - legacy.final_score) <= 3
+
+
+def test_legacy_b_candidate_score_within_3_points_of_pre_v2(monkeypatch) -> None:
+    candidate = replace(
+        _strong_bullish_candidate(with_options=True),
+        earnings_date=None,
+        strategy_source="coiled_setup",
+        event_signal=StrategyEventSignal(
+            score=100,
+            is_supportive=True,
+            detail="Coiled setup: 0.0% from 52w high, 3.0x avg volume",
+        ),
+        verified_earnings_date=True,
+    )
+    user = _user(account_size="20000", strategy_permission="long")
+
+    _set_scoring_fairness(monkeypatch, enabled=False)
+    legacy = score_candidate(candidate, user)
+    _set_scoring_fairness(monkeypatch, enabled=True)
+    rebalanced = score_candidate(candidate, user)
+
+    assert abs(rebalanced.final_score - legacy.final_score) <= 3
+
+
+def test_v2_off_restores_byte_identical_legacy_scores(monkeypatch) -> None:
+    with_event = replace(
+        _strong_bullish_candidate(with_options=True),
+        earnings_date=None,
+        strategy_source="coiled_setup",
+        event_signal=StrategyEventSignal(
+            score=100,
+            is_supportive=True,
+            detail="Coiled setup: 0.0% from 52w high, 3.0x avg volume",
+        ),
+        verified_earnings_date=True,
+    )
+    without_event = replace(with_event, event_signal=None)
+    user = _user(account_size="20000", strategy_permission="long")
+
+    _set_scoring_fairness(monkeypatch, enabled=False)
+
+    assert score_candidate(with_event, user) == score_candidate(without_event, user)
+
+
+def test_pm_weekly_no_catalyst_contract_is_not_recommendable() -> None:
+    contract = OptionContractInput(
+        ticker="PM",
+        option_type="call",
+        position_side="long",
+        strike=Decimal("195"),
+        expiry=date(2026, 5, 22),
+        bid=Decimal("1.73"),
+        ask=Decimal("1.98"),
+        mid=Decimal("1.855"),
+        volume=144,
+        open_interest=300,
+        implied_volatility=Decimal("0.2735"),
+        delta=Decimal("0.359"),
+        gamma=Decimal("0.0481"),
+        theta=Decimal("-0.1881"),
+        vega=Decimal("0.1062"),
+        underlying_price=Decimal("191.86"),
+        source="fixture",
+    )
+    candidate = CandidateContext(
+        ticker="PM",
+        company_name="Philip Morris International Inc.",
+        earnings_date=None,
+        earnings_timing="unknown",
+        market_snapshot=MarketSnapshot(
+            ticker="PM",
+            as_of_date=date(2026, 5, 14),
+            company_name="Philip Morris International Inc.",
+            sector="Consumer Defensive",
+            sector_etf="XLP",
+            market_cap=Decimal("299030000000"),
+            current_price=Decimal("191.86"),
+            latest_volume=1_000_000,
+            average_volume_20d=Decimal("900000"),
+            volume_vs_average_20d=Decimal("1.20"),
+            stock_returns=ReturnMetrics(
+                one_day=Decimal("0.021"),
+                five_day=Decimal("0.044"),
+                twenty_day=Decimal("0.080"),
+                fifty_day=Decimal("0.120"),
+            ),
+            spy_returns=ReturnMetrics(
+                one_day=Decimal("0.002"),
+                five_day=Decimal("0.010"),
+                twenty_day=Decimal("0.030"),
+                fifty_day=Decimal("0.050"),
+            ),
+            qqq_returns=ReturnMetrics(
+                one_day=Decimal("0.001"),
+                five_day=Decimal("0.008"),
+                twenty_day=Decimal("0.020"),
+                fifty_day=Decimal("0.040"),
+            ),
+            sector_returns=ReturnMetrics(
+                one_day=Decimal("0.002"),
+                five_day=Decimal("0.018"),
+                twenty_day=Decimal("0.044"),
+                fifty_day=Decimal("0.060"),
+            ),
+            relative_strength_vs_spy=Decimal("0.034"),
+            relative_strength_vs_qqq=Decimal("0.040"),
+            relative_strength_vs_sector=Decimal("0.010"),
+            av_news_sentiment=None,
+            price_source="fixture",
+            overview_source="fixture",
+            sources=("fixture",),
+        ),
+        news_brief=NewsBrief(
+            neutral_contextual_evidence=[],
+            key_uncertainty="news service unavailable",
+        ),
+        valuation_date=date(2026, 5, 14),
+        option_chain=(contract,),
+        strategy_source="sector_relative_strength",
+        event_signal=StrategyEventSignal(
+            score=75,
+            is_supportive=True,
+            detail="XLP sector +4.4% (4w), stock screen percentile 60%",
+        ),
+        expected_move_percent=Decimal("0.027889"),
+    )
+    user = _user(account_size="9900", strategy_permission="long")
+
+    result = score_candidate(candidate, user)
+
+    assert result.action == "no_trade"
+    assert result.chosen_contract is None
+    assert result.considered_contracts
+    rejected = result.considered_contracts[0]
+    veto_codes = {veto.code for veto in rejected.vetoes}
+    assert "strategy_dte_too_short" in veto_codes
+    assert "strategy_exit_window_too_short" in veto_codes
+    assert "weekly_otm_no_catalyst" in veto_codes
+    assert rejected.reality_check is not None
+    assert rejected.reality_check.trading_days_to_exit == 1
+    assert rejected.exit_target is not None
+    assert rejected.exit_target.exit_by_date == date(2026, 5, 15)
+    breakeven_factor = next(
+        factor for factor in rejected.factors if factor.name == "breakeven feasibility"
+    )
+    assert breakeven_factor.score == 4
+
+
+def test_non_catalyst_with_raw_extractive_news_is_not_downgraded() -> None:
+    """When the lightweight summarizer fails but real articles were fetched,
+    the deterministic raw-extractive brief carries the headlines forward. The
+    downgrade-to-watchlist rule was designed for genuine news blackouts
+    (article_count == 0). A flaky Gemini call must NOT veto a clean
+    non-catalyst setup that has independent news evidence available."""
+    contract = OptionContractInput(
+        ticker="XYZ",
+        option_type="call",
+        position_side="long",
+        strike=Decimal("102"),
+        expiry=date(2026, 5, 29),
+        bid=Decimal("2.20"),
+        ask=Decimal("2.35"),
+        volume=220,
+        open_interest=600,
+        implied_volatility=Decimal("0.32"),
+        delta=Decimal("0.56"),
+        gamma=Decimal("0.03"),
+        theta=Decimal("-0.04"),
+        vega=Decimal("0.10"),
+    )
+    candidate = replace(
+        _strong_bullish_candidate(),
+        ticker="XYZ",
+        company_name="XYZ Inc.",
+        earnings_date=None,
+        strategy_source="sector_relative_strength",
+        event_signal=StrategyEventSignal(
+            score=92,
+            is_supportive=True,
+            detail="Sector RS: top-decile sector and stock momentum.",
+        ),
+        verified_earnings_date=True,
+        news_brief=NewsBrief(
+            neutral_contextual_evidence=[
+                "Raw extractive brief built from 8 fetched articles after the "
+                "lightweight summary model could not produce a valid JSON response."
+            ],
+            key_facts=[
+                "Roth/MKM upgrades to Buy, PT $13 → $26 — example.com (2026-05-08)",
+                "Q1 results: EPS beat — example.com (2026-05-06)",
+            ],
+            key_uncertainty=("Lightweight summary model unavailable; raw article headlines below."),
+        ),
+        valuation_date=date(2026, 5, 1),
+        option_chain=(contract,),
+        expected_move_percent=Decimal("0.06"),
+        news_article_count=8,
+        news_coverage="rich",
+        news_brief_status="raw_extractive",
+    )
+    user = _user(account_size="20000", strategy_permission="long")
+
+    result = score_candidate(candidate, user)
+
+    assert result.chosen_contract is not None
+    assert result.final_score >= 68
+    # The setup is clean and articles exist — must not be downgraded for "news
+    # blackout" reasons. Action should be recommend, not watchlist.
+    assert result.action == "recommend"
+
+
+def test_non_catalyst_unavailable_news_caps_recommendation_to_watchlist() -> None:
+    contract = OptionContractInput(
+        ticker="XYZ",
+        option_type="call",
+        position_side="long",
+        strike=Decimal("102"),
+        expiry=date(2026, 5, 29),
+        bid=Decimal("2.20"),
+        ask=Decimal("2.35"),
+        volume=220,
+        open_interest=600,
+        implied_volatility=Decimal("0.32"),
+        delta=Decimal("0.56"),
+        gamma=Decimal("0.03"),
+        theta=Decimal("-0.04"),
+        vega=Decimal("0.10"),
+    )
+    candidate = replace(
+        _strong_bullish_candidate(),
+        ticker="XYZ",
+        company_name="XYZ Inc.",
+        earnings_date=None,
+        strategy_source="sector_relative_strength",
+        event_signal=StrategyEventSignal(
+            score=92,
+            is_supportive=True,
+            detail="Sector RS: top-decile sector and stock momentum.",
+        ),
+        verified_earnings_date=True,
+        news_brief=NewsBrief(
+            neutral_contextual_evidence=[],
+            key_uncertainty=(
+                "There was not enough recent, independent coverage to form a strong catalyst view."
+            ),
+        ),
+        valuation_date=date(2026, 5, 1),
+        option_chain=(contract,),
+        expected_move_percent=Decimal("0.06"),
+        news_article_count=0,
+        news_coverage="none",
+        news_brief_status="unavailable",
+    )
+    user = _user(account_size="20000", strategy_permission="long")
+
+    result = score_candidate(candidate, user)
+
+    assert result.chosen_contract is not None
+    assert result.final_score >= 68
+    assert result.action == "watchlist"
+
+
+def _prmb_like_sector_rs_candidate(
+    *,
+    volume: int = 80,
+    open_interest: int = 120,
+    delta: Decimal = Decimal("0.5732"),
+    bid: Decimal = Decimal("1.18"),
+    ask: Decimal = Decimal("1.42"),
+) -> tuple[CandidateContext, OptionContractInput]:
+    """PRMB-shaped sector-relative-strength fixture for the new vetoes."""
+
+    contract = OptionContractInput(
+        ticker="PRMB",
+        option_type="call",
+        position_side="long",
+        strike=Decimal("23"),
+        expiry=date(2026, 6, 18),
+        bid=bid,
+        ask=ask,
+        mid=Decimal("1.30"),
+        volume=volume,
+        open_interest=open_interest,
+        implied_volatility=Decimal("0.3977"),
+        delta=delta,
+        gamma=Decimal("0.1388"),
+        theta=Decimal("-0.0175"),
+        vega=Decimal("0.0279"),
+        underlying_price=Decimal("23.27"),
+        source="fixture",
+    )
+    candidate = CandidateContext(
+        ticker="PRMB",
+        company_name="Primo Brands Corp",
+        earnings_date=None,
+        earnings_timing="unknown",
+        market_snapshot=MarketSnapshot(
+            ticker="PRMB",
+            as_of_date=date(2026, 5, 14),
+            company_name="Primo Brands Corp",
+            sector="Consumer Defensive",
+            sector_etf="XLP",
+            market_cap=Decimal("8440000000"),
+            current_price=Decimal("23.27"),
+            latest_volume=1_000_000,
+            average_volume_20d=Decimal("900000"),
+            volume_vs_average_20d=Decimal("1.20"),
+            stock_returns=ReturnMetrics(
+                one_day=Decimal("0.02"),
+                five_day=Decimal("0.05"),
+                twenty_day=Decimal("0.145"),
+                fifty_day=Decimal("0.18"),
+            ),
+            spy_returns=ReturnMetrics(
+                one_day=Decimal("0.002"),
+                five_day=Decimal("0.012"),
+                twenty_day=Decimal("0.067"),
+                fifty_day=Decimal("0.090"),
+            ),
+            qqq_returns=ReturnMetrics(
+                one_day=Decimal("0.001"),
+                five_day=Decimal("0.010"),
+                twenty_day=Decimal("0.050"),
+                fifty_day=Decimal("0.070"),
+            ),
+            sector_returns=ReturnMetrics(
+                one_day=Decimal("0.002"),
+                five_day=Decimal("0.018"),
+                twenty_day=Decimal("0.044"),
+                fifty_day=Decimal("0.060"),
+            ),
+            relative_strength_vs_spy=Decimal("0.078"),
+            relative_strength_vs_qqq=Decimal("0.095"),
+            relative_strength_vs_sector=Decimal("0.101"),
+            av_news_sentiment=None,
+            price_source="fixture",
+            overview_source="fixture",
+            sources=("fixture",),
+        ),
+        news_brief=NewsBrief(
+            neutral_contextual_evidence=["Sector tape is supportive."],
+            key_uncertainty="Adequate coverage with no clean catalyst.",
+            summary="Bullish trend backed by sector tailwind.",
+        ),
+        valuation_date=date(2026, 5, 14),
+        option_chain=(contract,),
+        strategy_source="sector_relative_strength",
+        event_signal=StrategyEventSignal(
+            score=68,
+            is_supportive=True,
+            detail="XLP sector +4.4% (4w), stock screen percentile 20%",
+        ),
+        verified_earnings_date=True,
+        expected_move_percent=Decimal("0.034884"),
+    )
+    return candidate, contract
+
+
+def test_weak_long_risk_reward_vetoes_prmb_like_no_catalyst_contract() -> None:
+    """PRMB's 0.39 R:R must hard-fail under sector_relative_strength policy."""
+
+    candidate, _ = _prmb_like_sector_rs_candidate()
+    user = _user(account_size="20000", strategy_permission="long")
+
+    result = score_candidate(candidate, user)
+
+    rejected = result.considered_contracts[0]
+    veto_codes = {veto.code for veto in rejected.vetoes}
+    assert "weak_long_risk_reward" in veto_codes
+    assert result.action == "no_trade"
+
+
+def test_weak_long_risk_reward_does_not_fire_for_short_premium() -> None:
+    """Short-premium contracts have no entry/stop/target geometry — skip the check."""
+
+    candidate, _ = _prmb_like_sector_rs_candidate()
+    short_contract = OptionContractInput(
+        ticker="PRMB",
+        option_type="put",
+        position_side="short",
+        strike=Decimal("22"),
+        expiry=date(2026, 6, 18),
+        bid=Decimal("0.62"),
+        ask=Decimal("0.73"),
+        mid=Decimal("0.675"),
+        volume=40,
+        open_interest=120,
+        implied_volatility=Decimal("0.4483"),
+        delta=Decimal("-0.3074"),
+        gamma=Decimal("0.1104"),
+        theta=Decimal("-0.0157"),
+        vega=Decimal("0.025"),
+        underlying_price=Decimal("23.27"),
+        source="fixture",
+    )
+    user = _user(account_size="50000", strategy_permission="long_and_short")
+
+    vetoes = evaluate_hard_vetoes(candidate, user, short_contract)
+    assert "weak_long_risk_reward" not in {veto.code for veto in vetoes}
+
+
+def test_thin_liquidity_no_catalyst_vetoes_volume_1_long_option() -> None:
+    """PRMB volume=1, OI<10 should hard-fail when the strategy is non-catalyst."""
+
+    candidate, _ = _prmb_like_sector_rs_candidate(volume=1, open_interest=2)
+    contract = candidate.option_chain[0]
+    user = _user(account_size="20000", strategy_permission="long")
+
+    vetoes = evaluate_hard_vetoes(
+        candidate,
+        user,
+        contract,
+        reality_check=_reality_for_long_no_catalyst(candidate, contract),
+    )
+    assert "thin_liquidity_no_catalyst" in {veto.code for veto in vetoes}
+
+
+def test_thin_liquidity_floor_skipped_when_catalyst_is_pending() -> None:
+    """A real catalyst before exit should bypass the liquidity floor."""
+
+    candidate, contract = _prmb_like_sector_rs_candidate(volume=1, open_interest=2)
+    candidate_with_catalyst = replace(
+        candidate,
+        earnings_date=date(2026, 5, 16),
+    )
+    user = _user(account_size="20000", strategy_permission="long")
+
+    vetoes = evaluate_hard_vetoes(
+        candidate_with_catalyst,
+        user,
+        contract,
+        reality_check=_reality_for_long_no_catalyst(
+            candidate_with_catalyst, contract, has_named_catalyst=True
+        ),
+    )
+    assert "thin_liquidity_no_catalyst" not in {veto.code for veto in vetoes}
+
+
+def _reality_for_long_no_catalyst(
+    candidate: CandidateContext,
+    contract: OptionContractInput,
+    *,
+    has_named_catalyst: bool = False,
+) -> OptionRealityCheck:
+    from app.scoring.probability import assess_option_reality
+    from app.services.exit_target import ExitTargetService
+
+    direction = score_direction(candidate, data_confidence_score=80)
+    exit_target = ExitTargetService().build(candidate, contract, direction)
+    reality = assess_option_reality(candidate, contract, exit_target)
+    if has_named_catalyst:
+        return replace(reality, has_named_catalyst_before_exit=True)
+    return reality
+
+
 def _strong_bullish_candidate(
     *,
     with_options: bool = False,
@@ -450,6 +1008,12 @@ def _user(
         max_contracts=3,
         has_valid_openrouter_api_key=openrouter_ok,
     )
+
+
+def _set_scoring_fairness(monkeypatch, *, enabled: bool) -> None:
+    settings = SimpleNamespace(scoring_fairness_v2=enabled)
+    monkeypatch.setattr("app.scoring.direction.get_settings", lambda: settings)
+    monkeypatch.setattr("app.scoring.confidence.get_settings", lambda: settings)
 
 
 def _market_snapshot(

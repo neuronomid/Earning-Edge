@@ -8,7 +8,7 @@ adds wording in Phase 11.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
@@ -44,6 +44,23 @@ class OptionChainCandidate(_Frozen):
     open_interest: int | None = None
     liquidity_score: int | None = None
     breakeven: Decimal | None = None
+    dte_calendar: int | None = None
+    dte_trading_sessions: int | None = None
+    proposed_exit_by: date | None = None
+    proposed_exit_is_trading_session: bool | None = None
+    expected_holding_calendar_days: int | None = None
+    expected_holding_trading_days: int | None = None
+    proposed_target_stock: Decimal | None = None
+    proposed_target_option: Decimal | None = None
+    proposed_stop_option: Decimal | None = None
+    target_method: str | None = None
+    required_sigma_to_target: Decimal | None = None
+    required_sigma_to_breakeven: Decimal | None = None
+    approx_probability_touch_target: Decimal | None = None
+    approx_probability_expire_itm: Decimal | None = None
+    theta_cost_to_exit: Decimal | None = None
+    has_named_catalyst_before_exit: bool = False
+    reality_check_flags: list[str] = Field(default_factory=list)
 
 
 class CandidateBundle(_Frozen):
@@ -51,7 +68,7 @@ class CandidateBundle(_Frozen):
 
     ticker: str
     company_name: str
-    earnings_date: date
+    earnings_date: date | None
     earnings_timing: EarningsTiming = "unknown"
     market_cap: Decimal | None = None
     current_price: Decimal | None = None
@@ -61,9 +78,17 @@ class CandidateBundle(_Frozen):
     market_comparison: dict[str, float] = Field(default_factory=dict)
     news_summary: str = ""
     structural_direction_tier: DirectionTier | None = None
-    news_coverage: Literal["none", "sparse", "adequate", "rich"] = "adequate"
+    strategy_source: str = "catalyst_confluence"
+    event_signal_detail: str | None = None
+    news_coverage: Literal["none", "sparse", "adequate", "rich"] = "none"
     stale_news: bool = False
+    news_article_count: int = 0
+    news_source_count: int = 0
+    news_status: Literal["available", "deferred", "unavailable"] = "unavailable"
+    news_brief_status: Literal["ok", "raw_extractive", "skipped", "unavailable"] = "unavailable"
     option_chain_candidates: list[OptionChainCandidate] = Field(default_factory=list)
+    tradeable_contracts_available: bool = True
+    catalyst_pending_no_tradeable_contract: bool = False
     expected_move: Decimal | None = None
     previous_earnings_move: Decimal | None = None
     data_confidence_score: int = Field(ge=0, le=100, default=100)
@@ -76,6 +101,10 @@ class DecisionInput(_Frozen):
     user_strategy_permission: StrategyPermission
     risk_profile: RiskProfile
     account_size: Decimal
+    reference_datetime_et: datetime | None = None
+    reference_trading_date: date | None = None
+    next_market_session: date | None = None
+    market_calendar_notes: list[str] = Field(default_factory=list)
     candidates: list[CandidateBundle] = Field(min_length=1)
 
 

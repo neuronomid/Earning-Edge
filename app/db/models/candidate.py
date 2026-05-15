@@ -24,10 +24,11 @@ class Candidate(Base):
     ticker: Mapped[str] = mapped_column(String(16))
     company_name: Mapped[str] = mapped_column(String(255))
     market_cap: Mapped[Decimal] = mapped_column(Numeric(20, 2))
-    earnings_date: Mapped[date] = mapped_column(Date)
+    earnings_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     earnings_timing: Mapped[str | None] = mapped_column(String(8), nullable=True)  # BMO/AMC
 
     current_price: Mapped[Decimal] = mapped_column(Numeric(14, 4))
+    expected_move_percent: Mapped[Decimal | None] = mapped_column(Numeric(10, 6), nullable=True)
 
     direction_classification: Mapped[str] = mapped_column(String(16))  # bullish/bearish/neutral
     candidate_direction_score: Mapped[int] = mapped_column(Integer)

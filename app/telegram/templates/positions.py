@@ -5,6 +5,7 @@ from decimal import Decimal
 from app.db.models.open_position import OpenPosition
 from app.db.models.recommendation import Recommendation
 from app.services.positions.monitor import position_pnl
+from app.services.positions.plans import ActivePositionPlan, active_position_plan
 from app.services.positions.quotes import BidAskQuote
 
 
@@ -12,15 +13,19 @@ def render_position_card(
     position: OpenPosition,
     recommendation: Recommendation,
     quote: BidAskQuote | None,
+    plan: ActivePositionPlan | None = None,
 ) -> str:
+    plan = plan or active_position_plan(recommendation)
     lines = [
         f"<b>{recommendation.ticker} — {action_label(recommendation)}</b>",
         f"Contracts: {position.entry_quantity}",
         f"Entry: ${_money(position.entry_price)}",
         f"Expiry: {recommendation.expiry.isoformat()}",
-        f"Target: {_optional_money(recommendation.target_option_price)} · "
-        f"Stop: {_optional_money(recommendation.stop_loss_option_price)}",
+        f"Target: {_optional_money(plan.target_option_price)} · "
+        f"Stop: {_optional_money(plan.stop_loss_option_price)}",
     ]
+    if plan.is_adjusted:
+        lines.append("Plan: adjusted")
 
     closing_price = _closing_price(recommendation.position_side, quote)
     closing_label = _closing_label(recommendation.position_side)

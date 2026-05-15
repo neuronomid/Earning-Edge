@@ -5,8 +5,8 @@ from decimal import Decimal
 
 import pytest
 
-from app.scoring.types import OptionContractInput, UserContext
-from app.services.sizing import SizingPermissionError, size
+from app.scoring.types import OptionContractInput, UserContext, risk_percent
+from app.services.sizing import SizingError, SizingPermissionError, size
 
 
 def test_long_sizing_reproduces_prd_example() -> None:
@@ -47,7 +47,32 @@ def test_zero_quantity_returns_watch_only_for_over_budget_long_contract() -> Non
 
 
 def test_short_call_labeling_and_margin_flag_are_returned() -> None:
-    user = _user(account_size="50000", risk_profile="Balanced", max_contracts=5)
+    user = _user(account_size="50000", risk_profile="Balanced", max_contracts=20)
+    contract = _contract(
+        option_type="call",
+        position_side="short",
+        strike="50",
+        bid="1.20",
+        ask="1.35",
+        underlying_price="50",
+    )
+
+    result = size(user, contract)
+
+    assert result.quantity == 8
+    assert result.max_loss_text == "Undefined for naked short call"
+    assert result.account_risk_pct == Decimal("0.20")
+    assert result.broker_verification_required is True
+    assert result.watch_only is False
+    assert result.margin_requirement_text == "Broker/margin dependent"
+    assert result.max_short_notional_exposure == Decimal("10000.00")
+    assert result.contract_notional_exposure == Decimal("5000")
+    assert result.margin_requirement_per_contract == Decimal("1120.00")
+    assert result.premium_collected == Decimal("120.00")
+
+
+def test_short_call_requires_current_underlying_for_margin_estimate() -> None:
+    user = _user(account_size="50000", risk_profile="Balanced")
     contract = _contract(
         option_type="call",
         position_side="short",
@@ -56,17 +81,8 @@ def test_short_call_labeling_and_margin_flag_are_returned() -> None:
         ask="1.35",
     )
 
-    result = size(user, contract)
-
-    assert result.quantity == 2
-    assert result.max_loss_text == "Undefined for naked short call"
-    assert result.account_risk_pct == Decimal("0.20")
-    assert result.broker_verification_required is True
-    assert result.watch_only is False
-    assert result.margin_requirement_text == "Broker/margin dependent"
-    assert result.max_short_notional_exposure == Decimal("10000.00")
-    assert result.contract_notional_exposure == Decimal("5000")
-    assert result.premium_collected == Decimal("120.00")
+    with pytest.raises(SizingError, match="current underlying price"):
+        size(user, contract)
 
 
 @pytest.mark.parametrize(
@@ -117,18 +133,43 @@ def test_strategy_permission_gate_blocks_short_sizing() -> None:
         size(user, contract)
 
 
+def test_custom_risk_percent_is_capped_and_normalized() -> None:
+    valid = _user(
+        account_size="50000",
+        risk_profile="Balanced",
+        custom_risk_percent=Decimal("0.05"),
+    )
+    non_positive = _user(
+        account_size="50000",
+        risk_profile="Balanced",
+        custom_risk_percent=Decimal("0"),
+    )
+
+    assert risk_percent(valid) == Decimal("0.05")
+    assert non_positive.custom_risk_percent is None
+
+    with pytest.raises(ValueError, match="cannot exceed 5%"):
+        _user(
+            account_size="50000",
+            risk_profile="Balanced",
+            custom_risk_percent=Decimal("0.0501"),
+        )
+
+
 def _user(
     *,
     account_size: str,
     risk_profile: str,
     strategy_permission: str = "long_and_short",
     max_contracts: int = 3,
+    custom_risk_percent: Decimal | None = None,
 ) -> UserContext:
     return UserContext(
         account_size=Decimal(account_size),
         risk_profile=risk_profile,  # type: ignore[arg-type]
         strategy_permission=strategy_permission,  # type: ignore[arg-type]
         max_contracts=max_contracts,
+        custom_risk_percent=custom_risk_percent,
     )
 
 
@@ -139,6 +180,7 @@ def _contract(
     strike: str,
     bid: str | None = None,
     ask: str | None = None,
+    underlying_price: str | None = None,
 ) -> OptionContractInput:
     return OptionContractInput(
         ticker="ABC",
@@ -148,4 +190,5 @@ def _contract(
         expiry=date(2026, 5, 15),
         bid=Decimal(bid) if bid is not None else None,
         ask=Decimal(ask) if ask is not None else None,
+        underlying_price=Decimal(underlying_price) if underlying_price is not None else None,
     )

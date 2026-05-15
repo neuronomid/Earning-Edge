@@ -19,6 +19,7 @@ from app.db.models.user import User
 from app.db.models.workflow_run import WorkflowRun
 from app.db.repositories.feedback_repo import FeedbackEventRepository
 from app.db.repositories.open_position_repo import OpenPositionRepository
+from app.db.repositories.position_thesis_repo import PositionThesisRepository
 from app.db.repositories.recommendation_repo import RecommendationRepository
 from app.db.repositories.user_repo import UserRepository
 from app.services.alternative_recommendation_service import AlternativeRecommendationResult
@@ -272,6 +273,11 @@ async def test_bought_fill_flow_creates_open_position_and_feedback(
     assert position is not None
     assert position.entry_price == Decimal("1.3500")
     assert position.entry_quantity == 2
+    thesis = await PositionThesisRepository(db_session).get_for_position(position.id)
+    assert thesis is not None
+    assert thesis.entry_option_premium == Decimal("1.3500")
+    assert thesis.entry_quantity == 2
+    assert thesis.entry_snapshot_status == "partial"
     assert send_recorder.calls[-1].text.startswith("Tracking this position.")
     assert await state.get_state() is None
 
@@ -289,12 +295,12 @@ async def test_alternative_button_sends_next_full_recommendation(
         RecCB(action="alts", rec_id=str(seeded_recommendation.id)),
     )
 
-    assert "<b>Weekly Earnings Options Signal</b>" in send_recorder.calls[-1].text
+    assert "<b>Earnings Options Signal</b>" in send_recorder.calls[-1].text
     assert "<b>2nd best setup:</b> 🥈 AAPL" in send_recorder.calls[-1].text
     assert "<b>Target sell price:</b> $2.10" in send_recorder.calls[-1].text
     assert "<b>Stock target:</b> $198.00" in send_recorder.calls[-1].text
     assert "<b>Stop loss:</b> $0.59" in send_recorder.calls[-1].text
-    assert "<b>Exit by:</b> 2026-05-13" in send_recorder.calls[-1].text
+    assert "<b>Exit by:</b> 2026-05-13 (Wednesday)" in send_recorder.calls[-1].text
     assert send_recorder.calls[-1].kwargs["reply_markup"] is not None
     assert callback.answer.await_count == 1
 

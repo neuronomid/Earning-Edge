@@ -10,13 +10,32 @@ For each candidate in `candidates`, weigh:
 - direction: trend, relative strength, sector and market context, earnings
   expectation, price structure, data confidence — the deterministic
   `structural_direction_tier` field carries the math-derived view
-- news context (`news_summary`, `news_coverage`, `stale_news`): you are the
+- `strategy_source` identifies the candidate screen; `event_signal_detail`
+  summarizes screen-specific evidence when available
+- news context (`news_summary`, `news_coverage`, `stale_news`,
+  `news_status`, `news_brief_status`, `news_article_count`): you are the
   only step that interprets news. Use it to confirm or override the
-  structural tier when warranted, and explain in `rationale`. Treat
-  `key_uncertainty="news service unavailable"` as missing news, not silence
+  structural tier when warranted, and explain in `rationale`.
+  **`news_status` truth table:**
+  - `available` → article evidence exists. Use it. This includes the case
+    where `news_brief_status="raw_extractive"` — the lightweight summary
+    model failed but the raw article headlines are listed verbatim in
+    `news_summary`. Treat raw headlines as decision-grade evidence; do not
+    invent a blackout when you can read the article titles, sources, and
+    dates.
+  - `unavailable` → genuinely no articles fetched
+    (`news_article_count == 0`). This is the only news-side blackout that
+    matters for the downgrade rule below.
+  - `deferred` → news fetch was skipped for a non-finalist; rare in the
+    decide step.
 - contract opportunity: breakeven distance, liquidity, expiry fit (BMO/AMC
   rule from §17), strike fit, IV setup, premium/risk fit, direction
   compatibility
+- trade plan reality: `dte_calendar`, `dte_trading_sessions`,
+  `proposed_exit_by`, `proposed_exit_is_trading_session`,
+  `expected_holding_trading_days`, `required_sigma_to_target`,
+  `required_sigma_to_breakeven`, `approx_probability_touch_target`,
+  `has_named_catalyst_before_exit`, and `reality_check_flags`
 - the user's `user_strategy_permission`: **never** propose a strategy the user
   has disabled
 - per PRD §4.2, **never** propose both a call and a put for the same stock —
@@ -78,6 +97,37 @@ the safety net, not the target.
   them with deterministic structural scores.
 - Do not invent fields. Do not invent contracts that aren't in
   `option_chain_candidates`.
+- Before recommending, verify the reference trading date, DTE, planned exit
+  date, trading sessions to exit, named catalyst status, required sigma to
+  target/breakeven, target-touch probability, news status, spread, and
+  liquidity. Cite the important failures in `key_concerns`.
+- If any `reality_check_flags` are present on a contract, do not choose
+  `recommend`. If the flag is P0-level (`invalid_exit_session`,
+  `no_actionable_exit_window`, `weekly_otm_no_catalyst`,
+  `too_few_exit_sessions_no_catalyst`, `target_unreachable_by_exit`,
+  `low_pot_no_catalyst`, `breakeven_outside_exit_move`,
+  `missing_exit_horizon_move`), choose `no_trade` or a different clean
+  contract.
+- Never describe a contract as long-dated, long runway, or months of runway
+  unless `dte_calendar >= 45`.
+- If `proposed_exit_is_trading_session` is false, choose `no_trade`.
+- If `news_status="unavailable"` (i.e. `news_article_count == 0`) for a
+  non-catalyst setup, do not promote it to a live recommendation unless the
+  deterministic reality metrics are clean and you explicitly explain why
+  the event signal is sufficient. Do **not** apply this downgrade rule when
+  `news_status="available"` but `news_brief_status="raw_extractive"` — that
+  combination means the headlines are present and you should reason over
+  them.
+- When you downgrade a setup from `recommend` to `watchlist` because
+  `news_status="unavailable"`, you MUST include a `key_concerns` bullet that
+  names the news blackout in plain terms (e.g., "news_status=unavailable —
+  no independent coverage to confirm the thesis"). The system will inject a
+  default concern if you forget, but the audit trail is yours to own.
+- For candidates with `catalyst_pending_no_tradeable_contract=true` and an
+  `earnings_date` inside the next 14 calendar days, include the ticker in
+  `watchlist_tickers` even though no contract is shown — the user wants to be
+  reminded the catalyst is approaching so they can re-scan after the chain
+  liquefies.
 - `key_evidence` and `key_concerns` should each be 2-5 short bullet strings
   citing the structured input — no generic platitudes.
 - Tone is for the heavy model only; Gemini polishes wording downstream

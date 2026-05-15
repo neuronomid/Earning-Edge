@@ -5,6 +5,7 @@ from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal
 
+from app.services.candidate_models import StrategyEventSignal
 from app.services.market_data.types import MarketSnapshot
 from app.services.news.types import NewsBrief
 
@@ -18,6 +19,21 @@ Strategy = Literal["long_call", "long_put", "short_put", "short_call"]
 EarningsTiming = Literal["BMO", "AMC", "unknown"]
 ConflictSeverity = Literal["slight", "moderate", "severe"]
 TargetMethod = Literal["full_greeks", "delta_fallback", "intrinsic_fallback"]
+StrategySource = Literal[
+    "catalyst_confluence",
+    "coiled_setup",
+    "pead_continuation",
+    "sector_relative_strength",
+    "activist_13d_followthrough",
+]
+ExtendedTargetMethod = Literal[
+    "full_greeks",
+    "black_scholes",
+    "delta_fallback",
+    "intrinsic_fallback",
+    "short_premium",
+    "short_call_underlying",
+]
 
 RISK_PROFILE_PCTS: dict[RiskProfile, Decimal] = {
     "Conservative": Decimal("0.01"),
@@ -34,6 +50,7 @@ SHORT_NOTIONAL_CAP_PCTS: dict[RiskProfile, Decimal] = {
 ZERO = Decimal("0")
 ONE = Decimal("1")
 HUNDRED = Decimal("100")
+MAX_CUSTOM_RISK_PERCENT = Decimal("0.05")
 
 
 @dataclass(slots=True, frozen=True)
@@ -45,6 +62,13 @@ class UserContext:
     max_option_premium: Decimal | None = None
     custom_risk_percent: Decimal | None = None
     has_valid_openrouter_api_key: bool = True
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "custom_risk_percent",
+            validate_custom_risk_percent(self.custom_risk_percent),
+        )
 
 
 @dataclass(slots=True, frozen=True)
@@ -71,6 +95,7 @@ class OptionContractInput:
     gamma: Decimal | None = None
     theta: Decimal | None = None
     vega: Decimal | None = None
+    underlying_price: Decimal | None = None
     source: str = "unknown"
     quote_timestamp: date | None = None
     is_tradable: bool = True
@@ -91,17 +116,23 @@ class OptionContractInput:
 class CandidateContext:
     ticker: str
     company_name: str
-    earnings_date: date
+    earnings_date: date | None
     earnings_timing: EarningsTiming
     market_snapshot: MarketSnapshot
     news_brief: NewsBrief
+    valuation_date: date | None = None
     option_chain: tuple[OptionContractInput, ...] = ()
+    strategy_source: StrategySource = "catalyst_confluence"
+    event_signal: StrategyEventSignal | None = None
     verified_earnings_date: bool = True
     identity_verified: bool = True
     expected_move_percent: Decimal | None = None
     previous_earnings_move_percent: Decimal | None = None
     source_conflicts: tuple[SourceConflict, ...] = ()
     calculation_errors: tuple[str, ...] = ()
+    news_article_count: int = 0
+    news_coverage: str = "none"
+    news_brief_status: str = "unavailable"
 
 
 @dataclass(slots=True, frozen=True)
@@ -151,14 +182,36 @@ class StrategySelection:
 
 @dataclass(slots=True, frozen=True)
 class ExitTarget:
-    target_stock_price: Decimal
+    target_stock_price: Decimal | None
     target_option_price: Decimal
     target_gain_percent: Decimal | None
     stop_loss_option_price: Decimal
     exit_by_date: date
     expected_holding_days: int
-    target_method: TargetMethod
+    target_method: ExtendedTargetMethod
     expected_iv_change: Decimal | None = None
+    underlying_stop_price: Decimal | None = None
+    expected_holding_trading_days: int | None = None
+    expected_holding_calendar_days: int | None = None
+    exit_is_trading_session: bool = True
+    expected_move_to_exit_percent: Decimal | None = None
+
+
+@dataclass(slots=True, frozen=True)
+class OptionRealityCheck:
+    dte_calendar: int
+    dte_trading_sessions: int
+    trading_days_to_exit: int
+    exit_is_trading_session: bool
+    expected_move_to_exit_percent: Decimal | None
+    required_sigma_to_strike: Decimal | None
+    required_sigma_to_breakeven: Decimal | None
+    required_sigma_to_target: Decimal | None
+    approx_probability_touch_target: Decimal | None
+    approx_probability_expire_itm: Decimal | None
+    theta_cost_to_exit: Decimal | None
+    has_named_catalyst_before_exit: bool
+    flags: tuple[str, ...] = ()
 
 
 @dataclass(slots=True, frozen=True)
@@ -176,6 +229,7 @@ class ContractScoreResult:
     expiry_days_after_earnings: int | None
     reasons: tuple[str, ...]
     exit_target: ExitTarget | None = None
+    reality_check: OptionRealityCheck | None = None
 
     @property
     def is_viable(self) -> bool:
@@ -207,6 +261,16 @@ def risk_percent(user: UserContext) -> Decimal:
     if user.custom_risk_percent is not None and user.custom_risk_percent > ZERO:
         return user.custom_risk_percent
     return RISK_PROFILE_PCTS[user.risk_profile]
+
+
+def validate_custom_risk_percent(value: Decimal | None) -> Decimal | None:
+    if value is None:
+        return None
+    if value <= ZERO:
+        return None
+    if value > MAX_CUSTOM_RISK_PERCENT:
+        raise ValueError("custom_risk_percent cannot exceed 5%.")
+    return value
 
 
 def option_mid(contract: OptionContractInput) -> Decimal | None:
@@ -294,6 +358,12 @@ def estimate_max_contracts(user: UserContext, contract: OptionContractInput) -> 
         if trade_budget <= ZERO:
             return 0
         contracts = int(trade_budget // (premium * HUNDRED))
+    elif contract.strategy == "short_call":
+        exposure_cap = user.account_size * SHORT_NOTIONAL_CAP_PCTS[user.risk_profile]
+        margin = uncovered_call_margin_requirement(contract)
+        if exposure_cap <= ZERO or margin is None or margin <= ZERO:
+            return 0
+        contracts = int(exposure_cap // margin)
     else:
         exposure_cap = user.account_size * SHORT_NOTIONAL_CAP_PCTS[user.risk_profile]
         if exposure_cap <= ZERO or contract.strike <= ZERO:
@@ -301,3 +371,17 @@ def estimate_max_contracts(user: UserContext, contract: OptionContractInput) -> 
         contracts = int(exposure_cap // (contract.strike * HUNDRED))
 
     return max(0, min(user.max_contracts, contracts))
+
+
+def uncovered_call_margin_requirement(contract: OptionContractInput) -> Decimal | None:
+    underlying = contract.underlying_price
+    premium = option_premium(contract)
+    if underlying is None or underlying <= ZERO or premium is None or premium <= ZERO:
+        return None
+
+    # Cboe strategy-based margin for uncovered equity calls: option proceeds
+    # plus 20% of underlying less OTM, floored at proceeds plus 10% of underlying.
+    otm_amount = max(contract.strike - underlying, ZERO)
+    standard = premium + (underlying * Decimal("0.20")) - otm_amount
+    minimum = premium + (underlying * Decimal("0.10"))
+    return max(standard, minimum, premium) * HUNDRED

@@ -5,9 +5,22 @@ from datetime import date
 from decimal import Decimal
 from typing import Literal
 
-ScreenerStatus = Literal["success", "partial", "failed"]
-StrategySource = Literal["catalyst_confluence", "coiled_setup"]
+ScreenerStatus = Literal["success", "partial", "failed", "empty"]
+StrategySource = Literal[
+    "catalyst_confluence",
+    "coiled_setup",
+    "pead_continuation",
+    "sector_relative_strength",
+    "activist_13d_followthrough",
+]
 StrategyRunStatus = Literal["success", "empty", "failed", "fallback"]
+
+
+@dataclass(slots=True, frozen=True)
+class StrategyEventSignal:
+    score: int
+    is_supportive: bool
+    detail: str
 
 
 @dataclass(slots=True, frozen=True)
@@ -25,6 +38,7 @@ class CandidateRecord:
     sources: tuple[str, ...] = ("finviz",)
     validation_notes: tuple[str, ...] = ()
     strategy_source: StrategySource | None = None
+    event_signal: StrategyEventSignal | None = None
 
 
 @dataclass(slots=True, frozen=True)

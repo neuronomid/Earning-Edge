@@ -24,6 +24,7 @@ from app.db.models.cron_job import CronJob
 from app.db.models.user import User
 from app.db.repositories.cron_repo import CronJobRepository
 from app.db.repositories.user_repo import UserRepository
+from app.scoring.types import validate_custom_risk_percent
 
 RiskProfile = Literal["Conservative", "Balanced", "Aggressive"]
 StrategyPermission = Literal["long", "short", "long_and_short"]
@@ -208,6 +209,12 @@ class UserService:
 
     async def update_risk_profile(self, user: User, risk_profile: RiskProfile) -> None:
         user.risk_profile = risk_profile
+        await self.session.flush()
+
+    async def update_custom_risk_percent(
+        self, user: User, custom_risk_percent: Decimal | None
+    ) -> None:
+        user.custom_risk_percent = validate_custom_risk_percent(custom_risk_percent)
         await self.session.flush()
 
     async def update_timezone(self, user: User, label: TimezoneLabel) -> None:

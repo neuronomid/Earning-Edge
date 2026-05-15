@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
@@ -11,6 +12,7 @@ from app.llm.types import LLMAuthenticationError
 from app.pipeline.steps.decide import (
     HeuristicDecisionStep,
     LLMDecisionStep,
+    build_decision_input,
     get_default_decision_step,
     resolve_selected_contract,
 )
@@ -21,14 +23,16 @@ from app.scoring.types import (
     ContractScoreResult,
     DataConfidenceResult,
     DirectionResult,
+    ExitTarget,
     HardVeto,
     OptionContractInput,
+    OptionRealityCheck,
     StrategySelection,
     UserContext,
 )
-from app.services.candidate_models import CandidateRecord
+from app.services.candidate_models import CandidateRecord, StrategyEventSignal
 from app.services.market_data.types import MarketSnapshot, ReturnMetrics
-from app.services.news.types import NewsBrief, NewsBundle
+from app.services.news.types import NewsArticle, NewsBrief, NewsBundle
 
 pytestmark = pytest.mark.asyncio
 
@@ -301,6 +305,411 @@ async def test_default_decision_step_uses_heuristic_in_tests_and_llm_elsewhere()
     assert isinstance(get_default_decision_step(settings=dev_settings), LLMDecisionStep)
 
 
+async def test_build_decision_input_includes_strategy_source_and_event_signal_detail() -> None:
+    signal = StrategyEventSignal(
+        score=91,
+        is_supportive=True,
+        detail="Sector RS: top-decile sector and stock momentum.",
+    )
+    base = _candidate("XLF", chosen_index=0)
+    candidate = replace(
+        base,
+        record=replace(
+            base.record,
+            strategy_source="sector_relative_strength",
+            event_signal=signal,
+        ),
+        context=replace(
+            base.context,
+            strategy_source="sector_relative_strength",
+            event_signal=signal,
+        ),
+    )
+
+    decision_input = build_decision_input([candidate], _user_context())
+    bundle = decision_input.candidates[0]
+
+    assert bundle.strategy_source == "sector_relative_strength"
+    assert bundle.event_signal_detail == signal.detail
+
+
+async def test_decision_payload_contains_exit_plan_and_reality_metrics() -> None:
+    candidate = _candidate_with_reality_metrics()
+
+    decision_input = build_decision_input([candidate], _user_context())
+    bundle = decision_input.candidates[0]
+    option = bundle.option_chain_candidates[0]
+
+    assert decision_input.reference_trading_date == date(2026, 5, 14)
+    assert option.dte_calendar == 8
+    assert option.proposed_exit_by == date(2026, 5, 15)
+    assert option.proposed_exit_is_trading_session is True
+    assert option.expected_holding_trading_days == 1
+    assert option.proposed_target_stock == Decimal("194.34")
+    assert option.required_sigma_to_target == Decimal("0.75")
+    assert option.approx_probability_touch_target == Decimal("0.4533")
+    assert option.reality_check_flags == []
+
+
+async def test_llm_cannot_claim_months_of_runway_for_7_dte_contract() -> None:
+    candidate = _candidate_with_reality_metrics(dte_calendar=7)
+    step = LLMDecisionStep(
+        router=StubRouter(
+            decision=StructuredDecision(
+                action="recommend",
+                chosen_ticker="PM",
+                chosen_contract=ChosenContract(
+                    ticker="PM",
+                    option_type="call",
+                    position_side="long",
+                    strike=Decimal("195"),
+                    expiry=date(2026, 5, 22),
+                    rationale="The May 2026 195 call gives about 6 months of runway.",
+                ),
+                confidence_band="standard",
+                reasoning="PM has momentum and this long-dated call has months of runway.",
+                key_evidence=["6 months of runway."],
+                key_concerns=[],
+            )
+        )
+    )
+
+    result = await step.execute([candidate], _user_context(), openrouter_api_key="sk-or-test")
+
+    assert result.trace.engine == "heuristic_fallback"
+    assert result.decision.action in {"recommend", "watchlist"}
+    assert "failed" in result.trace.notes[0].lower()
+
+
+async def test_watchlist_with_news_unavailable_gets_blackout_concern_injected() -> None:
+    """If the LLM downgrades to watchlist while news_status=unavailable, the
+    validator must ensure key_concerns names the news blackout so the audit
+    trail explains the downgrade without relying on the freeform reasoning
+    field. This guards against silent fail-closed behaviour the user can't
+    see in the Telegram card."""
+    candidate = _candidate_with_reality_metrics()
+    step = LLMDecisionStep(
+        router=StubRouter(
+            decision=StructuredDecision(
+                action="watchlist",
+                chosen_ticker="PM",
+                chosen_contract=ChosenContract(
+                    ticker="PM",
+                    option_type="call",
+                    position_side="long",
+                    strike=Decimal("195"),
+                    expiry=date(2026, 5, 22),
+                    rationale="Strong setup but liquidity is thin.",
+                ),
+                confidence_band="watchlist",
+                reasoning="Wait for better news visibility before sizing.",
+                key_evidence=["Sector tailwind holds."],
+                # NOTE: deliberately omits any news-related concern.
+                key_concerns=["Thin liquidity."],
+            )
+        )
+    )
+
+    result = await step.execute([candidate], _user_context(), openrouter_api_key="sk-or-test")
+
+    assert result.decision.action == "watchlist"
+    concerns_lc = " ".join(result.decision.key_concerns).lower()
+    assert "news" in concerns_lc and "unavailable" in concerns_lc, (
+        f"news-blackout concern missing from {result.decision.key_concerns!r}"
+    )
+
+
+async def test_watchlist_with_raw_extractive_news_does_not_inject_blackout_concern() -> None:
+    """When the summarizer fell back to raw_extractive but real articles exist,
+    news_status must be 'available' and the validator must NOT inject a
+    blackout concern. This is the FLNC class of bug: a flaky summary model
+    should not masquerade as a news blackout when the article evidence is in
+    the bundle."""
+    candidate = _candidate_with_reality_metrics()
+    bundle = _news_bundle_with_articles("PM", article_count=6, brief_status="raw_extractive")
+    candidate = replace(candidate, news_bundle=bundle)
+    step = LLMDecisionStep(
+        router=StubRouter(
+            decision=StructuredDecision(
+                action="watchlist",
+                chosen_ticker="PM",
+                chosen_contract=ChosenContract(
+                    ticker="PM",
+                    option_type="call",
+                    position_side="long",
+                    strike=Decimal("195"),
+                    expiry=date(2026, 5, 22),
+                    rationale="Setup is clean; staying watchlist for liquidity.",
+                ),
+                confidence_band="watchlist",
+                reasoning="Wait for the spread to tighten before sizing.",
+                key_evidence=["Trend intact."],
+                key_concerns=["Spread is wide."],
+            )
+        )
+    )
+
+    result = await step.execute([candidate], _user_context(), openrouter_api_key="sk-or-test")
+
+    assert result.decision.action == "watchlist"
+    concerns_lc = " ".join(result.decision.key_concerns).lower()
+    assert "news_status=unavailable" not in concerns_lc, (
+        f"news-blackout concern was injected when articles are present: "
+        f"{result.decision.key_concerns!r}"
+    )
+    assert "news service unavailable" not in concerns_lc, (
+        f"news-blackout concern was injected when articles are present: "
+        f"{result.decision.key_concerns!r}"
+    )
+
+
+async def test_watchlist_with_news_unavailable_preserves_existing_blackout_concern() -> None:
+    """If the LLM already named the news blackout, the validator should not
+    duplicate the concern."""
+    candidate = _candidate_with_reality_metrics()
+    step = LLMDecisionStep(
+        router=StubRouter(
+            decision=StructuredDecision(
+                action="watchlist",
+                chosen_ticker="PM",
+                chosen_contract=ChosenContract(
+                    ticker="PM",
+                    option_type="call",
+                    position_side="long",
+                    strike=Decimal("195"),
+                    expiry=date(2026, 5, 22),
+                    rationale="Setup is clean but news is dark.",
+                ),
+                confidence_band="watchlist",
+                reasoning="Holding off because we cannot independently verify the news.",
+                key_evidence=["RS positive."],
+                key_concerns=["news_status=unavailable — cannot confirm thesis."],
+            )
+        )
+    )
+
+    result = await step.execute([candidate], _user_context(), openrouter_api_key="sk-or-test")
+
+    matching = [
+        concern
+        for concern in result.decision.key_concerns
+        if (
+            "news_status=unavailable" in concern.lower()
+            or "news service unavailable" in concern.lower()
+        )
+    ]
+    # exactly one — the user's own, not duplicated by the injector
+    assert len(matching) == 1, result.decision.key_concerns
+
+
+async def test_catalyst_pending_no_contract_ticker_lands_on_watchlist() -> None:
+    """NVDA-style: real earnings catalyst inside 14 days, but every contract
+    was killed by the deterministic filters. The validator's watchlist seed
+    should keep that ticker visible even when the LLM omitted it."""
+    catalyst_only = _catalyst_pending_candidate("NVDA")
+    actionable = _candidate_with_reality_metrics()
+    step = LLMDecisionStep(
+        router=StubRouter(
+            decision=StructuredDecision(
+                action="watchlist",
+                chosen_ticker="PM",
+                chosen_contract=ChosenContract(
+                    ticker="PM",
+                    option_type="call",
+                    position_side="long",
+                    strike=Decimal("195"),
+                    expiry=date(2026, 5, 22),
+                    rationale="ATM call, sector tailwind.",
+                ),
+                confidence_band="watchlist",
+                reasoning="Cleanest setup of the four candidates.",
+                key_evidence=["XLP +4.4% (4w)."],
+                key_concerns=["news_status=unavailable."],
+                watchlist_tickers=[],  # LLM left every slot empty
+            )
+        )
+    )
+
+    result = await step.execute(
+        [actionable, catalyst_only],
+        _user_context(),
+        openrouter_api_key="sk-or-test",
+    )
+
+    assert "NVDA" in result.decision.watchlist_tickers, (result.decision.watchlist_tickers,)
+
+
+async def test_bundle_marks_catalyst_pending_no_tradeable_contract() -> None:
+    """The LLM payload must surface the `catalyst_pending_no_tradeable_contract`
+    flag so the model can include the ticker on its watchlist explicitly."""
+    catalyst_only = _catalyst_pending_candidate("NVDA")
+    decision_input = build_decision_input([catalyst_only], _user_context())
+    bundle = decision_input.candidates[0]
+    assert bundle.tradeable_contracts_available is False
+    assert bundle.catalyst_pending_no_tradeable_contract is True
+
+
+async def test_corrective_prompt_includes_targeted_hint_for_runway_violation() -> None:
+    """The retry prompt should call the runway phrase out specifically so the
+    second attempt does not silently repeat the same wording."""
+    from app.pipeline.steps.decide import _build_corrective_prompt
+
+    prompt = _build_corrective_prompt(
+        base_prompt="<base prompt>",
+        error_message=(
+            "Heavy model described a contract with 7 calendar days to expiry as "
+            "long-dated or months of runway."
+        ),
+        raw_response='{"reasoning":"6 months of runway"}',
+    )
+    assert "Targeted hint" in prompt
+    assert "long-dated" in prompt.lower()
+    assert "dte_calendar" in prompt
+
+
+async def test_corrective_prompt_includes_targeted_hint_for_unknown_contract() -> None:
+    from app.pipeline.steps.decide import _build_corrective_prompt
+
+    prompt = _build_corrective_prompt(
+        base_prompt="<base prompt>",
+        error_message=(
+            "Heavy model selected a contract that was not present in option_chain_candidates."
+        ),
+        raw_response=None,
+    )
+    assert "option_chain_candidates" in prompt
+    assert "Targeted hint" in prompt
+
+
+def _catalyst_pending_candidate(ticker: str) -> PipelineCandidate:
+    """A finalist whose only contract was blocked by the deterministic gates,
+    but whose earnings sits inside the next 14 days."""
+    contract = OptionContractInput(
+        ticker=ticker,
+        option_type="put",
+        position_side="short",
+        strike=Decimal("235"),
+        expiry=date(2026, 5, 15),
+        bid=Decimal("0.50"),
+        ask=Decimal("0.80"),
+        mid=Decimal("0.65"),
+        volume=10,
+        open_interest=50,
+        implied_volatility=Decimal("0.62"),
+        delta=Decimal("-0.18"),
+        source="fixture",
+    )
+    blocked = ContractScoreResult(
+        strategy=contract.strategy,
+        contract=contract,
+        base_score=0,
+        score=0,
+        factors=(),
+        penalties=(),
+        vetoes=(HardVeto("invalid_exit_session", "Exit date is not a session."),),
+        breakeven=None,
+        breakeven_move_percent=None,
+        liquidity_score=40,
+        expiry_days_after_earnings=None,
+        reasons=("Same-day exit, killed by reality gate.",),
+    )
+    bundle = NewsBundle(
+        ticker=ticker,
+        company_name=f"{ticker} Corp.",
+        generated_at=datetime(2026, 5, 15, 0, 0, 0, tzinfo=UTC),
+        search_results=(),
+        articles=(),
+        brief=NewsBrief(
+            neutral_contextual_evidence=[],
+            key_uncertainty="news service unavailable",
+        ),
+        news_coverage="none",
+        stale_news=True,
+    )
+    return PipelineCandidate(
+        record=CandidateRecord(
+            ticker=ticker,
+            company_name=f"{ticker} Corp.",
+            market_cap=Decimal("5000000000000"),
+            earnings_date=date(2026, 5, 20),
+            current_price=Decimal("235"),
+            screener_rank=1,
+            sector="Technology",
+            strategy_source="catalyst_confluence",
+        ),
+        context=CandidateContext(
+            ticker=ticker,
+            company_name=f"{ticker} Corp.",
+            earnings_date=date(2026, 5, 20),
+            earnings_timing="AMC",
+            market_snapshot=_market_snapshot(ticker),
+            news_brief=bundle.brief,
+            valuation_date=date(2026, 5, 14),
+            option_chain=(contract,),
+            strategy_source="catalyst_confluence",
+        ),
+        evaluation=CandidateEvaluation(
+            ticker=ticker,
+            direction=DirectionResult(
+                classification="bullish",
+                bias=Decimal("0.74"),
+                score=72,
+                factors=(),
+                reasons=(f"{ticker} momentum is constructive.",),
+            ),
+            confidence=DataConfidenceResult(
+                score=97,
+                label="excellent",
+                blockers=(),
+                notes=(),
+            ),
+            strategy_selection=StrategySelection(
+                allowed_strategies=("short_put",),
+                preferred_order=("short_put",),
+                reason="Fixture",
+            ),
+            considered_contracts=(blocked,),
+            chosen_contract=None,
+            final_score=0,
+            action="no_trade",
+            reasons=("All contracts blocked by reality gates.",),
+        ),
+        news_bundle=bundle,
+        sizing=None,
+    )
+
+
+async def test_llm_selected_contract_with_p0_reality_flag_forces_no_trade() -> None:
+    candidate = _candidate_with_reality_metrics(flags=("weekly_otm_no_catalyst",))
+    step = LLMDecisionStep(
+        router=StubRouter(
+            decision=StructuredDecision(
+                action="recommend",
+                chosen_ticker="PM",
+                chosen_contract=ChosenContract(
+                    ticker="PM",
+                    option_type="call",
+                    position_side="long",
+                    strike=Decimal("195"),
+                    expiry=date(2026, 5, 22),
+                    rationale="Momentum is strong.",
+                ),
+                confidence_band="standard",
+                reasoning="Momentum is strong.",
+                key_evidence=["Relative strength stayed positive."],
+                key_concerns=[],
+            )
+        )
+    )
+
+    result = await step.execute([candidate], _user_context(), openrouter_api_key="sk-or-test")
+
+    assert result.trace.engine == "llm"
+    assert result.decision.action == "no_trade"
+    assert result.decision.chosen_ticker is None
+    assert "weekly_otm_no_catalyst" in result.decision.reasoning
+
+
 def _candidate(
     ticker: str,
     *,
@@ -372,6 +781,169 @@ def _candidate(
             reasons=(f"{ticker} had the cleanest bearish setup.",),
         ),
         news_bundle=_news_bundle(ticker),
+        sizing=None,
+    )
+
+
+def _candidate_with_reality_metrics(
+    *,
+    dte_calendar: int = 8,
+    flags: tuple[str, ...] = (),
+) -> PipelineCandidate:
+    contract = OptionContractInput(
+        ticker="PM",
+        option_type="call",
+        position_side="long",
+        strike=Decimal("195"),
+        expiry=date(2026, 5, 22),
+        bid=Decimal("1.73"),
+        ask=Decimal("1.98"),
+        mid=Decimal("1.855"),
+        volume=144,
+        open_interest=300,
+        implied_volatility=Decimal("0.2735"),
+        delta=Decimal("0.359"),
+        source="fixture",
+    )
+    exit_target = ExitTarget(
+        target_stock_price=Decimal("194.34"),
+        target_option_price=Decimal("2.38"),
+        target_gain_percent=Decimal("20.20"),
+        stop_loss_option_price=Decimal("0.99"),
+        exit_by_date=date(2026, 5, 15),
+        expected_holding_days=1,
+        target_method="delta_fallback",
+        expected_holding_trading_days=1,
+        expected_holding_calendar_days=1,
+        exit_is_trading_session=True,
+        expected_move_to_exit_percent=Decimal("0.017229"),
+    )
+    reality = OptionRealityCheck(
+        dte_calendar=dte_calendar,
+        dte_trading_sessions=6,
+        trading_days_to_exit=1,
+        exit_is_trading_session=True,
+        expected_move_to_exit_percent=Decimal("0.017229"),
+        required_sigma_to_strike=Decimal("0.92"),
+        required_sigma_to_breakeven=Decimal("1.55"),
+        required_sigma_to_target=Decimal("0.75"),
+        approx_probability_touch_target=Decimal("0.4533"),
+        approx_probability_expire_itm=Decimal("0.3590"),
+        theta_cost_to_exit=Decimal("0.1881"),
+        has_named_catalyst_before_exit=False,
+        flags=flags,
+    )
+    result = ContractScoreResult(
+        strategy=contract.strategy,
+        contract=contract,
+        base_score=76,
+        score=76,
+        factors=(),
+        penalties=(),
+        vetoes=(),
+        breakeven=Decimal("196.98"),
+        breakeven_move_percent=Decimal("0.0267"),
+        liquidity_score=82,
+        expiry_days_after_earnings=None,
+        reasons=("Fixture PM contract.",),
+        exit_target=exit_target,
+        reality_check=reality,
+    )
+    signal = StrategyEventSignal(
+        score=75,
+        is_supportive=True,
+        detail="XLP sector +4.4% (4w), stock screen percentile 60%",
+    )
+    bundle = NewsBundle(
+        ticker="PM",
+        company_name="Philip Morris International",
+        generated_at=datetime(2026, 5, 15, 0, 7, 46, tzinfo=UTC),
+        search_results=(),
+        articles=(),
+        brief=NewsBrief(
+            neutral_contextual_evidence=[],
+            key_uncertainty="news service unavailable",
+        ),
+        news_coverage="none",
+        stale_news=True,
+    )
+    return PipelineCandidate(
+        record=CandidateRecord(
+            ticker="PM",
+            company_name="Philip Morris International",
+            market_cap=Decimal("299030000000"),
+            earnings_date=None,
+            current_price=Decimal("191.86"),
+            strategy_source="sector_relative_strength",
+            event_signal=signal,
+        ),
+        context=CandidateContext(
+            ticker="PM",
+            company_name="Philip Morris International",
+            earnings_date=None,
+            earnings_timing="unknown",
+            market_snapshot=MarketSnapshot(
+                ticker="PM",
+                as_of_date=date(2026, 5, 14),
+                company_name="Philip Morris International",
+                sector="Consumer Defensive",
+                sector_etf="XLP",
+                market_cap=Decimal("299030000000"),
+                current_price=Decimal("191.86"),
+                latest_volume=1000000,
+                average_volume_20d=Decimal("900000"),
+                volume_vs_average_20d=Decimal("1.11"),
+                stock_returns=ReturnMetrics(
+                    one_day=Decimal("0.021"),
+                    five_day=Decimal("0.044"),
+                    twenty_day=Decimal("0.080"),
+                    fifty_day=Decimal("0.120"),
+                ),
+                spy_returns=ReturnMetrics(None, None, None, None),
+                qqq_returns=ReturnMetrics(None, None, None, None),
+                sector_returns=None,
+                relative_strength_vs_spy=Decimal("0.034"),
+                relative_strength_vs_qqq=Decimal("0.040"),
+                relative_strength_vs_sector=Decimal("0.010"),
+                av_news_sentiment=None,
+                price_source="fixture",
+                overview_source="fixture",
+                sources=("fixture",),
+            ),
+            news_brief=bundle.brief,
+            valuation_date=date(2026, 5, 14),
+            option_chain=(contract,),
+            strategy_source="sector_relative_strength",
+            event_signal=signal,
+            expected_move_percent=Decimal("0.027889"),
+        ),
+        evaluation=CandidateEvaluation(
+            ticker="PM",
+            direction=DirectionResult(
+                classification="bullish",
+                bias=Decimal("0.65"),
+                score=75,
+                factors=(),
+                reasons=("PM relative strength stayed positive.",),
+            ),
+            confidence=DataConfidenceResult(
+                score=84,
+                label="good",
+                blockers=(),
+                notes=(),
+            ),
+            strategy_selection=StrategySelection(
+                allowed_strategies=("long_call",),
+                preferred_order=("long_call",),
+                reason="Fixture strategy order.",
+            ),
+            considered_contracts=(result,),
+            chosen_contract=result,
+            final_score=76,
+            action="recommend",
+            reasons=("Fixture PM candidate.",),
+        ),
+        news_bundle=bundle,
         sizing=None,
     )
 
@@ -478,6 +1050,51 @@ def _news_bundle(ticker: str) -> NewsBundle:
         ),
         used_ir_fallback=False,
         used_llm_summary=False,
+    )
+
+
+def _news_bundle_with_articles(
+    ticker: str, *, article_count: int, brief_status: str = "ok"
+) -> NewsBundle:
+    """Bundle that actually carries article evidence — used to assert the
+    raw_extractive fallback is treated as decision-grade news."""
+    articles = tuple(
+        NewsArticle(
+            title=f"{ticker} headline {i}",
+            url=f"https://example.com/{ticker.lower()}/{i}",
+            snippet="",
+            content="",
+            source="example.com",
+            published_at=datetime(2026, 5, 1, 12, 0, tzinfo=UTC),
+        )
+        for i in range(article_count)
+    )
+    coverage = "none" if article_count == 0 else ("rich" if article_count >= 3 else "sparse")
+    raw_facts = [f"{ticker} headline {i} — example.com (2026-05-01)" for i in range(article_count)]
+    brief = (
+        NewsBrief(
+            key_facts=raw_facts,
+            neutral_contextual_evidence=["Raw extractive brief built from fetched articles."],
+            key_uncertainty=("Lightweight summary model unavailable; raw article headlines below."),
+        )
+        if brief_status == "raw_extractive"
+        else NewsBrief(
+            summary=f"{ticker} fundamentals look stable.",
+            key_facts=[],
+            key_uncertainty="None notable.",
+        )
+    )
+    return NewsBundle(
+        ticker=ticker,
+        company_name=f"{ticker} Corp.",
+        generated_at=datetime(2026, 5, 1, 15, 55, tzinfo=UTC),
+        search_results=(),
+        articles=articles,
+        brief=brief,
+        used_ir_fallback=False,
+        used_llm_summary=brief_status == "ok",
+        news_coverage=coverage,
+        brief_status=brief_status,  # type: ignore[arg-type]
     )
 
 

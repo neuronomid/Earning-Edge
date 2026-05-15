@@ -232,3 +232,39 @@ async def test_onboarding_reprompts_when_openrouter_key_is_invalid(
         assert "Try again" in send_recorder.calls[-1].text
     finally:
         await storage.close()
+
+
+async def test_onboarding_choice_cancel_clears_state(send_recorder: SendRecorder) -> None:
+    state, storage = await make_state(33333)
+    try:
+        await state.set_state(Onboarding.risk_profile)
+
+        await onboarding_handlers.cancel_onboarding_choice(
+            make_callback(chat_id=33333),
+            state,
+        )
+
+        assert await state.get_state() is None
+        assert (
+            send_recorder.calls[-1].text == "Cancelled. Send /start when you're ready to try again."
+        )
+    finally:
+        await storage.close()
+
+
+async def test_onboarding_confirm_cancel_clears_state(send_recorder: SendRecorder) -> None:
+    state, storage = await make_state(44444)
+    try:
+        await state.set_state(Onboarding.confirm)
+
+        await onboarding_handlers.confirm_cancel(
+            make_callback(chat_id=44444),
+            state,
+        )
+
+        assert await state.get_state() is None
+        assert (
+            send_recorder.calls[-1].text == "Cancelled. Send /start when you're ready to try again."
+        )
+    finally:
+        await storage.close()

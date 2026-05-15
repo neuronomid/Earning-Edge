@@ -42,7 +42,7 @@ pytestmark = pytest.mark.asyncio
 
 CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
 HEAVY = "anthropic/claude-opus-4.7-thinking"
-LIGHT = "google/gemini-3.1-flash"
+LIGHT = "google/gemini-3.1-pro-preview"
 
 
 def _settings(*, heavy: str = HEAVY, light: str = LIGHT) -> Settings:
@@ -373,6 +373,8 @@ async def test_decision_input_serializes_each_prd_7_5_field() -> None:
         "previous_earnings_move",
         "data_confidence_score",
         "rejected_contract_reasons",
+        "strategy_source",
+        "event_signal_detail",
     ):
         assert needle in serialized
 

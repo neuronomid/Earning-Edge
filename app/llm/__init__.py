@@ -2,7 +2,7 @@
 
 Exposes only two operations:
 
-- ``LLMRouter.summarize`` — lightweight model (Gemini 3.1 Flash) for browsing,
+- ``LLMRouter.summarize`` — Gemini 3.1 Pro Preview for browsing,
   news, and message-drafting work (PRD §7.3).
 - ``LLMRouter.decide`` — heavy reasoning model (Claude Opus 4.7 Thinking) for
   the final trade decision (PRD §7.2, §7.4).

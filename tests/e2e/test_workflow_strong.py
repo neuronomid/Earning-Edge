@@ -105,13 +105,14 @@ async def test_manual_workflow_acceptance_persists_card_and_messages(
     assert run.recommendation_card_json["selected_ticker"] == "AMD"
     assert run.run_summary_json is not None
     assert run.run_summary_json["contracts_considered_count"] == 3
-    assert run.telegram_message_text == notifier.calls[2].text
+    assert run.telegram_message_text == notifier.calls[3].text
     assert recommendation.ticker == "AMD"
     assert recommendation.strategy == "long_call"
     assert notifier.calls[0].text == "🧠 Starting a fresh earnings-options scan now."
     assert notifier.calls[1].text == "✅ Scan complete. Here is the strongest setup I found."
-    assert "<b>Weekly Earnings Options Signal</b>" in notifier.calls[2].text
-    assert notifier.calls[2].reply_markup is not None
+    assert "<b>Strategy scan summary</b>" in notifier.calls[2].text
+    assert "<b>Earnings Options Signal</b>" in notifier.calls[3].text
+    assert notifier.calls[3].reply_markup is not None
     assert (tmp_path / "runs" / str(result.run_id) / "recommendation_card.json").exists()
 
 

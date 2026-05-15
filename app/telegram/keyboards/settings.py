@@ -7,11 +7,11 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 
 class SettingsCB(CallbackData, prefix="set"):
-    field: str  # account_size, risk_profile, timezone, broker, strategy, max_contracts, alert_mute_duration
+    field: str  # account_size, risk_profile, timezone, broker, strategy, max_contracts
 
 
 class ApiKeyCB(CallbackData, prefix="key"):
-    action: str  # set_openrouter, set_alpaca, set_av, remove_alpaca, remove_av
+    action: str  # set_*, remove_alpaca, remove_av, remove_*_confirm, remove_cancel
 
 
 def settings_keyboard() -> InlineKeyboardMarkup:
@@ -111,6 +111,26 @@ def api_keys_keyboard(
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+def api_key_remove_confirm_keyboard(action: str) -> InlineKeyboardMarkup:
+    if action not in {"remove_alpaca", "remove_av"}:
+        raise ValueError(f"Unsupported API-key removal action: {action}")
+    confirm_action = f"{action}_confirm"
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✅ Remove",
+                    callback_data=ApiKeyCB(action=confirm_action).pack(),
+                ),
+                InlineKeyboardButton(
+                    text="✖️ Cancel",
+                    callback_data=ApiKeyCB(action="remove_cancel").pack(),
+                ),
+            ]
+        ]
+    )
+
+
 # ---------- Recommendation inline buttons (PRD §10.3) ----------
 
 
@@ -124,7 +144,22 @@ class AltRecCB(CallbackData, prefix="alt"):
 
 
 class PosCB(CallbackData, prefix="pos"):
-    action: str  # sold, holding, delete, mute_tp, mute_sl, okay_tp, okay_sl
+    action: str  # sold, holding, delete, delete_confirm, delete_cancel, adjust, mute_*, okay_*
+    position_id: str
+
+
+class ValCB(CallbackData, prefix="val"):
+    action: str  # validate, history
+    position_id: str
+
+
+class ValApplyCB(CallbackData, prefix="vap"):
+    action: str  # apply_target, apply_stop, apply_both
+    validation_id: str
+
+
+class PositionAdjustCB(CallbackData, prefix="padj"):
+    action: str  # target, stop, both, cancel
     position_id: str
 
 
@@ -177,7 +212,8 @@ def recommendation_keyboard(
 
 
 def position_alert_keyboard(
-    position_id: str, alert_type: str | None = None
+    position_id: str,
+    alert_type: str | None = None,
 ) -> InlineKeyboardMarkup:
     if alert_type in ("tp", "sl"):
         # Price-level alert: show Sold, Mute, Okay buttons
@@ -224,6 +260,22 @@ def position_list_keyboard(position_id: str) -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
+                    text="Validate now",
+                    callback_data=ValCB(action="validate", position_id=position_id).pack(),
+                ),
+                InlineKeyboardButton(
+                    text="Validation history",
+                    callback_data=ValCB(action="history", position_id=position_id).pack(),
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="Adjust",
+                    callback_data=PosCB(action="adjust", position_id=position_id).pack(),
+                ),
+            ],
+            [
+                InlineKeyboardButton(
                     text="🔒 Close",
                     callback_data=PosCB(action="sold", position_id=position_id).pack(),
                 ),
@@ -231,6 +283,122 @@ def position_list_keyboard(position_id: str) -> InlineKeyboardMarkup:
                     text="🗑 Delete",
                     callback_data=PosCB(action="delete", position_id=position_id).pack(),
                 ),
+            ],
+        ]
+    )
+
+
+def position_delete_confirm_keyboard(position_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✅ Delete position",
+                    callback_data=PosCB(
+                        action="delete_confirm",
+                        position_id=position_id,
+                    ).pack(),
+                ),
+                InlineKeyboardButton(
+                    text="✖️ Cancel",
+                    callback_data=PosCB(
+                        action="delete_cancel",
+                        position_id=position_id,
+                    ).pack(),
+                ),
             ]
+        ]
+    )
+
+
+def validation_result_keyboard(revalidation) -> InlineKeyboardMarkup | None:
+    proposed = getattr(revalidation, "proposed_adjustment_json", None)
+    if not isinstance(proposed, dict):
+        return None
+
+    has_target = proposed.get("target_option_price") is not None
+    has_stop = proposed.get("stop_loss_option_price") is not None
+    rows: list[list[InlineKeyboardButton]] = []
+    validation_id = str(revalidation.id)
+    if has_target and has_stop:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="Apply TP and SL",
+                    callback_data=ValApplyCB(
+                        action="apply_both",
+                        validation_id=validation_id,
+                    ).pack(),
+                )
+            ]
+        )
+    else:
+        row: list[InlineKeyboardButton] = []
+        if has_target:
+            row.append(
+                InlineKeyboardButton(
+                    text="Apply target",
+                    callback_data=ValApplyCB(
+                        action="apply_target",
+                        validation_id=validation_id,
+                    ).pack(),
+                )
+            )
+        if has_stop:
+            row.append(
+                InlineKeyboardButton(
+                    text="Apply stop",
+                    callback_data=ValApplyCB(
+                        action="apply_stop",
+                        validation_id=validation_id,
+                    ).pack(),
+                )
+            )
+        if row:
+            rows.append(row)
+    if not rows:
+        return None
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def position_adjust_keyboard(position_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🟢 Target Price",
+                    callback_data=PositionAdjustCB(
+                        action="target",
+                        position_id=position_id,
+                    ).pack(),
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🛑 Stop Loss",
+                    callback_data=PositionAdjustCB(
+                        action="stop",
+                        position_id=position_id,
+                    ).pack(),
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="⚪️ TP and SL",
+                    callback_data=PositionAdjustCB(
+                        action="both",
+                        position_id=position_id,
+                    ).pack(),
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="↩ Back",
+                    callback_data=PositionAdjustCB(
+                        action="cancel",
+                        position_id=position_id,
+                    ).pack(),
+                )
+            ],
         ]
     )

@@ -79,4 +79,5 @@ async def test_watchlist_path_sets_zero_quantity_and_watchlist_copy(
     assert result.outcome == "success"
     assert recommendation.suggested_quantity == 0
     assert "watching, but not sizing yet" in notifier.calls[1].text
-    assert "Watchlist only" in notifier.calls[2].text
+    assert "<b>Strategy scan summary</b>" in notifier.calls[2].text
+    assert "Watchlist only" in notifier.calls[3].text

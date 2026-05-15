@@ -31,8 +31,8 @@ pytestmark = pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("strategy", "option_type", "position_side", "strike", "expiry", "expected_text"),
     [
-        ("long_call", "call", "long", "104", date(2026, 5, 16), "AMD Call"),
-        ("long_put", "put", "long", "96", date(2026, 5, 16), "AMD Put"),
+        ("long_call", "call", "long", "104", date(2026, 5, 16), "AMD Buy Call"),
+        ("long_put", "put", "long", "96", date(2026, 5, 16), "AMD Buy Put"),
         ("short_put", "put", "short", "95", date(2026, 5, 16), "AMD Short Put"),
         ("short_call", "call", "short", "110", date(2026, 5, 16), "AMD Short Call"),
     ],
@@ -106,6 +106,6 @@ async def test_end_to_end_strategy_paths(
     assert recommendation.strategy == strategy
     assert recommendation.option_type == option_type
     assert recommendation.position_side == position_side
-    assert expected_text in notifier.calls[2].text
+    assert expected_text in notifier.calls[3].text
     if strategy == "short_call":
-        assert "Undefined for naked short call" in notifier.calls[2].text
+        assert "Undefined for naked short call" in notifier.calls[3].text

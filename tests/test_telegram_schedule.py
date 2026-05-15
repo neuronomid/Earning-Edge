@@ -178,9 +178,49 @@ async def test_manage_schedule_add_edit_pause_resume_and_delete(
             state,
         )
         crons = await seeded_user.list_crons_for_user(user)
+        assert len(crons) == 2
+        assert "Delete the" in send_recorder.calls[-1].text
+        assert fake_scheduler.sync_calls == 4
+
+        await schedule_handlers.on_schedule_action(
+            make_callback(chat_id=chat_id),
+            ScheduleActionCB(action="delete_confirm", cron_id=str(added.id)),
+            state,
+        )
+        crons = await seeded_user.list_crons_for_user(user)
         assert len(crons) == 1
         assert crons[0].day_of_week == "monday"
         assert fake_scheduler.sync_calls == 5
+    finally:
+        await storage.close()
+
+
+async def test_manage_schedule_delete_cancel_keeps_schedule(
+    db_session: AsyncSession,
+    seeded_user: UserService,
+    send_recorder: SendRecorder,
+    patch_user_service_scope: None,
+    fake_scheduler: FakeSchedulerService,
+) -> None:
+    del db_session
+    chat_id = 12345
+    state, storage = await make_state(chat_id)
+    try:
+        user = await seeded_user.get_by_chat_id(str(chat_id))
+        assert user is not None
+        crons = await seeded_user.list_crons_for_user(user)
+        cron = crons[0]
+
+        await schedule_handlers.on_schedule_action(
+            make_callback(chat_id=chat_id),
+            ScheduleActionCB(action="delete_cancel", cron_id=str(cron.id)),
+            state,
+        )
+
+        crons_after = await seeded_user.list_crons_for_user(user)
+        assert len(crons_after) == len(crons)
+        assert fake_scheduler.sync_calls == 0
+        assert send_recorder.calls[-1].text.startswith("Delete cancelled.")
     finally:
         await storage.close()
 

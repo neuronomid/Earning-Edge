@@ -21,6 +21,7 @@ from app.telegram.keyboards.schedule import (
     ScheduleActionCB,
     ScheduleDayCB,
     schedule_day_keyboard,
+    schedule_delete_confirm_keyboard,
     schedule_keyboard,
 )
 
@@ -127,6 +128,27 @@ async def on_schedule_action(
             return
 
         if action == "delete":
+            await send_text(
+                callback.message,
+                (
+                    f"Delete the <b>{_DAY_LABELS[cron.day_of_week]}</b> "
+                    f"<b>{cron.local_time}</b> schedule?"
+                ),
+                reply_markup=schedule_delete_confirm_keyboard(str(cron.id)),
+            )
+            return
+
+        if action == "delete_cancel":
+            crons = await service.list_crons_for_user(user)
+            timezone_label = user.timezone_label
+            await send_text(
+                callback.message,
+                "Delete cancelled.\n\n" + _schedule_summary(timezone_label, crons),
+                reply_markup=schedule_keyboard(crons),
+            )
+            return
+
+        if action == "delete_confirm":
             await service.delete_cron(cron)
             crons = await service.list_crons_for_user(user)
         else:

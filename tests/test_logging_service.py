@@ -28,6 +28,8 @@ from app.services.logging_service import LoggingService
 from app.services.market_data.types import MarketSnapshot, ReturnMetrics
 from app.services.news.types import NewsArticle, NewsBrief, NewsBundle
 from app.services.sizing_types import SizingResult
+from app.services.strategy_catalog import build_strategy_report
+from tests.fixtures.balanced_25_pool import STRATEGIES
 
 
 def test_logging_service_builds_complete_artifacts_and_archive(tmp_path) -> None:
@@ -146,7 +148,7 @@ def test_logging_service_builds_complete_artifacts_and_archive(tmp_path) -> None
         user=user,
         outcome=outcome,
         recommendation=recommendation,
-        telegram_message="Weekly Earnings Options Signal",
+        telegram_message="Earnings Options Signal",
     )
 
     recommendation_keys = {
@@ -251,7 +253,7 @@ def test_logging_service_builds_complete_artifacts_and_archive(tmp_path) -> None
         == "AMD"
     )
     assert (archive_dir / "telegram_message.txt").read_text(encoding="utf-8") == (
-        "Weekly Earnings Options Signal"
+        "Earnings Options Signal"
     )
     results_dir = tmp_path / "results"
     username = getpass.getuser().strip().lower().replace(" ", "_")
@@ -259,6 +261,9 @@ def test_logging_service_builds_complete_artifacts_and_archive(tmp_path) -> None
         f"{username}_combined_2026-05-01.csv",
         f"{username}_strategy_a_2026-05-01.csv",
         f"{username}_strategy_b_2026-05-01.csv",
+        f"{username}_strategy_c_2026-05-01.csv",
+        f"{username}_strategy_d_2026-05-01.csv",
+        f"{username}_strategy_e_2026-05-01.csv",
     ]
 
 
@@ -379,7 +384,7 @@ def test_logging_service_records_actual_model_usage(tmp_path) -> None:
         settings=Settings(
             app_encryption_key="x" * 44,
             market_analysis_model="claude-opus-4.7-thinking",
-            lightweight_model="gemini-3.1-flash",
+            lightweight_model="google/gemini-3.1-pro-preview",
         ),
     )
     artifacts = service.build_run_artifacts(
@@ -387,14 +392,14 @@ def test_logging_service_records_actual_model_usage(tmp_path) -> None:
         user=user,
         outcome=outcome,
         recommendation=recommendation,
-        telegram_message="Weekly Earnings Options Signal",
+        telegram_message="Earnings Options Signal",
     )
 
     assert artifacts.recommendation_card["decision_engine"] == "llm"
     assert artifacts.recommendation_card["model_used_heavy"] == "claude-opus-4.7-thinking"
-    assert artifacts.recommendation_card["model_used_light"] == "gemini-3.1-flash"
+    assert artifacts.recommendation_card["model_used_light"] == "google/gemini-3.1-pro-preview"
     assert artifacts.run_summary["model_used_heavy"] == "claude-opus-4.7-thinking"
-    assert artifacts.run_summary["model_used_light"] == "gemini-3.1-flash"
+    assert artifacts.run_summary["model_used_light"] == "google/gemini-3.1-pro-preview"
 
 
 def _candidate(
@@ -576,3 +581,79 @@ def _contract(
         delta=Decimal("0.52"),
         source="fixture",
     )
+
+
+def test_strategy_reports_persists_all_five_rows(tmp_path) -> None:
+    """Phase 5: every five-strategy run must surface a row per arm in JSON output."""
+    user_id = uuid4()
+    run_id = uuid4()
+    created_at = datetime(2026, 5, 1, 16, 5, tzinfo=UTC)
+    user = User(
+        id=user_id,
+        telegram_chat_id="12345",
+        account_size=Decimal("20000.00"),
+        risk_profile="Balanced",
+        broker="IBKR",
+        timezone_label="ET",
+        timezone_iana="America/Toronto",
+        strategy_permission="long_and_short",
+        max_contracts=3,
+        openrouter_api_key_encrypted="enc",
+    )
+    run = WorkflowRun(
+        id=run_id,
+        user_id=user_id,
+        trigger_type="manual",
+        status="no_trade",
+        started_at=created_at,
+        finished_at=created_at,
+        screener_status="success",
+        selected_candidate_count=0,
+    )
+    reports = tuple(
+        build_strategy_report(
+            strategy,
+            status="success",
+            raw_row_count=5,
+            candidate_count=5,
+            finviz_candidate_count=0 if strategy == "activist_13d_followthrough" else 5,
+            backup_candidate_count=5 if strategy == "activist_13d_followthrough" else 0,
+        )
+        for strategy in STRATEGIES
+    )
+    outcome = PipelineOutcome(
+        batch=CandidateBatch(
+            candidates=(),
+            screener_status="success",
+            fallback_used=False,
+            warning_text=None,
+            strategy_reports=reports,
+        ),
+        decision=StructuredDecision(
+            action="no_trade",
+            confidence_band="no_trade",
+            reasoning="Balanced fixture run.",
+            key_evidence=[],
+            key_concerns=[],
+            watchlist_tickers=[],
+        ),
+        candidates=(),
+        selected=None,
+    )
+
+    service = LoggingService(archive_root=tmp_path / "runs")
+    artifacts = service.capture_run(
+        run=run,
+        user=user,
+        outcome=outcome,
+        recommendation=None,
+        telegram_message="No trade this scan.",
+    )
+
+    assert len(artifacts.run_summary["strategy_reports"]) == 5
+    sources = [entry["strategy_source"] for entry in artifacts.run_summary["strategy_reports"]]
+    assert set(sources) == set(STRATEGIES)
+    assert len(artifacts.recommendation_card["strategy_reports"]) == 5
+    persisted = run.run_summary_json
+    assert persisted is not None
+    assert [entry["strategy_source"] for entry in persisted["strategy_reports"]] == list(sources)

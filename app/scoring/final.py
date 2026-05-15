@@ -6,11 +6,13 @@ from decimal import Decimal
 from app.scoring.confidence import compute_data_confidence
 from app.scoring.contract import score_contract
 from app.scoring.direction import score_direction
+from app.scoring.strategy_policy import NO_EARNINGS_REQUIRED_STRATEGIES
 from app.scoring.strategy_select import select_allowed_strategies
 from app.scoring.strike import select_strike_candidates
 from app.scoring.types import (
     CandidateContext,
     CandidateEvaluation,
+    ContractScoreResult,
     DataConfidenceResult,
     DecisionAction,
     UserContext,
@@ -78,7 +80,18 @@ def score_candidate(candidate: CandidateContext, user: UserContext) -> Candidate
     )
 
     final_score = combine_scores(direction.score, chosen.score) if chosen is not None else 0
-    action = _final_action(final_score, final_confidence, chosen is not None)
+    action = final_action(
+        final_score,
+        final_confidence,
+        chosen,
+        direction_score=direction.score,
+    )
+    if (
+        action == "recommend"
+        and candidate.strategy_source in NO_EARNINGS_REQUIRED_STRATEGIES
+        and _news_is_truly_unavailable(candidate)
+    ):
+        action = "watchlist"
 
     reasons = list(direction.reasons)
     if chosen is not None:
@@ -88,6 +101,8 @@ def score_candidate(candidate: CandidateContext, user: UserContext) -> Candidate
         )
         reasons.extend(penalty.reason for penalty in chosen.penalties)
         reasons.extend(veto.reason for veto in chosen.vetoes)
+    if _news_is_truly_unavailable(candidate):
+        reasons.append("News service unavailable; non-catalyst setups cannot be promoted blindly.")
     reasons.extend(final_confidence.blockers)
 
     return CandidateEvaluation(
@@ -103,14 +118,47 @@ def score_candidate(candidate: CandidateContext, user: UserContext) -> Candidate
     )
 
 
-def _final_action(
-    final_score: int, confidence: DataConfidenceResult, has_contract: bool
+def _news_is_unavailable(key_uncertainty: str) -> bool:
+    normalized = key_uncertainty.strip().lower()
+    return (
+        normalized == "news service unavailable"
+        or "news service unavailable" in normalized
+        or "coverage was unavailable" in normalized
+        or "not enough recent" in normalized
+    )
+
+
+def _news_is_truly_unavailable(candidate: CandidateContext) -> bool:
+    """True only when there is no article evidence at all.
+
+    A summarizer failure with articles still present is NOT a blackout — the
+    raw extractive brief carries real headlines that the heavy LLM can reason
+    over. We only downgrade non-catalyst recommends when the article count is
+    zero or coverage is "none". This keeps the post-PM guardrail in place for
+    real news outages without letting a flaky lightweight model veto every
+    sector-RS / coiled trade.
+    """
+    if candidate.news_article_count == 0 or candidate.news_coverage == "none":
+        return True
+    return False
+
+
+def final_action(
+    final_score: int,
+    confidence: DataConfidenceResult,
+    chosen: ContractScoreResult | None,
+    *,
+    direction_score: int,
 ) -> DecisionAction:
-    if not has_contract or confidence.blockers or confidence.score < 40:
+    if chosen is None or confidence.blockers or confidence.score < 40:
         return "no_trade"
     if confidence.score < 55:
         return "watchlist" if final_score >= 60 else "no_trade"
     if final_score >= 68:
+        if direction_score < 55 or chosen.score < 60:
+            return "watchlist"
+        if chosen.strategy == "short_call" and (direction_score < 65 or confidence.score < 60):
+            return "watchlist"
         return "recommend"
     if final_score >= 60:
         return "watchlist"

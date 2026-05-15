@@ -64,7 +64,8 @@ class FakeNotifier:
 class FakeCandidateStep:
     batch: CandidateBatch
 
-    async def execute(self) -> CandidateBatch:
+    async def execute(self, *, user_id: object | None = None) -> CandidateBatch:
+        del user_id
         return self.batch
 
 
@@ -480,13 +481,13 @@ async def test_pipeline_persists_recommendation_and_sends_card(
     assert run.final_recommendation_id is not None
     assert len(recommendations) == 1
     assert recommendations[0].ticker == "AMD"
-    assert recommendations[0].telegram_message_id == "3"
+    assert recommendations[0].telegram_message_id == "4"
     assert len(candidates) == 5
     assert run.run_summary_json is not None
     assert run.recommendation_card_json is not None
-    assert run.telegram_message_text == notifier.calls[2].text
+    assert run.telegram_message_text == notifier.calls[3].text
     assert run.recommendation_card_json["selected_ticker"] == "AMD"
-    assert run.recommendation_card_json["telegram_message"] == notifier.calls[2].text
+    assert run.recommendation_card_json["telegram_message"] == notifier.calls[3].text
     assert run.run_summary_json["contracts_considered_count"] == 3
     assert run.run_summary_json["rejected_contract_count"] == 1
     assert run.option_contracts_json is not None
@@ -496,8 +497,9 @@ async def test_pipeline_persists_recommendation_and_sends_card(
     )
     assert notifier.calls[0].text == "🧠 Starting a fresh earnings-options scan now."
     assert notifier.calls[1].text == "✅ Scan complete. Here is the strongest setup I found."
-    assert "<b>Weekly Earnings Options Signal</b>" in notifier.calls[2].text
-    assert notifier.calls[2].reply_markup is not None
+    assert "<b>Strategy scan summary</b>" in notifier.calls[2].text
+    assert "<b>Earnings Options Signal</b>" in notifier.calls[3].text
+    assert notifier.calls[3].reply_markup is not None
 
 
 @pytest.mark.asyncio
@@ -542,7 +544,8 @@ async def test_pipeline_watchlist_path_sets_zero_quantity(
     assert recommendation.suggested_quantity == 0
     assert run.status == "success"
     assert "watching, but not sizing yet" in notifier.calls[1].text
-    assert "Watchlist only" in notifier.calls[2].text
+    assert "<b>Strategy scan summary</b>" in notifier.calls[2].text
+    assert "Watchlist only" in notifier.calls[3].text
 
 
 @pytest.mark.asyncio
@@ -615,8 +618,9 @@ async def test_pipeline_no_trade_path_marks_run_no_trade(
     assert run.status == "no_trade"
     assert recommendations == []
     assert "No trade looks strong enough this time" in notifier.calls[1].text
-    assert "<b>Weekly Earnings Options Scan Complete</b>" in notifier.calls[2].text
-    assert "1. AMD" in notifier.calls[2].text
+    assert "<b>Strategy scan summary</b>" in notifier.calls[2].text
+    assert "<b>Weekly Earnings Options Scan Complete</b>" in notifier.calls[3].text
+    assert "1. AMD" in notifier.calls[3].text
 
 
 @pytest.mark.asyncio
@@ -970,10 +974,10 @@ def test_main_recommendation_template_matches_prd_structure() -> None:
 
     text = render_main_recommendation(recommendation)
     ordered_labels = [
-        "<b>Weekly Earnings Options Signal</b>",
+        "<b>Earnings Options Signal</b>",
         "<b>Best setup:</b> 🥇 AMD",
         "📈 <b>Direction:</b> Bullish",
-        "<b>Contract:</b> AMD Call",
+        "<b>Contract:</b> AMD Buy Call",
         "<b>Strike:</b> $104.00",
         "<b>Suggested entry:</b> up to $1.25 premium",
         "<b>Suggested quantity:</b> 2 contract(s)",
@@ -981,12 +985,13 @@ def test_main_recommendation_template_matches_prd_structure() -> None:
         "🟢 <b>Target sell price:</b> $4.20",
         "🛑 <b>Stop loss:</b> $0.63",
         "🎯 <b>Stock target:</b> $108.00",
-        "🗓️ <b>Exit by:</b> 2026-05-08",
+        "🗓️ <b>Exit by:</b> 2026-05-08 (Friday)",
         "<b>Estimated max loss:</b> $125.00 per contract",
         "<b>Account risk:</b> 2.00%",
         "<b>Earnings date:</b> 2026-05-08",
-        "<b>Confidence:</b> 82/100",
+        "<b>Setup score:</b> 82/100",
         "<b>Risk level:</b> High",
+        "<b>Stop note:</b> Mental alert only",
         "✅ <b>Action:</b>",
     ]
 
@@ -1032,14 +1037,16 @@ def test_short_option_template_uses_margin_warning() -> None:
         position_side="short",
         strike=Decimal("210"),
         expiry=date(2026, 5, 16),
-        earnings_date=date(2026, 5, 8),
+        earnings_date=None,
         suggested_entry=Decimal("2.10"),
         target_stock_price=None,
-        target_option_price=None,
-        stop_loss_option_price=None,
+        target_option_price=Decimal("1.05"),
+        stop_loss_option_price=Decimal("6.30"),
+        underlying_stop_price=Decimal("214.20"),
         exit_by_date=None,
         suggested_quantity=1,
         estimated_max_loss="Some stored value that should be overridden",
+        margin_requirement=Decimal("4550.00"),
         account_risk_percent=Decimal("2.00"),
         confidence_score=79,
         risk_level="High",
@@ -1050,4 +1057,11 @@ def test_short_option_template_uses_margin_warning() -> None:
     text = render_main_recommendation(recommendation)
 
     assert "<b>Contract:</b> TSLA Short Call" in text
+    assert "<b>Suggested entry:</b> at least $2.10 credit" in text
+    assert "<b>Target buyback:</b> $1.05" in text
+    assert "<b>Stop buyback alert:</b> $6.30" in text
+    assert "<b>Underlying stop alert:</b> $214.20" in text
+    assert "<b>Earnings date:</b> No earnings catalyst" in text
     assert "Undefined for naked short call" in text
+    assert "<b>Estimated broker buying power:</b> $4,550.00" in text
+    assert "<b>Naked short call risk:</b> Undefined gap risk" in text

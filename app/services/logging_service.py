@@ -16,7 +16,8 @@ from app.db.models.user import User
 from app.db.models.workflow_run import WorkflowRun
 from app.pipeline.types import PipelineCandidate, PipelineOutcome
 from app.scoring.direction import structural_direction_tier
-from app.scoring.types import ContractScoreResult
+from app.scoring.types import ContractScoreResult, uncovered_call_margin_requirement
+from app.services.candidate_models import StrategyRunReport
 from app.services.results_export_service import ResultsExportService
 
 ZERO = Decimal("0")
@@ -164,6 +165,9 @@ class LoggingService:
             "trigger_type": run.trigger_type,
             "selected_ticker": selected_ticker,
             "selected_company": None if selected is None else selected.context.company_name,
+            "selected_strategy_source": (
+                None if selected is None else selected.context.strategy_source
+            ),
             "selected_strategy": _selected_strategy(
                 selected_contract_score,
                 outcome.decision.action,
@@ -189,6 +193,9 @@ class LoggingService:
             "stop_loss_option_price": (
                 None if recommendation is None else _decimal(recommendation.stop_loss_option_price)
             ),
+            "underlying_stop_price": (
+                None if recommendation is None else _decimal(recommendation.underlying_stop_price)
+            ),
             "exit_by_date": (
                 None if recommendation is None else _date(recommendation.exit_by_date)
             ),
@@ -196,6 +203,12 @@ class LoggingService:
                 None if recommendation is None else recommendation.expected_holding_days
             ),
             "target_method": None if recommendation is None else recommendation.target_method,
+            "expected_move_percent": (
+                None if recommendation is None else _decimal(recommendation.expected_move_percent)
+            ),
+            "margin_requirement": (
+                None if recommendation is None else _decimal(recommendation.margin_requirement)
+            ),
             "suggested_quantity": (
                 0 if recommendation is None else recommendation.suggested_quantity
             ),
@@ -434,6 +447,7 @@ def _candidate_card(
     final_reasoning: str,
 ) -> dict[str, Any]:
     best_contract = _best_contract(candidate)
+    event_signal = candidate.context.event_signal
     return {
         "ticker": candidate.record.ticker,
         "screener_rank": candidate.record.screener_rank,
@@ -447,6 +461,7 @@ def _candidate_card(
         ),
         "earnings_date": _date(candidate.context.earnings_date),
         "earnings_date_verified": candidate.context.verified_earnings_date,
+        "expected_move_percent": _decimal(candidate.context.expected_move_percent),
         "data_confidence_score": candidate.evaluation.confidence.score,
         "direction_classification": candidate.evaluation.direction.classification,
         "candidate_direction_score": candidate.evaluation.direction.score,
@@ -454,6 +469,9 @@ def _candidate_card(
         "final_opportunity_score": candidate.evaluation.final_score,
         "best_strategy": None if best_contract is None else best_contract.strategy,
         "strategy_source": candidate.record.strategy_source,
+        "event_signal_detail": None if event_signal is None else event_signal.detail,
+        "event_signal_score": None if event_signal is None else event_signal.score,
+        "event_signal_supportive": None if event_signal is None else event_signal.is_supportive,
         "candidate_sources": list(candidate.record.sources),
         "candidate_origin": "finviz_row"
         if "finviz" in candidate.record.sources
@@ -548,6 +566,11 @@ def _contract_card(
             if contract.exit_target is None
             else _decimal(contract.exit_target.stop_loss_option_price)
         ),
+        "underlying_stop_price": (
+            None
+            if contract.exit_target is None
+            else _decimal(contract.exit_target.underlying_stop_price)
+        ),
         "exit_by_date": (
             None if contract.exit_target is None else _date(contract.exit_target.exit_by_date)
         ),
@@ -556,6 +579,12 @@ def _contract_card(
         ),
         "target_method": (
             None if contract.exit_target is None else contract.exit_target.target_method
+        ),
+        "expected_move_percent": _decimal(candidate.context.expected_move_percent),
+        "margin_requirement": (
+            _decimal(uncovered_call_margin_requirement(contract.contract))
+            if contract.strategy == "short_call"
+            else None
         ),
         "spread_percent": _decimal(contract_spread_percent(contract)),
         "liquidity_score": contract.liquidity_score,
@@ -606,12 +635,22 @@ def _selected_contract_fields(contract: ContractScoreResult) -> dict[str, Any]:
             if contract.exit_target is None
             else _decimal(contract.exit_target.stop_loss_option_price)
         ),
+        "underlying_stop_price": (
+            None
+            if contract.exit_target is None
+            else _decimal(contract.exit_target.underlying_stop_price)
+        ),
         "exit_by_date": (
             None if contract.exit_target is None else _date(contract.exit_target.exit_by_date)
         ),
         "target_method": None
         if contract.exit_target is None
         else contract.exit_target.target_method,
+        "margin_requirement": (
+            _decimal(uncovered_call_margin_requirement(contract.contract))
+            if contract.strategy == "short_call"
+            else None
+        ),
     }
 
 
@@ -625,7 +664,7 @@ def _title_strategy(strategy: str) -> str:
     return strategy.replace("_", " ").capitalize()
 
 
-def _strategy_report_card(report) -> dict[str, Any]:
+def _strategy_report_card(report: StrategyRunReport) -> dict[str, Any]:
     return {
         "strategy_source": report.strategy_source,
         "strategy_label": report.strategy_label,
@@ -656,9 +695,9 @@ def _data_sources(candidate: PipelineCandidate) -> list[str]:
     for item in candidate.news_bundle.search_results:
         if item.source and item.source not in ordered:
             ordered.append(item.source)
-    for item in candidate.news_bundle.articles:
-        if item.source and item.source not in ordered:
-            ordered.append(item.source)
+    for article in candidate.news_bundle.articles:
+        if article.source and article.source not in ordered:
+            ordered.append(article.source)
     for contract in candidate.context.option_chain:
         if contract.source and contract.source not in ordered:
             ordered.append(contract.source)

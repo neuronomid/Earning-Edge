@@ -18,7 +18,6 @@ from app.services.candidate_models import StrategyRunReport
 from app.services.strategy_catalog import (
     all_strategy_definitions,
     build_strategy_report,
-    get_strategy_definition,
 )
 
 _CSV_COLUMNS = (
@@ -122,6 +121,7 @@ class ExportedResultFiles:
     strategy_a: Path
     strategy_b: Path
     combined: Path
+    strategy_paths: dict[str, Path]
 
 
 class ResultsExportService:
@@ -214,32 +214,29 @@ class ResultsExportService:
                 )
             )
 
-        strategy_a_path = self._path_for(
-            username=username,
-            slug=get_strategy_definition("catalyst_confluence").strategy_slug,
-            local_date=local_date,
-            run=run,
-        )
-        strategy_b_path = self._path_for(
-            username=username,
-            slug=get_strategy_definition("coiled_setup").strategy_slug,
-            local_date=local_date,
-            run=run,
-        )
+        strategy_paths: dict[str, Path] = {}
+        for definition in all_strategy_definitions():
+            path = self._path_for(
+                username=username,
+                slug=definition.strategy_slug,
+                local_date=local_date,
+                run=run,
+            )
+            _write_csv(path, rows_by_source.get(definition.strategy_source, []))
+            strategy_paths[definition.strategy_source] = path
+
         combined_path = self._path_for(
             username=username,
             slug="combined",
             local_date=local_date,
             run=run,
         )
-
-        _write_csv(strategy_a_path, rows_by_source["catalyst_confluence"])
-        _write_csv(strategy_b_path, rows_by_source["coiled_setup"])
         _write_csv(combined_path, combined_rows)
         return ExportedResultFiles(
-            strategy_a=strategy_a_path,
-            strategy_b=strategy_b_path,
+            strategy_a=strategy_paths["catalyst_confluence"],
+            strategy_b=strategy_paths["coiled_setup"],
             combined=combined_path,
+            strategy_paths=strategy_paths,
         )
 
     def _path_for(

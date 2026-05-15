@@ -84,3 +84,26 @@ def schedule_day_keyboard() -> InlineKeyboardMarkup:
         ]
     )
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def schedule_delete_confirm_keyboard(cron_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✅ Delete schedule",
+                    callback_data=ScheduleActionCB(
+                        action="delete_confirm",
+                        cron_id=cron_id,
+                    ).pack(),
+                ),
+                InlineKeyboardButton(
+                    text="✖️ Cancel",
+                    callback_data=ScheduleActionCB(
+                        action="delete_cancel",
+                        cron_id=cron_id,
+                    ).pack(),
+                ),
+            ]
+        ]
+    )

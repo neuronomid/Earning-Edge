@@ -3,10 +3,11 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from functools import lru_cache
 from typing import Any, Protocol
+from uuid import UUID
 
 from aiogram import Bot
 from aiogram.client.default import DefaultBotProperties
@@ -39,15 +40,20 @@ from app.pipeline.steps.sizing import PositionSizingStep, SizingStep
 from app.pipeline.types import PipelineCandidate, PipelineOutcome
 from app.scoring.types import (
     CandidateContext,
+    CandidateEvaluation,
+    ContractScoreResult,
+    OptionContractInput,
     UserContext,
     breakeven_price,
     option_mid,
     option_premium,
     spread_percent,
+    uncovered_call_margin_requirement,
 )
 from app.services.candidate_models import CandidateBatch, CandidateRecord
 from app.services.logging_service import LoggingService, get_logging_service
 from app.services.market_data.types import ConfidenceNote, MarketSnapshot, ReturnMetrics
+from app.services.market_hours import trading_reference_date
 from app.services.news.types import NewsBrief, NewsBundle
 from app.services.sizing import BROKER_MARGIN_DEPENDENT_TEXT, SizingError, SizingPermissionError
 from app.services.sizing_types import SizingResult
@@ -56,6 +62,7 @@ from app.telegram.handlers._common import enforce_tone
 from app.telegram.keyboards.settings import recommendation_keyboard
 from app.telegram.templates.main_recommendation import render_main_recommendation
 from app.telegram.templates.no_trade import render_no_trade
+from app.telegram.templates.run_summary import render_strategy_status_rows
 from app.telegram.templates.status import render_scan_started, render_weekly_scan_ready
 
 ZERO = Decimal("0")
@@ -153,7 +160,7 @@ class PipelineOrchestrator:
 
         reference_dt = datetime.now(UTC)
 
-        batch = await self.candidate_step.execute()
+        batch = await self.candidate_step.execute(user_id=run.user_id)
         run.screener_status = batch.screener_status
         run.selected_candidate_count = len(batch.candidates)
         outcome = await self.evaluate_batch(batch, user, reference_dt=reference_dt)
@@ -306,20 +313,38 @@ class PipelineOrchestrator:
             calculation_errors.append(f"Option chain unavailable: {exc}")
             option_chain = ()
 
+        option_chain = _option_chain_with_underlying_price(
+            option_chain,
+            market_snapshot.current_price,
+        )
+        valuation_date = trading_reference_date(effective_reference_dt)
+        expected_move_percent = _expected_move_percent(
+            option_chain,
+            market_snapshot.current_price,
+            valuation_date,
+        )
+        strategy_source = record.strategy_source or "catalyst_confluence"
         context = CandidateContext(
             ticker=record.ticker,
             company_name=record.company_name or market_snapshot.company_name or record.ticker,
-            earnings_date=record.earnings_date or datetime.now(UTC).date(),
+            earnings_date=record.earnings_date,
             earnings_timing="unknown",
             market_snapshot=market_snapshot,
             news_brief=news_bundle.brief,
+            valuation_date=valuation_date,
             option_chain=option_chain,
+            strategy_source=strategy_source,
+            event_signal=record.event_signal,
             verified_earnings_date=record.earnings_date_verified,
             identity_verified=bool(
                 record.ticker and (record.company_name or market_snapshot.company_name)
             ),
+            expected_move_percent=expected_move_percent,
             source_conflicts=(),
             calculation_errors=tuple(calculation_errors),
+            news_article_count=len(news_bundle.articles),
+            news_coverage=news_bundle.news_coverage,
+            news_brief_status=news_bundle.brief_status,
         )
         evaluation = await self.scoring_step.execute(context, effective_user_context)
         sizing = await self._size_candidate(effective_user_context, evaluation)
@@ -334,7 +359,7 @@ class PipelineOrchestrator:
     async def _size_candidate(
         self,
         user_context: UserContext,
-        evaluation,
+        evaluation: CandidateEvaluation,
     ) -> SizingResult | None:
         if evaluation.chosen_contract is None:
             return None
@@ -343,7 +368,7 @@ class PipelineOrchestrator:
     async def _size_contract(
         self,
         user_context: UserContext,
-        contract,
+        contract: OptionContractInput,
     ) -> SizingResult | None:
         try:
             return await self.sizing_step.execute(user_context, contract)
@@ -376,6 +401,7 @@ class PipelineOrchestrator:
                     current_price=item.context.market_snapshot.current_price
                     or item.record.current_price
                     or ZERO,
+                    expected_move_percent=item.context.expected_move_percent,
                     direction_classification=item.evaluation.direction.classification,
                     candidate_direction_score=item.evaluation.direction.score,
                     best_strategy=(
@@ -431,6 +457,11 @@ class PipelineOrchestrator:
                             if contract.exit_target is None
                             else contract.exit_target.stop_loss_option_price
                         ),
+                        underlying_stop_price=(
+                            None
+                            if contract.exit_target is None
+                            else contract.exit_target.underlying_stop_price
+                        ),
                         exit_by_date=(
                             None
                             if contract.exit_target is None
@@ -445,6 +476,12 @@ class PipelineOrchestrator:
                             None
                             if contract.exit_target is None
                             else contract.exit_target.target_method
+                        ),
+                        expected_move_percent=item.context.expected_move_percent,
+                        margin_requirement=(
+                            uncovered_call_margin_requirement(contract.contract)
+                            if contract.strategy == "short_call"
+                            else None
                         ),
                         spread_percent=ZERO if spread is None else spread * Decimal("100"),
                         liquidity_score=contract.liquidity_score,
@@ -476,7 +513,7 @@ class PipelineOrchestrator:
         user: User,
         outcome: PipelineOutcome,
         *,
-        parent_recommendation_id=None,
+        parent_recommendation_id: UUID | None = None,
         update_run: bool,
     ) -> Recommendation | None:
         recommendation_repo = RecommendationRepository(session)
@@ -514,6 +551,8 @@ class PipelineOrchestrator:
                 parent_recommendation_id=parent_recommendation_id,
                 ticker=outcome.selected.record.ticker,
                 company_name=outcome.selected.context.company_name,
+                earnings_date=outcome.selected.context.earnings_date,
+                strategy_source=outcome.selected.context.strategy_source,
                 strategy=chosen_contract.strategy,
                 option_type=chosen_contract.contract.option_type,
                 position_side=chosen_contract.contract.position_side,
@@ -540,6 +579,11 @@ class PipelineOrchestrator:
                     if chosen_contract.exit_target is None
                     else chosen_contract.exit_target.stop_loss_option_price
                 ),
+                underlying_stop_price=(
+                    None
+                    if chosen_contract.exit_target is None
+                    else chosen_contract.exit_target.underlying_stop_price
+                ),
                 exit_by_date=(
                     None
                     if chosen_contract.exit_target is None
@@ -555,6 +599,8 @@ class PipelineOrchestrator:
                     if chosen_contract.exit_target is None
                     else chosen_contract.exit_target.target_method
                 ),
+                expected_move_percent=outcome.selected.context.expected_move_percent,
+                margin_requirement=sizing.margin_requirement_per_contract,
                 suggested_quantity=quantity,
                 estimated_max_loss=sizing.max_loss_text,
                 account_risk_percent=sizing.account_risk_pct * Decimal("100"),
@@ -567,7 +613,6 @@ class PipelineOrchestrator:
                 stale_news=outcome.selected.news_bundle.stale_news,
             )
         )
-        recommendation.earnings_date = outcome.selected.context.earnings_date
         if update_run:
             run.status = "success"
             run.finished_at = datetime.now(UTC)
@@ -581,47 +626,54 @@ class PipelineOrchestrator:
         outcome: PipelineOutcome,
         recommendation: Recommendation | None,
     ) -> str:
-        dashboard = _is_dashboard_user(user)
-
+        strategy_summary = render_strategy_status_rows(outcome.batch.strategy_reports)
         if recommendation is None:
+            await self.notifier.send_text(
+                user.telegram_chat_id,
+                render_weekly_scan_ready(
+                    trigger_type=trigger_type,
+                    action="no_trade",
+                ),
+            )
+            await self.notifier.send_text(user.telegram_chat_id, strategy_summary)
             final_message = render_no_trade(
                 reason=outcome.decision.reasoning,
                 watchlist_tickers=outcome.decision.watchlist_tickers,
                 warning_text=outcome.batch.warning_text,
             )
-            if not dashboard:
-                await self.notifier.send_text(
-                    user.telegram_chat_id,
-                    render_weekly_scan_ready(
-                        trigger_type=trigger_type,
-                        action="no_trade",
-                    ),
-                )
-                await self.notifier.send_text(
-                    user.telegram_chat_id,
-                    final_message,
-                )
+            await self.notifier.send_text(
+                user.telegram_chat_id,
+                final_message,
+            )
             return final_message
 
         action = outcome.decision.action
+        # Attach in-memory presentation fields the DB row doesn't carry yet so
+        # the Telegram template can show DTE, brief status, and the trading-
+        # date anchor without a migration.
         if outcome.selected is not None:
-            recommendation.earnings_date = outcome.selected.context.earnings_date
+            news_bundle = outcome.selected.news_bundle
+            recommendation.news_brief_status = news_bundle.brief_status  # type: ignore[attr-defined]
+            recommendation.news_article_count = len(news_bundle.articles)  # type: ignore[attr-defined]
+            recommendation.reference_trading_date = (  # type: ignore[attr-defined]
+                outcome.selected.context.valuation_date
+            )
         final_message = render_main_recommendation(
             recommendation,
             warning_text=outcome.batch.warning_text,
             watchlist_only=action == "watchlist",
         )
-        if not dashboard:
-            await self.notifier.send_text(
-                user.telegram_chat_id,
-                render_weekly_scan_ready(trigger_type=trigger_type, action=action),
-            )
-            message_id = await self.notifier.send_text(
-                user.telegram_chat_id,
-                final_message,
-                reply_markup=recommendation_keyboard(str(recommendation.id)),
-            )
-            recommendation.telegram_message_id = message_id
+        await self.notifier.send_text(
+            user.telegram_chat_id,
+            render_weekly_scan_ready(trigger_type=trigger_type, action=action),
+        )
+        await self.notifier.send_text(user.telegram_chat_id, strategy_summary)
+        message_id = await self.notifier.send_text(
+            user.telegram_chat_id,
+            final_message,
+            reply_markup=recommendation_keyboard(str(recommendation.id)),
+        )
+        recommendation.telegram_message_id = message_id
         return final_message
 
 
@@ -649,14 +701,75 @@ def _build_user_context(user: User, *, has_valid_openrouter_api_key: bool) -> Us
         risk_profile=user.risk_profile,  # type: ignore[arg-type]
         strategy_permission=user.strategy_permission,  # type: ignore[arg-type]
         max_contracts=user.max_contracts,
-        max_option_premium=None
-        if user.max_option_premium is None
-        else Decimal(str(user.max_option_premium)),
-        custom_risk_percent=None
-        if user.custom_risk_percent is None
-        else Decimal(str(user.custom_risk_percent)),
+        max_option_premium=(
+            None if user.max_option_premium is None else Decimal(str(user.max_option_premium))
+        ),
+        custom_risk_percent=(
+            None if user.custom_risk_percent is None else Decimal(str(user.custom_risk_percent))
+        ),
         has_valid_openrouter_api_key=has_valid_openrouter_api_key,
     )
+
+
+def _option_chain_with_underlying_price(
+    option_chain: tuple[OptionContractInput, ...],
+    current_price: Decimal | None,
+) -> tuple[OptionContractInput, ...]:
+    if current_price is None or current_price <= ZERO:
+        return option_chain
+    return tuple(
+        (
+            contract
+            if contract.underlying_price is not None
+            else replace(contract, underlying_price=current_price)
+        )
+        for contract in option_chain
+    )
+
+
+def _expected_move_percent(
+    option_chain: tuple[OptionContractInput, ...],
+    current_price: Decimal | None,
+    valuation_date: date | None,
+) -> Decimal | None:
+    if current_price is None or current_price <= ZERO or not option_chain:
+        return None
+
+    expiries = sorted(
+        {
+            contract.expiry
+            for contract in option_chain
+            if valuation_date is None or contract.expiry > valuation_date
+        }
+    )
+    if not expiries:
+        return None
+
+    front_expiry = expiries[0]
+    pairs: dict[Decimal, dict[str, Decimal]] = {}
+    for contract in option_chain:
+        if contract.expiry != front_expiry:
+            continue
+        mid = option_mid(contract)
+        if mid is None or mid <= ZERO:
+            continue
+        by_type = pairs.setdefault(contract.strike, {})
+        by_type.setdefault(contract.option_type, mid)
+
+    best_strike: Decimal | None = None
+    best_distance: Decimal | None = None
+    for strike, by_type in pairs.items():
+        if "call" not in by_type or "put" not in by_type:
+            continue
+        distance = abs(strike - current_price)
+        if best_distance is None or distance < best_distance:
+            best_strike = strike
+            best_distance = distance
+    if best_strike is None:
+        return None
+
+    straddle = pairs[best_strike]["call"] + pairs[best_strike]["put"]
+    return ((straddle * Decimal("0.85")) / current_price).quantize(Decimal("0.000001"))
 
 
 def _fallback_market_snapshot(record: CandidateRecord, *, error: str) -> MarketSnapshot:
@@ -712,7 +825,8 @@ def _deferred_news_bundle(record: CandidateRecord, *, generated_at: datetime) ->
         used_ir_fallback=False,
         used_llm_summary=False,
         news_coverage="none",
-        stale_news=False,
+        stale_news=True,
+        brief_status="skipped",
     )
 
 
@@ -729,13 +843,17 @@ def _fallback_news_bundle(
         search_results=(),
         articles=(),
         brief=NewsBrief(
-            neutral_contextual_evidence=["Recent coverage was unavailable during this run."],
-            key_uncertainty=error,
+            neutral_contextual_evidence=[
+                "Recent coverage was unavailable during this run.",
+                f"News failure reason: {error}",
+            ],
+            key_uncertainty="news service unavailable",
         ),
         used_ir_fallback=False,
         used_llm_summary=False,
         news_coverage="none",
-        stale_news=False,
+        stale_news=True,
+        brief_status="unavailable",
     )
 
 
@@ -781,17 +899,35 @@ def _select_decision_finalists(
 
 def _select_contract(
     candidate: PipelineCandidate | None,
-    chosen_contract,
-):
+    chosen_contract: Any,
+) -> ContractScoreResult | None:
     if candidate is None:
         return None
     return resolve_selected_contract(candidate, chosen_contract)
 
 
-def _risk_level(contract, final_score: int) -> str:
+def _risk_level(contract: ContractScoreResult, final_score: int) -> str:
     if contract.contract.position_side == "short":
         return "High"
-    if final_score >= 78:
+    reality = contract.reality_check
+    if reality is not None:
+        if (
+            reality.dte_calendar < 10
+            or reality.trading_days_to_exit < 3
+            or (
+                reality.approx_probability_touch_target is not None
+                and reality.approx_probability_touch_target < Decimal("0.35")
+            )
+            or (
+                contract.contract.delta is not None
+                and abs(contract.contract.delta) < Decimal("0.30")
+            )
+        ):
+            return "Speculative"
+    spread = spread_percent(contract.contract)
+    if spread is not None and spread > Decimal("0.25"):
+        return "High"
+    if final_score >= 78 or contract.contract.position_side == "long":
         return "High"
     return "Moderate"
 

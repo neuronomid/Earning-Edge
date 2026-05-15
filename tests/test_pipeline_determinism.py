@@ -12,14 +12,28 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from uuid import uuid4
 
+import pytest
+
+from app.core import crypto
+from app.db.models.user import User
+from app.pipeline.orchestrator import PipelineOrchestrator, _select_decision_finalists
 from app.scoring.final import score_candidate
 from app.scoring.types import (
     CandidateContext,
     UserContext,
 )
+from app.services.candidate_models import CandidateBatch
 from app.services.market_data.types import MarketSnapshot, ReturnMetrics
 from app.services.news.types import NewsBrief, NewsBundle
+from tests.fixtures.balanced_25_pool import (
+    BalancedMarketDataStep,
+    BalancedNewsStep,
+    BalancedOptionsStep,
+    build_balanced_batch,
+    build_balanced_index,
+)
 
 
 def _stub_news_brief() -> NewsBrief:
@@ -139,3 +153,64 @@ def test_scoring_is_bit_identical_across_repeated_runs() -> None:
         f"direction classification varied: {direction_classifications}"
     )
     assert len(direction_biases) == 1, f"direction bias varied: {direction_biases}"
+
+
+class _BatchCandidateStep:
+    def __init__(self, batch: CandidateBatch) -> None:
+        self._batch = batch
+
+    async def execute(self) -> CandidateBatch:
+        return self._batch
+
+
+def _balanced_user() -> User:
+    crypto.reset_cache()
+    return User(
+        id=uuid4(),
+        telegram_chat_id="12345",
+        account_size=Decimal("20000.00"),
+        risk_profile="Balanced",
+        broker="IBKR",
+        timezone_label="ET",
+        timezone_iana="America/Toronto",
+        strategy_permission="long_and_short",
+        max_contracts=3,
+        openrouter_api_key_encrypted=crypto.encrypt("sk-or-test"),
+    )
+
+
+@pytest.mark.asyncio
+async def test_five_strategy_run_is_deterministic_under_frozen_inputs() -> None:
+    """The balanced 25-candidate pool MUST produce identical finalist orderings."""
+    batch = build_balanced_batch()
+    index = build_balanced_index()
+    reference_dt = datetime(2026, 5, 1, 15, 55, tzinfo=UTC)
+
+    runs = []
+    for _ in range(3):
+        orchestrator = PipelineOrchestrator(
+            candidate_step=_BatchCandidateStep(batch),
+            market_data_step=BalancedMarketDataStep(index),
+            news_step=BalancedNewsStep(index),
+            options_step=BalancedOptionsStep(index),
+        )
+        outcome = await orchestrator.evaluate_batch(
+            batch,
+            _balanced_user(),
+            reference_dt=reference_dt,
+        )
+        finalists = _select_decision_finalists(list(outcome.candidates))
+        runs.append(
+            tuple(
+                (
+                    item.record.ticker,
+                    item.context.strategy_source,
+                    item.evaluation.final_score,
+                    item.evaluation.confidence.score,
+                    item.evaluation.direction.score,
+                )
+                for item in finalists
+            )
+        )
+
+    assert runs[0] == runs[1] == runs[2], f"finalist order drifted across runs: {runs}"

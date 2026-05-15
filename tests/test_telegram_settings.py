@@ -250,9 +250,24 @@ async def test_api_keys_screen_and_remove_actions(
             ApiKeyCB(action="remove_alpaca"),
             state,
         )
+        assert "Remove your stored <b>Alpaca credentials</b>?" in send_recorder.calls[-1].text
+        user = await seeded_user.get_by_chat_id(str(chat_id))
+        assert user is not None
+        assert user.alpaca_api_key_encrypted is not None
+        await settings_handlers.on_api_key_button(
+            make_callback(chat_id=chat_id),
+            ApiKeyCB(action="remove_alpaca_confirm"),
+            state,
+        )
         await settings_handlers.on_api_key_button(
             make_callback(chat_id=chat_id),
             ApiKeyCB(action="remove_av"),
+            state,
+        )
+        assert "Remove your stored <b>Alpha Vantage key</b>?" in send_recorder.calls[-1].text
+        await settings_handlers.on_api_key_button(
+            make_callback(chat_id=chat_id),
+            ApiKeyCB(action="remove_av_confirm"),
             state,
         )
 
@@ -261,5 +276,51 @@ async def test_api_keys_screen_and_remove_actions(
         assert user.alpaca_api_key_encrypted is None
         assert user.alpaca_api_secret_encrypted is None
         assert user.alpha_vantage_api_key_encrypted is None
+    finally:
+        await storage.close()
+
+
+async def test_settings_choice_cancel_returns_to_settings_screen(
+    seeded_user: UserService,
+    send_recorder: SendRecorder,
+    patch_user_service_scope: None,
+) -> None:
+    del seeded_user
+    chat_id = 12345
+    state, storage = await make_state(chat_id)
+    try:
+        await state.set_state(SettingsEdit.risk_profile)
+
+        await settings_handlers.cancel_settings_choice(
+            make_callback(chat_id=chat_id),
+            state,
+        )
+
+        assert await state.get_state() is None
+        assert send_recorder.calls[-1].text.startswith("No changes made.")
+        assert "⚙️ <b>Settings</b>" in send_recorder.calls[-1].text
+    finally:
+        await storage.close()
+
+
+async def test_api_key_remove_cancel_keeps_credentials(
+    seeded_user: UserService,
+    send_recorder: SendRecorder,
+    patch_user_service_scope: None,
+) -> None:
+    chat_id = 12345
+    state, storage = await make_state(chat_id)
+    try:
+        await settings_handlers.on_api_key_button(
+            make_callback(chat_id=chat_id),
+            ApiKeyCB(action="remove_cancel"),
+            state,
+        )
+
+        user = await seeded_user.get_by_chat_id(str(chat_id))
+        assert user is not None
+        assert user.alpaca_api_key_encrypted is not None
+        assert user.alpha_vantage_api_key_encrypted is not None
+        assert send_recorder.calls[-1].text.startswith("Removal cancelled.")
     finally:
         await storage.close()
