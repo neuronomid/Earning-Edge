@@ -473,6 +473,106 @@ def test_v2_off_restores_byte_identical_legacy_scores(monkeypatch) -> None:
     assert score_candidate(with_event, user) == score_candidate(without_event, user)
 
 
+def test_pm_weekly_no_catalyst_contract_is_not_recommendable() -> None:
+    contract = OptionContractInput(
+        ticker="PM",
+        option_type="call",
+        position_side="long",
+        strike=Decimal("195"),
+        expiry=date(2026, 5, 22),
+        bid=Decimal("1.73"),
+        ask=Decimal("1.98"),
+        mid=Decimal("1.855"),
+        volume=144,
+        open_interest=300,
+        implied_volatility=Decimal("0.2735"),
+        delta=Decimal("0.359"),
+        gamma=Decimal("0.0481"),
+        theta=Decimal("-0.1881"),
+        vega=Decimal("0.1062"),
+        underlying_price=Decimal("191.86"),
+        source="fixture",
+    )
+    candidate = CandidateContext(
+        ticker="PM",
+        company_name="Philip Morris International Inc.",
+        earnings_date=None,
+        earnings_timing="unknown",
+        market_snapshot=MarketSnapshot(
+            ticker="PM",
+            as_of_date=date(2026, 5, 14),
+            company_name="Philip Morris International Inc.",
+            sector="Consumer Defensive",
+            sector_etf="XLP",
+            market_cap=Decimal("299030000000"),
+            current_price=Decimal("191.86"),
+            latest_volume=1_000_000,
+            average_volume_20d=Decimal("900000"),
+            volume_vs_average_20d=Decimal("1.20"),
+            stock_returns=ReturnMetrics(
+                one_day=Decimal("0.021"),
+                five_day=Decimal("0.044"),
+                twenty_day=Decimal("0.080"),
+                fifty_day=Decimal("0.120"),
+            ),
+            spy_returns=ReturnMetrics(
+                one_day=Decimal("0.002"),
+                five_day=Decimal("0.010"),
+                twenty_day=Decimal("0.030"),
+                fifty_day=Decimal("0.050"),
+            ),
+            qqq_returns=ReturnMetrics(
+                one_day=Decimal("0.001"),
+                five_day=Decimal("0.008"),
+                twenty_day=Decimal("0.020"),
+                fifty_day=Decimal("0.040"),
+            ),
+            sector_returns=ReturnMetrics(
+                one_day=Decimal("0.002"),
+                five_day=Decimal("0.018"),
+                twenty_day=Decimal("0.044"),
+                fifty_day=Decimal("0.060"),
+            ),
+            relative_strength_vs_spy=Decimal("0.034"),
+            relative_strength_vs_qqq=Decimal("0.040"),
+            relative_strength_vs_sector=Decimal("0.010"),
+            av_news_sentiment=None,
+            price_source="fixture",
+            overview_source="fixture",
+            sources=("fixture",),
+        ),
+        news_brief=NewsBrief(
+            neutral_contextual_evidence=[],
+            key_uncertainty="news service unavailable",
+        ),
+        valuation_date=date(2026, 5, 14),
+        option_chain=(contract,),
+        strategy_source="sector_relative_strength",
+        event_signal=StrategyEventSignal(
+            score=75,
+            is_supportive=True,
+            detail="XLP sector +4.4% (4w), stock screen percentile 60%",
+        ),
+        expected_move_percent=Decimal("0.027889"),
+    )
+    user = _user(account_size="9900", strategy_permission="long")
+
+    result = score_candidate(candidate, user)
+
+    assert result.action == "no_trade"
+    assert result.chosen_contract is None
+    assert result.considered_contracts
+    rejected = result.considered_contracts[0]
+    veto_codes = {veto.code for veto in rejected.vetoes}
+    assert "strategy_dte_too_short" in veto_codes
+    assert "strategy_exit_window_too_short" in veto_codes
+    assert "weekly_otm_no_catalyst" in veto_codes
+    assert rejected.reality_check is not None
+    assert rejected.reality_check.trading_days_to_exit == 1
+    assert rejected.exit_target is not None
+    assert rejected.exit_target.exit_by_date == date(2026, 5, 15)
+
+
 def _strong_bullish_candidate(
     *,
     with_options: bool = False,

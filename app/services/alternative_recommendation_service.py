@@ -40,6 +40,7 @@ from app.scoring.types import (
     StrategySelection,
     UserContext,
     option_premium,
+    spread_percent,
     uncovered_call_margin_requirement,
 )
 from app.services.candidate_models import CandidateRecord
@@ -627,6 +628,24 @@ def _direction_bias(classification: str) -> Decimal:
 def _risk_level(contract: ContractScoreResult, final_score: int) -> str:
     if contract.contract.position_side == "short":
         return "High"
-    if final_score >= 78:
+    reality = contract.reality_check
+    if reality is not None:
+        if (
+            reality.dte_calendar < 10
+            or reality.trading_days_to_exit < 3
+            or (
+                reality.approx_probability_touch_target is not None
+                and reality.approx_probability_touch_target < Decimal("0.35")
+            )
+            or (
+                contract.contract.delta is not None
+                and abs(contract.contract.delta) < Decimal("0.30")
+            )
+        ):
+            return "Speculative"
+    spread = spread_percent(contract.contract)
+    if spread is not None and spread > Decimal("0.25"):
+        return "High"
+    if final_score >= 78 or contract.contract.position_side == "long":
         return "High"
     return "Moderate"

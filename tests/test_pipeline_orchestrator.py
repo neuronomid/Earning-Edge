@@ -15,7 +15,9 @@ from app.llm.schemas import ChosenContract, StructuredDecision
 from app.pipeline.orchestrator import (
     DECISION_FINALIST_LIMIT,
     PipelineOrchestrator,
+    _deferred_news_bundle,
     _expected_move_percent,
+    _fallback_news_bundle,
     _select_decision_finalists,
 )
 from app.pipeline.types import DecisionStepResult, DecisionTrace, PipelineCandidate
@@ -71,6 +73,29 @@ def test_expected_move_uses_front_expiry_nearest_atm_straddle() -> None:
     )
 
     assert expected_move == Decimal("0.058911")
+
+
+def test_fallback_and_deferred_news_bundles_are_not_adequate() -> None:
+    record = CandidateRecord(
+        ticker="PM",
+        company_name="Philip Morris International",
+        market_cap=Decimal("299030000000"),
+        earnings_date=None,
+        current_price=Decimal("191.86"),
+    )
+    generated_at = datetime(2026, 5, 15, 0, 7, 46, tzinfo=UTC)
+
+    fallback = _fallback_news_bundle(
+        record,
+        error="news service unavailable",
+        generated_at=generated_at,
+    )
+    deferred = _deferred_news_bundle(record, generated_at=generated_at)
+
+    assert fallback.news_coverage == "none"
+    assert fallback.stale_news is True
+    assert deferred.news_coverage == "none"
+    assert deferred.stale_news is True
 
 
 def _candidate(

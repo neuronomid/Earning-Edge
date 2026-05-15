@@ -1,306 +1,1229 @@
-# dumb.md — Why the PM 195C suggestion is bad, and why the LLM didn't catch it
+# PM 195C Failure Audit And Fix Guide
 
-**Date of analysis:** 2026‑05‑15 (Friday)
-**Trade under review:**
+Date updated: 2026-05-15
 
+This document supersedes the earlier Claude report. Keep the useful parts of
+that report, but prioritize the findings and fixes below. The purpose of this
+file is not only to explain why the PM recommendation was bad. It is a guide for
+the next implementation pass so a future Codex session can read this file and
+know exactly what to fix, in what order, and why.
+
+## Executive Verdict
+
+The PM stock idea was not crazy. PM had real momentum, strong Q1 2026
+fundamentals, and sector-relative support.
+
+The option recommendation was still not good enough to send as the best live
+trade:
+
+- It recommended a near-expiration OTM call with no named near-term catalyst.
+- It told the user to exit on Sunday, 2026-05-17, when the U.S. market is closed.
+- It presented a structural score as "Confidence: 83/100", which users can
+  naturally misread as win probability.
+- It let the LLM call a 2026-05-22 option "May 2026" with "~6 months of runway"
+  even though the run happened on 2026-05-15 UTC.
+- It scored the target against an expiry-horizon expected move, while the exit
+  plan used a much shorter holding window.
+- It marked news as adequate in the LLM evidence even when the LLM itself said
+  "News service unavailable".
+
+If I were the investor, I would not buy this contract. I would treat the PM
+equity trend as watchable, not as a clean 7-DTE long-call entry.
+
+## Exact Run Under Review
+
+Primary run matching the user's example:
+
+- Run id: `9b7d22b3-61be-4d63-b090-5c7a72737e9a`
+- Run started: `2026-05-15T00:07:05.547314+00:00`
+- Run finished: `2026-05-15T00:07:46.312858+00:00`
+- Selected ticker: `PM`
+- Selected strategy source: `sector_relative_strength`
+- Decision engine: `llm`
+- Heavy model: `anthropic/claude-opus-4.7`
+- Decision action: `recommend`
+- Confidence score: `83`
+- Risk level: `High`
+
+Selected contract:
+
+```text
+PM long call
+Strike: 195
+Expiry: 2026-05-22
+Bid: 1.73
+Ask: 1.98
+Mid: 1.855
+Suggested entry: 1.98
+Delta: 0.359
+Gamma: 0.0481
+Theta: -0.1881
+Vega: 0.1062
+IV: 0.2735
+Volume: 144
+Spread: 13.48%
+Breakeven: 196.98
+Target stock: 197.21
+Target option: 4.09
+Stop: 0.99
+Exit by: 2026-05-17
+Expected holding days: 2
+Contract score: 89
+Final opportunity score: 83
 ```
-PM   Buy Call   Strike $195.00   Expiry 2026-05-22 (7 DTE)
-Entry: up to $1.98   Qty: 1
-Target stock $197.21   Target option $4.09   Stop $0.99
-Exit by: 2026-05-17 (Sunday — market closed)
-Earnings: "No earnings catalyst"   Confidence: 83/100   Risk: High
+
+Stored PM candidate facts:
+
+```text
+Current price: 191.86000061035156
+Expected move percent: 0.027889
+Direction score: 75
+Direction classification: bullish
+Data confidence: 94
+Event signal: XLP sector +4.4% (4w), stock screen percentile 60%
+Market cap: 299030000000
+Earnings date: null
+Strategy source: sector_relative_strength
 ```
 
-## 1. The trade itself — would I take it? No.
+The LLM reasoning in that run included this materially wrong statement:
 
-### 1.1 The hard facts on PM
-
-- **Spot:** ~$190 (May 14 close $191.24; intraday range $187.63–$192.92).
-- **30‑day implied vol:** **23.67%** — very low. PM is a defensive consumer‑staples / nicotine name.
-- **Beta:** **−0.22** (mildly inverse to SPY).
-- **52‑week range:** $142 – $192.92. The stock is **at the top of its 52‑week range**.
-- **Last earnings:** **April 22, 2026** — already reported, beat by $0.07 on EPS, +9.1% revenue. That was 3+ weeks ago; the PEAD window has largely decayed.
-- **Sell‑side consensus PT:** $192–$202. The stock has essentially **priced in the analyst view**.
-- **Sentiment risk:** ZYN volumes fell 23.5% in Q1; U.S. revenue fell 30.8%. Bull case is intact long‑term, but there is no fresh near‑term catalyst.
-
-### 1.2 The trade math doesn't work
-
-Entry premium $1.98, strike $195, spot ≈ $190. Working it out:
-
-| Metric | Value |
-|---|---|
-| Break‑even at expiry | $195 + $1.98 = **$196.98** |
-| Move required to break even | **+3.67%** |
-| Move required to hit "stock target $197.21" | **+3.79%** |
-| Days to target (per bot) | 2 calendar / **1 trading day** (Mon May 18; Sun May 17 is closed) |
-| 1‑day expected move from IV (23.67% / √252) | **≈ ±1.49%** |
-| Required move expressed in 1‑day σ | **≈ 2.5 σ** |
-| Probability of touching $197.21 by Mon May 18 (rough) | **≈ 10–15%** |
-| Probability of expiring ITM at $195 on May 22 (Δ‑equiv) | **≈ 25–30%** |
-
-The bot is asking for a **~2.5 σ one‑day move on a beta‑negative, low‑IV stock with no catalyst**. The R:R looks reasonable on paper ($200 max loss vs. ~$211 target gain), but the **probability of payoff is too low** for it to be a positive‑EV play.
-
-### 1.3 The internal arithmetic is also inconsistent
-
-The "target option price $4.09" is generated by the deterministic `ExitTargetService` (`app/services/exit_target.py`) via a delta projection:
-
-```
-target_option ≈ current_mid + Δ × (target_stock - current_stock)
-              ≈ 1.98 + 0.30 × ($197.21 − $190) ≈ $4.10
+```text
+The May 2026 195 call gives ~6 months of runway...
 ```
 
-But the service only charges **2 days of theta** (`_target_pricing_days = min(planned_holding_days, 2)`, line 203). The contract still has **4 DTE remaining at the "exit by" date**, and at strike‑adjacent territory theta erosion is non‑trivial; a more honest projection is ~$3.20–$3.60, not $4.09. So even **if** the stock gets there, the option payout the user is being shown is **overstated by ~15–25%**.
+That is false. At run time, the 2026-05-22 contract had about one week to
+expiry, not six months. This is a decisive audit finding.
 
-### 1.4 Bottom line on the trade
+Related PM runs:
 
-**Pass.** This is a low‑probability, near‑expiration OTM call on a defensive, near‑52‑week‑high name with no near‑term catalyst. It has lottery‑ticket characteristics dressed up as an "83/100 confidence, strong, recommend" call. If anything, the right play on PM right now is **wait for a pullback, then sell cash‑secured puts at $180–$185**, not buy weekly $195 calls.
+- `e6fce527-656a-4cbb-829a-7976a9e0a9d4`: PM selected with score 76,
+  target option 2.46, target stock 194.21, exit 2026-05-17.
+- `bb66374f-e08d-4d30-bb07-224f885cdfa0`: same lower target variant.
+- `052a51ba-7bd7-4004-a298-de640edf2357`: PM selected with score 83,
+  target option 4.09.
+- `54574da7-2e80-4362-85bf-36bc365f084d`: LLM blocked due OpenRouter key;
+  PM was still the top structural candidate at score 83, but no trade was sent.
 
----
+These variants matter because the same PM setup changed materially depending on
+run timestamp and expected-move calculation.
 
-## 2. Why the LLM didn't catch this
+## PM Market Research Summary
 
-The reasoning model behind the `decide` route is the same model class as me (`claude-opus-4.7`, `app/llm/router.py:7-8` and `app/core/config.py`). It should have seen these issues. It didn't — and the cause is the **system prompt, the structured input, and the surrounding harness**, not the model's ability.
+External facts used to validate the setup:
 
-### 2.1 The LLM never sees today's date
+- PM closed at `191.86` on 2026-05-14, up `2.10%`, with a day range of
+  `187.63 - 192.92` and a 52-week range of `142.11 - 192.92`.
+- PM was at or near an all-time high around the recommendation.
+- PM's latest earnings date was 2026-04-22. This was already in the past.
+- Q1 2026 adjusted diluted EPS was `1.96`, ahead of the listed `1.83` forecast
+  in public summaries.
+- PM's official Q1 release showed strong group results, but also U.S. weakness:
+  U.S. net revenue down `30.8%` and U.S. SFP shipment volume down `21.2%`.
+- StockAnalysis listed average analyst target at `189.78`, slightly below the
+  2026-05-14 close.
+- NYSE core trading hours are 9:30 a.m. to 4:00 p.m. ET, and 2026-05-17 was a
+  Sunday.
 
-`app/llm/prompts/decide_recommendation.md` (the whole prompt, 86 lines) **contains zero references to current date, market hours, weekends, or US holidays**. The `DecisionInput` schema (`app/llm/schemas.py:75-81`) only carries `user_strategy_permission`, `risk_profile`, `account_size`, and `candidates[]`. **Today's date is not in the payload.**
+Sources:
 
-Effect: when "exit by 2026‑05‑17" is generated downstream, the model has no anchor to even recognise May 17 is a Sunday — it doesn't know what day it is right now. The model can probably guess from "expiry 2026‑05‑22" being a Friday, but it isn't told to check, and **it never sees the exit_by_date anyway** (see §2.2).
+- PM quote and metrics: https://stockanalysis.com/stocks/pm/
+- PMI Q1 2026 release: https://www.pmi.com/investor-relations/press-releases-and-events/press-releases-overview/press-release-details?newsId=29931
+- NYSE hours and holidays: https://www.nyse.com/trade/hours-calendars
+- Investing.com all-time-high note: https://www.investing.com/news/company-news/philip-morris-stock-hits-alltime-high-of-19157-usd-93CH-4689132
 
-### 2.2 The LLM never sees the exit plan
+Professional read:
 
-The bundle handed to the model (`_candidate_bundle` in `app/pipeline/steps/decide.py:420-467`) shows it:
+PM was a reasonable sector-relative-strength watchlist candidate. The problem
+was not "PM is bad." The problem was that the system transformed a defensive
+large-cap momentum setup into a short-dated OTM long-call recommendation without
+checking whether the holding-window math, catalyst window, target, and calendar
+made sense.
 
-- ticker, company name, earnings_date, current price, recent returns, trend, sector / market comparison, news_summary, strategy_source, expected_move, previous_earnings_move, data_confidence_score, **and `option_chain_candidates[:3]`** containing bid/ask/mid/IV/delta/breakeven.
+## Trade Math For The Exact PM Run
 
-It does **not** show the model:
+Using the exact stored values:
 
-- `exit_target.target_stock_price`
-- `exit_target.target_option_price`
-- `exit_target.stop_loss_option_price`
-- `exit_target.exit_by_date`
-- `exit_target.expected_holding_days`
-- `exit_target.target_method`
-- The current date.
+```text
+Spot: 191.86
+Strike: 195
+Entry ask: 1.98
+Breakeven: 196.98
+Target stock: 197.21
+IV: 27.35%
+Expiry: 2026-05-22
+Exit by: 2026-05-17 Sunday
+```
 
-The model picks `chosen_ticker` + `chosen_contract`. Then `app/pipeline/orchestrator.py:480-602` glues the deterministic exit plan to the recommendation **after the model has spoken**. The model literally never sees the exit_by_date, target stock price, or target option price it is endorsing.
+Required move:
 
-Asking the model to "be the final decision authority" while hiding half the recommendation from it is the core architectural mistake. The model is the decoration; the real decisions about when to exit and where the targets are belong to `ExitTargetService` — which knows nothing about weekends.
+- To strike: `195 / 191.86 - 1 = 1.64%`
+- To breakeven: `196.98 / 191.86 - 1 = 2.67%`
+- To stock target: `197.21 / 191.86 - 1 = 2.79%`
 
-### 2.3 The Sunday bug lives in pure date math
+Approximate one-trading-day sigma:
 
-`_planned_holding_days` (`app/services/exit_target.py:188-200`) is calendar arithmetic:
+```text
+191.86 * 0.2735 * sqrt(1 / 252) = about 3.31 dollars
+```
+
+Required target move in one trading day:
+
+```text
+(197.21 - 191.86) / 3.31 = about 1.6 sigma
+```
+
+Rough driftless probability of touching the target by the only realistic
+pre-exit trading day is around `11%`. That is not a high-quality "best setup"
+recommendation.
+
+Important correction to the earlier Claude report:
+
+- Claude's version used spot around 190 and described the required move as
+  roughly 3.8%. The exact stored run used spot 191.86 and a required target move
+  around 2.79%.
+- Claude described the target as mainly delta fallback. The exact artifact says
+  `target_method = full_greeks`. The high target came from a local Greek Taylor
+  projection where gamma contributed heavily.
+
+The conclusion is unchanged: this was not a good live recommendation. The
+correct reason is more precise: the target might be within the weekly expiry
+expected move, but it was not realistic for the actual Sunday exit window and no
+fresh catalyst.
+
+## Answers To The User's Three Questions
+
+### 1. Would I take the PM 195C?
+
+No. I would not take this exact contract. I would not listen to the bot's final
+recommendation as sent.
+
+PM had trend strength, but the trade was a 7-DTE OTM call with no named catalyst
+and a Sunday exit date. That is not the kind of option the system should send as
+the best, user-actionable setup.
+
+### 2. Why did the LLM miss Sunday and other simple facts?
+
+Because the LLM was not given the right facts and the validator did not enforce
+them.
+
+The decision payload omits:
+
+- reference date/time
+- NYSE calendar facts
+- DTE
+- trading sessions to expiry
+- proposed exit date
+- whether proposed exit date is tradable
+- target stock price
+- target option price
+- stop loss
+- required sigma to target
+- probability of touch
+- news article count and news failure status
+
+The LLM selected a ticker and a visible contract. The deterministic system then
+persisted the target, stop, and Sunday exit plan. The LLM never had to validate
+that final plan.
+
+Worse, in the exact PM run, the LLM hallucinated the time horizon and described
+the May 22, 2026 contract as having "~6 months of runway." This was possible
+because the prompt did not anchor the model to the current date or require it to
+compute DTE.
+
+### 3. Does the LLM rerank the top four?
+
+Yes. The deterministic layer ranks candidates and sends only the top finalists
+to the LLM. The LLM may choose any visible finalist and any visible viable
+contract for that finalist. Validation checks that the chosen ticker and
+contract exist, then recomputes/clamps scores.
+
+Relevant flow:
+
+- `app/pipeline/orchestrator.py:_select_decision_finalists`
+- `app/pipeline/steps/decide.py:build_decision_input`
+- `app/pipeline/steps/decide.py:validate_llm_decision`
+
+In the PM run, the LLM did not meaningfully rerank. PM was already the top
+structural candidate, and the LLM rubber-stamped it.
+
+## Root Causes, Prioritized
+
+### P0-1: UTC Date Is Used As The Trading Valuation Date
+
+Location:
+
+- `app/pipeline/orchestrator.py:_analyze_candidate`
+
+Current behavior:
+
+```python
+valuation_date = effective_reference_dt.date()
+```
+
+This uses UTC date. The PM run finished at `2026-05-15T00:07:46Z`, which was
+still the evening of 2026-05-14 in North America and after the 2026-05-14 market
+close. The options and stock data were effectively 2026-05-14 data, but the
+pipeline treated the valuation date as 2026-05-15.
+
+Why this matters:
+
+- Expiry filtering changes when UTC crosses midnight.
+- The front-expiry expected-move calculation can jump to a different expiry.
+- Exit-horizon math changes.
+- DTE math becomes inconsistent with actual market session data.
+
+Evidence:
+
+- Earlier PM recommendation variants used `expected_move_percent = 0.012250`
+  and target option `2.46`.
+- Later variants after UTC date rolled used `expected_move_percent = 0.027889`
+  and target option `4.09`.
+
+Fix:
+
+- Use NYSE/Eastern session date, not UTC date, for trading calculations.
+- Add helper(s) to `app/services/market_hours.py`:
+  - `trading_reference_date(reference_dt: datetime) -> date`
+  - `is_trading_session(day: date) -> bool`
+  - `previous_trading_session(day: date) -> date`
+  - `next_trading_session(day: date) -> date`
+  - `trading_sessions_between(start: date, end: date) -> tuple[date, ...]`
+- Use these helpers in orchestrator, exit target, expected move, position
+  monitoring, and tests.
+- If a manual scan runs after NYSE close, use the current ET date if the quotes
+  are from that session. If quote timestamps prove stale, either block the trade
+  or label it after-hours/watchlist only.
+
+Acceptance tests:
+
+- A reference datetime of `2026-05-15T00:07:46Z` must resolve to NYSE trading
+  date `2026-05-14`, not `2026-05-15`.
+- The PM fixture should not change target from `2.46` to `4.09` only because UTC
+  rolled over while the market session did not.
+
+### P0-2: Exit Dates Ignore Market Sessions
+
+Location:
+
+- `app/services/exit_target.py:_planned_holding_days`
+- `app/services/exit_target.py:ExitTargetService.build`
+
+Current behavior:
 
 ```python
 latest_safe_exit = expiry - timedelta(days=5)
-...
-return min(max_days, 7)
+exit_by_date = valuation_date + timedelta(days=planned_holding_days)
 ```
 
-`exit_by_date = valuation_date + timedelta(days=planned_holding_days)` (line 74). No `numpy.busday_offset`, no `pandas_market_calendars`, no NYSE holiday list. With today = Fri May 15 and expiry = Fri May 22:
+This is calendar arithmetic. It produced `2026-05-17`, a Sunday.
 
+Fix:
+
+- Replace calendar-day exit date construction with NYSE session logic.
+- Store both:
+  - `expected_holding_calendar_days`
+  - `expected_holding_trading_days`
+- For long options, `exit_by_date` must always be a tradable session.
+- If the computed safe exit rolls to a non-trading day, roll to the previous
+  trading session only if that still leaves a meaningful holding window.
+- If the previous trading session is the valuation date and the market is closed
+  or nearly closed, reject the contract or force watchlist.
+
+Acceptance tests:
+
+- Valuation date Friday 2026-05-15, expiry Friday 2026-05-22 must never produce
+  Sunday 2026-05-17 as `exit_by_date`.
+- If safe exit rolls back to same day with no actionable trading session left,
+  the contract must be rejected.
+
+### P0-3: Expected Move Is Scored Against Expiry, Not Exit Horizon
+
+Location:
+
+- `app/pipeline/orchestrator.py:_expected_move_percent`
+- `app/scoring/contract.py:_score_breakeven`
+- `app/services/exit_target.py:_expected_move_fraction`
+
+Current behavior:
+
+- Expected move is calculated from the front-expiry straddle.
+- Breakeven feasibility compares required move to that expiry move.
+- Exit target uses that move, then sets a shorter exit window.
+
+For PM, the system judged the target using an approximate weekly move, then told
+the user to exit by Sunday. That is internally inconsistent.
+
+Fix:
+
+Create separate fields:
+
+- `expected_move_to_expiry_percent`
+- `expected_move_to_exit_percent`
+- `expected_move_source_expiry`
+- `trading_days_to_exit`
+- `trading_days_to_expiry`
+
+Use `expected_move_to_exit_percent` for:
+
+- target feasibility
+- breakeven feasibility
+- required sigma
+- probability of touch
+- hard vetoes
+- LLM payload
+
+Keep expiry move for context only.
+
+Acceptance tests:
+
+- PM fixture must calculate the target feasibility over the exit horizon, not
+  the expiry horizon.
+- A weekly expected move cannot justify a target that must be hit in one
+  trading session unless a named catalyst exists.
+
+### P0-4: No Probability/Required-Sigma Gate Exists
+
+Location:
+
+- `app/scoring/vetoes.py`
+- `app/scoring/contract.py`
+
+Current hard vetoes cover missing data, bad expiry, quote problems, dead
+contracts, extreme spreads, stale contracts, sizing, and strategy permission.
+
+They do not cover:
+
+- target probability of touch
+- probability of profit
+- required sigma to strike
+- required sigma to breakeven
+- required sigma to target
+- target/horizon mismatch
+- no-catalyst weekly lottery risk
+
+Fix:
+
+Add deterministic option reality metrics before final scoring:
+
+```text
+required_sigma_to_strike
+required_sigma_to_breakeven
+required_sigma_to_target
+approx_probability_touch_target
+approx_probability_expire_itm
+spread_cost_percent
+theta_cost_to_exit
+has_named_catalyst_before_exit
 ```
-latest_safe_exit = May 22 − 5 = May 17 (Sunday)
-planned_holding_days = (May 17 − May 15).days = 2
-exit_by_date = May 15 + 2 = May 17 (Sunday)
+
+Implementation location options:
+
+- New module: `app/scoring/probability.py`
+- New dataclass: `OptionRealityCheck`
+- Attach to `ContractScoreResult` or expose through a parallel field.
+
+Minimum P0 vetoes:
+
+- `invalid_exit_session`
+- `low_pot_no_catalyst`
+- `target_unreachable_by_exit`
+- `weekly_otm_no_catalyst`
+- `breakeven_outside_exit_move`
+
+Suggested thresholds for first implementation:
+
+```text
+For long OTM calls/puts without a named catalyst:
+- DTE below 10 calendar days: hard veto
+- trading days to exit below 3: hard veto unless catalyst before exit
+- required_sigma_to_target > 1.00 over exit horizon: hard veto
+- approximate target POT < 35%: hard veto
+- breakeven outside 1.00 exit-horizon sigma: hard veto or severe penalty
+
+For non-catalyst sector/coiled trades:
+- prefer DTE 14-45 calendar days
+- target must be inside 0.75-1.00 exit-horizon sigma
+- no strong/recommend band if news is unavailable
 ```
 
-So it's literally a one‑line bug that surfaces every time the weekly expiry is exactly 7 days away and "today" is a Friday.
+The exact thresholds should be tuned after paper-trade/backtest results, but
+the first version must fail closed. No probability gate is worse than a
+conservative threshold.
 
-### 2.4 The prompt biases the LLM toward acting
+Acceptance test:
 
-The prompt's "Confidence band → action mapping" (decide_recommendation.md:42‑56) is the only place the prompt frames the *decision* itself:
+- The PM 195C fixture must become `watchlist` or `no_trade`; it must not be a
+  live `recommend`.
 
+### P0-5: Non-Catalyst Strategies Can Select Weekly Long Options
+
+Location:
+
+- `app/scoring/strategy_policy.py`
+- `app/scoring/expiry.py`
+- `app/scoring/strategy_select.py`
+
+Current policy:
+
+```python
+NO_EARNINGS_REQUIRED_STRATEGIES = {
+    "coiled_setup",
+    "sector_relative_strength",
+    "activist_13d_followthrough",
+}
 ```
-strong   → recommend
-standard → recommend
-watchlist → watchlist
-no_trade → no_trade
+
+That part is correct. These strategies should not require earnings.
+
+The problem is what happens next: once a no-earnings candidate reaches scoring,
+it can still receive a high score for a 7-DTE long call. In `score_expiry_fit`,
+long options with no earnings receive full strategy preference for `7 <= days <=
+30`.
+
+Fix:
+
+Create strategy-specific trade policies.
+
+Suggested structure:
+
+```python
+@dataclass(frozen=True)
+class StrategyTradePolicy:
+    min_dte_calendar: int
+    max_dte_calendar: int
+    min_trading_days_to_exit: int
+    max_required_sigma_to_target: Decimal
+    min_target_touch_probability: Decimal
+    allow_weeklies_without_named_catalyst: bool
+    max_spread_percent: Decimal
+    preferred_contract_sides: tuple[Strategy, ...]
 ```
 
-There is **no instruction** that says:
+Initial policy suggestions:
 
-- "If you can't justify a probability‑of‑touch ≥ X% by the holding horizon, refuse."
-- "If the required move exceeds Y σ over the holding period, refuse."
-- "If the contract is OTM with no catalyst inside the expiry window, refuse."
-- "Compute the probability the stock reaches the strike before exit and reject if it's too low."
+```text
+catalyst_confluence:
+  DTE: event-timed, normally 3-21 after earnings rules
+  Weeklies: allowed only when earnings/date catalyst is in window
 
-The prompt is structurally an "interpret + transcribe" prompt, not a "reason from first principles" prompt. It tells the model to **weigh** direction / news / liquidity / IV — but it does not arm it with the *quantitative reality checks* a human options trader would apply. Combined with `temperature=0.0` and `seed=0` (`router.py:111`), the model behaves like a deterministic interpreter, exactly as the user described.
+pead_continuation:
+  DTE: 14-35
+  Target horizon: 5-15 trading days
+  Must have confirmed earnings-surprise/reaction event
 
-### 2.5 "Confidence 83" is not what the user thinks it is
+coiled_setup:
+  DTE: 14-45
+  Weeklies: no, unless new breakout catalyst exists
+  Need volume acceleration or volatility contraction evidence
 
-`_band_from_score` in `decide.py:551-559` maps ≥78 → `strong`. The 83 here is the **structural composite score** (0.45·direction + 0.55·contract, capped 0–100; `app/scoring/final.py:22-26`). It has **nothing to do with the probability the trade is profitable.** The "Confidence: 83/100, Risk level: High" on the Telegram card reads like "83% likely to win" — it is closer to "the structural scoring rubric gave this candidate a B+".
+sector_relative_strength:
+  DTE: 14-45
+  Weeklies: no
+  Target horizon: 5-15 trading days
+  Prefer ATM/slightly ITM calls, not cheap far OTM calls
 
-### 2.6 The scoring engine has no probability‑of‑touch (POT) gate
+activist_13d_followthrough:
+  DTE: 14-45
+  Weeklies: no
+  Must have fresh filing/event signal
+```
 
-`evaluate_hard_vetoes` (`app/scoring/vetoes.py`) checks: earnings_missing, missing_current_price, missing_option_chain, invalid_expiry, missing_quote, dead_contract, extreme_spread, stale_contract, zero_contracts, strategy_permission. **No POT veto. No "target requires > N σ move" veto. No "strike unreachable in holding window" veto.**
+Acceptance tests:
 
-`_score_breakeven` (`contract.py:162-199`) compares required move to `_context_move` — the **max** of `expected_move_percent` (front‑month straddle) and `previous_earnings_move_percent`. For PM with `expected_move_percent` ≈ 2% (from the front‑month straddle) and **no `previous_earnings_move_percent`** (the catalyst arm didn't fire it), this comparison is loose: ratio = 2% / 3.67% ≈ 0.55, which buckets to `unit = 0.2` → **4/20 points**. So breakeven scored low, but the other 80 points on the contract carried it through to viable, and direction + contract combined to **final_score ≈ 65–70**. The combined score is then bumped to "83 confidence" — wait, those are different numbers; let me be precise:
+- A sector-relative-strength PM candidate with 7-DTE OTM long call is rejected.
+- A sector-relative-strength candidate with 21-DTE ATM/slightly ITM long call
+  can still pass if probability and liquidity are acceptable.
 
-- `final_score = combine_scores(direction_score, contract_score)` (line 22, range 0–100)
-- `confidence_score` written to the recommendation = `outcome.selected.evaluation.final_score` (`orchestrator.py:528`)
-- So **"Confidence: 83" IS the final_score**, which is 0.45 · direction + 0.55 · contract.
+### P0-6: The LLM Does Not See The Final Trade Plan
 
-For PM to be 83, both pillars had to be strong, which means the structural direction model saw PM as bullish (it has been trending up, +RS vs SPY, decent volume). It rewards a slowly‑grinding uptrend as much as it rewards a coiled spring near a real catalyst. **There is no concept of "catalyst‑adjusted edge" in the score.**
+Location:
 
-### 2.7 The `NO_EARNINGS_REQUIRED_STRATEGIES` path is too permissive
+- `app/llm/schemas.py`
+- `app/pipeline/steps/decide.py:_candidate_bundle`
+- `app/pipeline/steps/decide.py:_option_chain_candidate`
+- `app/llm/prompts/decide_recommendation.md`
 
-`app/scoring/strategy_policy.py:5-11` lets `coiled_setup`, `sector_relative_strength`, and `activist_13d_followthrough` skip the earnings veto. That's fine in principle — those arms have their own catalysts (volatility contraction, sector breakout, 13D filing). But once a candidate from those arms reaches the scorer, it goes through the **same** scoring path as catalyst trades, with the **same** OTM weekly call selection. There is no rule that says "non‑catalyst strategies must use 30–45 DTE, not 7 DTE" or "non‑catalyst strategies require the target to be within 1 σ over the holding window."
+Current `OptionChainCandidate` sent to the LLM includes:
 
-PM almost certainly came in from `sector_relative_strength` (defensives have outperformed in the past month) or `pead_continuation` lagging from the April 22 print. Either way, the system happily wrote it up as a weekly OTM call as if it were an earnings play.
+- option type
+- position side
+- strike
+- expiry
+- bid/ask/mid
+- spread percent
+- IV
+- delta
+- volume
+- open interest
+- liquidity score
+- breakeven
 
----
+It does not include:
 
-## 3. Does the LLM rerank the top 4, or keep the scoring order?
+- current/reference date
+- DTE
+- trading sessions to expiry
+- proposed exit date
+- whether exit date is a trading session
+- target stock
+- target option
+- stop
+- expected holding days
+- target method
+- required sigma
+- probability of touch
+- theta cost to exit
 
-**It reranks. It is not bound to the scoring rank.**
+Fix:
 
-The flow is in `app/pipeline/orchestrator.py:165-236` and `app/pipeline/steps/decide.py:75-181`:
+Extend schemas:
 
-1. `_select_decision_finalists` (orchestrator.py:841‑854) sorts candidates by `(final_score, confidence, direction_score)` and **passes the top 4 to the LLM**.
-2. `LLMDecisionStep.execute` calls `LLMRouter.decide` with the bundle of 4 candidates.
-3. The LLM returns `chosen_ticker` — **any one of the 4** (decide_recommendation.md, "Hard rules" §2).
-4. `validate_llm_decision` (decide.py:203-311):
-   - Verifies the chosen ticker is in the candidates list and the chosen contract is in that ticker's visible chain.
-   - **Recomputes** `structural_final_score = combine_scores(direction.score, matched_contract.score)` for the LLM's chosen ticker (line 265-268).
-   - **Recomputes** `structural_band` from the LLM's pick (line 269-277).
-   - Clamps the user‑visible band: `final_band = _min_band(nominated_band, structural_band)` — meaning the LLM **cannot upgrade** beyond what the structural floor allows, but it can **downgrade** (e.g., choose "watchlist" even if structurally "strong") and it can **refuse** entirely (`action="no_trade"`).
+```python
+class DecisionInput:
+    reference_datetime_et: datetime
+    reference_trading_date: date
+    next_market_session: date | None
+    market_calendar_notes: list[str]
+    ...
 
-So:
+class OptionChainCandidate:
+    ...
+    dte_calendar: int
+    dte_trading_sessions: int
+    proposed_exit_by: date | None
+    proposed_exit_is_trading_session: bool | None
+    expected_holding_calendar_days: int | None
+    expected_holding_trading_days: int | None
+    proposed_target_stock: Decimal | None
+    proposed_target_option: Decimal | None
+    proposed_stop_option: Decimal | None
+    target_method: str | None
+    required_sigma_to_target: Decimal | None
+    required_sigma_to_breakeven: Decimal | None
+    approx_probability_touch_target: Decimal | None
+    has_named_catalyst_before_exit: bool
+    reality_check_flags: list[str]
+```
 
-- **Rank is rebuilt around the LLM's pick.** If the structural #3 had the LLM's vote, the user sees the structural #3's score, not the structural #1's score.
-- The structural ranking only matters to decide **which 4 go to the LLM**. After that, **the LLM is the arbiter**.
-- Concretely, that means a model fixing the issues in this doc (POT gate, business‑day check, lottery‑ticket veto) could refuse PM and pick #2/#3/#4 — or pick `no_trade` for the whole batch.
+Prompt requirements:
 
-The current behaviour is **the LLM rerubber‑stamped the structural #1**, because (a) the prompt doesn't ask it to apply any quantitative reality checks, and (b) the structural score and the structural rank align with the prompt's "strong → recommend" bias.
+- The LLM must state DTE correctly in its rationale.
+- The LLM must refuse or downgrade if the exit date is not a trading session.
+- The LLM must refuse or downgrade if `reality_check_flags` contains a P0 flag.
+- The LLM must cite required sigma and target probability for any recommend.
+- The LLM must not call a contract "long-dated" unless DTE is above a defined
+  threshold, e.g. 45 calendar days.
 
----
+Acceptance tests:
 
-## 4. Other issues found while auditing
+- Decision input JSON for PM includes `reference_trading_date`,
+  `proposed_exit_by`, `proposed_exit_is_trading_session`, DTE, target, stop,
+  required sigma, and probability fields.
+- A mocked LLM that says "6 months of runway" for a 7-DTE option should be
+  rejected by validation or the test should prove deterministic checks prevent
+  the recommendation before LLM.
 
-1. **`Confidence: 83/100`** vs. **`Risk level: High`** in the same card. Two scores that move in opposite emotional directions, both derived from the same input, no separate "estimated probability of profit" number. UX bug.
-2. **`Earnings date: No earnings catalyst`** is printed but the bot still recommends a 7‑DTE OTM call with a 2‑day "stock target" — i.e., the *consumer of the message* is shown evidence that this is a catalyst‑driven contract being sold without a catalyst. The system itself doesn't notice that contradiction.
-3. **`Stop note: Mental alert only, not a broker order.`** Fine, but combined with "Exit by 2026‑05‑17 (Sunday)" the user is being told to *manually* exit on a day the market is closed.
-4. The LLM is configured with `temperature=0.0`, `seed=0` (`router.py:111-112`), `reasoning_effort` default "medium" (`router.py:173`). Deterministic, but with a thin prompt, the model takes the path of least resistance — pick rank 1, return "strong/recommend".
-5. The system prompt forbids the LLM from filling `contract_score` / `final_score` ("Hard rules"). Fine. But it also doesn't ask the LLM to surface a **qualitative win‑probability or risk‑of‑ruin assessment** — anything that would force it to *think* before approving a setup.
-6. `_select_decision_finalists` runs on `refreshed_candidates or preliminary_finalists` (orchestrator.py:216‑218). If the news‑refresh step fails for all 4 finalists, the system silently falls back to the news‑less ranking. That should at least cap the band at `watchlist`, not `strong`.
-7. The retry path for invalid LLM JSON (`_build_corrective_prompt`, decide.py:631-646) **doesn't add the date or any new tooling** — it just tells the model "you got it wrong, try again". For systematic prompt gaps, retrying won't help.
+### P0-7: News Fallbacks Default To "Adequate"
 
----
+Location:
 
-## 5. Fixes — ordered by impact
+- `app/services/news/types.py`
+- `app/pipeline/orchestrator.py:_deferred_news_bundle`
+- `app/pipeline/orchestrator.py:_fallback_news_bundle`
+- `app/services/news/summarizer.py:_failure_brief`
 
-### 5.1 Must‑fix (correctness)
+Problem:
 
-1. **Business‑day exit dates.** In `app/services/exit_target.py:_planned_holding_days`, snap `latest_safe_exit` and `exit_by_date` to NYSE trading days. Use `exchange_calendars` (lightweight, pure Python, async‑safe) or roll your own with `pandas` `USFederalHolidayCalendar` plus the half‑day list:
+`NewsBundle.news_coverage` defaults to `"adequate"`. Fallback/deferred bundles
+do not override it. Therefore the LLM can see evidence like:
 
-   ```python
-   import exchange_calendars as xcals
-   nyse = xcals.get_calendar("XNYS")
-   exit_by_date = nyse.previous_session(expiry - pd.Timedelta(days=1)).date()
-   if exit_by_date <= valuation_date:
-       exit_by_date = nyse.next_session(valuation_date).date()
-   ```
+```text
+Data confidence 94, news coverage adequate, not stale
+```
 
-   Also apply the same calendar to `_target_pricing_days` so theta is charged for **trading** days, not calendar days.
+while also saying:
 
-2. **Inject today's date and a market‑calendar block into the decide prompt.** Extend `DecisionInput` with:
+```text
+News service unavailable
+```
 
-   ```python
-   class DecisionInput(_Frozen):
-       reference_date: date
-       upcoming_market_holidays: list[date]
-       ...
-   ```
+That contradiction appeared in the PM recommendation.
 
-   And add to the system prompt a `## Calendar facts` section: "today is {date}, weekly options expire Fridays unless that Friday is a holiday, next non‑trading days are {…}".
+Fix:
 
-3. **Show the LLM the proposed exit plan.** Add `proposed_exit` to each `OptionChainCandidate`:
+- Change fallback and deferred news bundles to set `news_coverage="none"`.
+- Set `stale_news=True` or a dedicated `news_status="unavailable"` when news
+  failed due API/model/search problems.
+- If `NewsBrief.key_uncertainty == "news service unavailable"`, force coverage
+  to `none` and cap recommendation for non-catalyst strategies.
+- Include article count, source count, and failure reason in LLM payload.
 
-   ```python
-   class OptionChainCandidate(_Frozen):
-       ...
-       proposed_target_stock: Decimal | None = None
-       proposed_target_option: Decimal | None = None
-       proposed_stop_option: Decimal | None = None
-       proposed_exit_by: date | None = None
-       expected_holding_trading_days: int | None = None
-   ```
+Acceptance tests:
 
-   And explicitly tell the model in the prompt: "If the proposed `proposed_exit_by` is not a US trading day, refuse this contract or surface the issue in `key_concerns`." That alone would have caught Sunday.
+- `_fallback_news_bundle` returns `news_coverage == "none"`.
+- `_deferred_news_bundle` returns `news_coverage == "none"` or a distinct
+  `"deferred"` status, not `"adequate"`.
+- PM-like non-catalyst candidate with unavailable news cannot be `strong` or
+  `recommend` unless deterministic event data is sufficient and probability
+  checks pass.
 
-### 5.2 Should‑fix (quality / probability)
+### P0-8: LLM Output Has No Factual-Consistency Validator
 
-4. **Add a probability‑of‑touch / probability‑of‑profit gate.** Either in `app/scoring/vetoes.py` or as a new soft penalty:
+Location:
 
-   ```python
-   def _required_sigmas(strike, spot, iv, dte):
-       sigma_dte = iv * sqrt(dte / 365)
-       return (strike - spot) / (spot * sigma_dte)
+- `app/pipeline/steps/decide.py:validate_llm_decision`
 
-   if position_side == "long" and required_sigmas > 1.25 and earnings_date is None:
-       vetoes.append(HardVeto("low_pot_no_catalyst", "..."))
-   ```
+Current validation checks:
 
-   The user spec is "increase winning rate" — this is the single biggest lever.
+- action/band consistency
+- chosen ticker exists
+- chosen contract exists in visible chain
+- LLM cannot inflate numeric score
 
-5. **Tighten non‑catalyst strategies.** In `app/scoring/strategy_policy.py`, add a new policy module:
+It does not validate:
 
-   ```python
-   NON_CATALYST_MIN_DTE = 14
-   NON_CATALYST_MAX_REQUIRED_SIGMAS = 1.0
-   ```
+- DTE claims in rationale
+- "long-dated" vs actual DTE
+- "news coverage adequate" vs news failure
+- "breakeven inside expected move" against correct horizon
+- exit date being tradable
+- target/stop realism
 
-   And gate `coiled_setup` / `sector_relative_strength` / `activist_13d_followthrough` to **14–45 DTE** and **target within 1 σ over holding window**. Lottery weeklies should only exist for **named catalysts**.
+Fix:
 
-6. **Tighten the LLM prompt** in `decide_recommendation.md`. Add a quantitative checklist the model is required to run before choosing `recommend`:
+Prefer deterministic blocking before LLM. But still add final validation:
 
-   ```
-   ## Reality checks (run BEFORE choosing a confidence band)
-   Compute and weigh:
-   - Required σ to hit the target stock price by `proposed_exit_by`,
-     using `implied_volatility` and trading days remaining.
-   - Whether `proposed_exit_by` is a US trading day.
-   - Whether there is a named catalyst inside `[reference_date,
-     proposed_exit_by]`. For a long OTM weekly with no catalyst,
-     default to `watchlist` or `no_trade`.
-   - Whether the contract's breakeven is reachable inside one IV-implied
-     σ over the holding window.
-   If any of these fail, the floor is `watchlist` regardless of
-   structural scoring; if two or more fail, the answer is `no_trade`.
-   ```
+- If selected contract has any P0 reality flag, force `no_trade`.
+- If selected contract has `proposed_exit_is_trading_session=False`, force
+  `no_trade`.
+- If LLM rationale contains obvious contradictory horizon language, retry once
+  with a corrective prompt. If still contradictory, force `no_trade`.
+- Better: require the LLM response to include structured fields:
+  - `dte_calendar_observed`
+  - `exit_date_observed`
+  - `target_probability_observed`
+  - `primary_rejection_risks`
+  Then validate them exactly.
 
-   Then in `rationale`, the model must cite the σ figure. This **forces** the model to think rather than transcribe.
+Acceptance tests:
 
-7. **Surface "estimated win probability" as a first‑class number** in the Telegram card. Either delta‑based or a real BS POP/POT. Demote "Confidence" to a secondary line, or rename it "Setup Score" so users stop interpreting it as a probability.
+- A mocked LLM response that selects PM and claims "~6 months of runway" must
+  not survive validation for a 7-DTE option.
 
-8. **Cap the LLM's band when news is missing/stale or the strategy is non‑catalyst.** In `validate_llm_decision`, if `news_coverage == "none"` or `stale_news == True` or `strategy_source ∈ NO_EARNINGS_REQUIRED_STRATEGIES`, force `final_band = min(final_band, "standard")` and lower `direction_strength` to `moderate`. Stop letting non‑catalyst trades wear a "strong" badge.
+## Secondary Root Causes
 
-### 5.3 Nice‑to‑have
+### P1-1: "Confidence" Is Not Win Probability
 
-9. **Honest theta in target projection.** In `ExitTargetService`, charge theta over the **full** holding window (in trading days), not `min(planned_holding_days, 2)`. The current cap was probably written to avoid over‑penalising very‑near‑dated trades, but it produces inflated `target_option_price` numbers.
+Location:
 
-10. **A second LLM pass for "play devil's advocate".** After the heavy model picks a contract, run a cheap second call (`summarize` route is fine) with the prompt "given this exact recommendation, list the strongest arguments against it; if any are dispositive, downgrade to `watchlist`". This is the cheapest way to introduce the kind of skepticism a human trader applies.
+- `app/scoring/final.py:combine_scores`
+- `app/pipeline/orchestrator.py:persist_recommendation`
+- `app/telegram/templates/main_recommendation.py`
 
-11. **Add `reasoning_effort = "high"` for the decide route.** It currently defaults to `"medium"` (`router.py:173`). Opus thinks meaningfully better at `high` for this kind of multi‑variable judgment, and one decision per user per week is well within token budget.
+Current "Confidence" is structural opportunity score:
 
----
+```python
+0.45 * direction_score + 0.55 * contract_score
+```
 
-## 6. Verdict
+It is not:
 
-The bot's PM 195C suggestion is **not** a "decent job". It's a mechanically valid choice from a scoring engine that doesn't understand:
+- probability of profit
+- probability of target
+- expected value
+- LLM confidence
 
-- weekends,
-- catalyst windows,
-- probability of touch, and
-- what "confidence" should mean to a user.
+Fix:
 
-The LLM didn't catch any of this because the prompt and the structured input deliberately hide the relevant variables from it (no date, no exit plan, no instruction to compute POT, no permission to apply quantitative vetoes). It is acting as a "dumb interpreter" because the surrounding code treats it as a dumb interpreter. The model is capable of the analysis above — but only when it is *asked* to do it and *given the inputs* to do it with.
+- Rename Telegram field from `Confidence` to `Setup score`.
+- Add separate fields:
+  - `Estimated target touch chance`
+  - `Estimated breakeven chance`
+  - `DTE`
+  - `Trading sessions to planned exit`
+  - `Strategy source`
+  - `Catalyst`
 
-Concretely, three changes would have prevented this exact recommendation:
+Do not show a high 0-100 number next to "High risk" without explaining what it
+means.
 
-1. Snap `exit_by_date` to NYSE trading days (§5.1.1).
-2. Add a "required σ" gate for long OTM weeklies without a catalyst (§5.2.4).
-3. Pass today's date + the proposed exit plan into the LLM prompt and require it to run reality checks (§5.1.2, §5.1.3, §5.2.6).
+### P1-2: Risk Level Is Too Crude
 
-Implementing §5.1 + §5.2 in that order would, on this specific scan, have downgraded PM to `watchlist` (no catalyst, OTM, sub‑1σ window) or `no_trade`, freed up the slot for finalists #2 / #3 / #4, and removed the Sunday‑exit absurdity from every weekly card going forward.
+Location:
+
+- `app/pipeline/orchestrator.py:_risk_level`
+
+Current behavior:
+
+```python
+if short: High
+if final_score >= 78: High
+else: Moderate
+```
+
+This makes PM `High` only because the score was high. Risk should come from
+contract risk, not opportunity score.
+
+Fix:
+
+Risk level should consider:
+
+- DTE
+- moneyness
+- probability of touch
+- IV percentile or IV level
+- spread
+- liquidity
+- no-catalyst status
+- account sizing
+- gap/overnight risk
+
+Suggested labels:
+
+- `Low`, `Moderate`, `High`, `Speculative`
+
+For the PM 195C fixture, risk should be `Speculative` or `High`, and the action
+should be `no_trade` or `watchlist`.
+
+### P1-3: Cheap Contracts Can Win Because Better Contracts Exceed Risk Budget
+
+Location:
+
+- `app/scoring/contract.py:_score_premium_fit`
+- `app/scoring/vetoes.py:evaluate_hard_vetoes`
+- `app/scoring/strike.py:select_strike_candidates`
+
+The PM chain had better, more sensible contracts, but many were rejected because
+the account risk budget allowed zero contracts. The system then elevated the
+cheaper near-expiry OTM contract.
+
+That is dangerous. If the only affordable contract is structurally poor, the
+right output is no trade.
+
+Fix:
+
+- Add a quality floor independent of affordability.
+- If all quality contracts exceed risk budget and the remaining affordable
+  contracts are low-probability, return `no_trade`.
+- Do not let "1 contract fits risk" override target probability.
+
+Acceptance test:
+
+- If a PM-like chain has sensible contracts rejected by risk budget and only a
+  7-DTE OTM low-POT call affordable, final action is `no_trade`.
+
+### P1-4: Local Greek Projection Can Overstate Target Option Price
+
+Location:
+
+- `app/services/exit_target.py`
+
+The PM target used full Greeks:
+
+```text
+current_mid + delta * move + 0.5 * gamma * move^2 + theta * days + vega * IV_change
+```
+
+For PM:
+
+```text
+1.855 + 0.359 * 5.35 + 0.5 * 0.0481 * 5.35^2 - 0.1881 * 2 = about 4.09
+```
+
+This is a local Taylor approximation. For a large move relative to DTE and an
+OTM option moving toward/through the strike, gamma can overstate the realistic
+target if used mechanically.
+
+Fix:
+
+- Prefer Black-Scholes/Bjerksund-style repricing when IV, DTE, strike, and spot
+  are available.
+- Use Greek projection only as fallback.
+- Cap target option price against repriced theoretical value plus a conservative
+  liquidity/slippage haircut.
+- Charge theta over trading sessions to exit, not arbitrary calendar days.
+- Make target price primary based on realistic exit-horizon repricing, not
+  optimistic local gamma.
+
+Acceptance test:
+
+- PM target projection should be sanity-checked by an option repricer. If the
+  target price requires a low-probability target move, reject the contract
+  regardless of projected target gain.
+
+### P1-5: "Weekly Earnings Options Signal" Is Wrong For Non-Earnings Strategies
+
+Location:
+
+- `app/telegram/templates/main_recommendation.py`
+
+The PM message title said:
+
+```text
+Weekly Earnings Options Signal
+```
+
+But PM had:
+
+```text
+Earnings date: No earnings catalyst
+Strategy source: sector_relative_strength
+```
+
+Fix:
+
+- Template title should depend on strategy source.
+- Examples:
+  - `Earnings Options Signal`
+  - `Post-Earnings Drift Options Signal`
+  - `Sector Relative Strength Options Signal`
+  - `Coiled Setup Options Signal`
+  - `Activist 13D Options Signal`
+- If no earnings catalyst, do not brand the card as an earnings signal.
+
+### P1-6: Finalist News Refresh Failure Should Cap Or Block
+
+Location:
+
+- `app/pipeline/orchestrator.py:evaluate_batch`
+- `app/pipeline/orchestrator.py:_analyze_candidate`
+- `app/services/news/summarizer.py`
+
+If finalist news fails, the system should not silently keep a high-confidence
+structural trade for non-catalyst setups.
+
+Fix:
+
+- If live finalist news fails:
+  - record `news_status="failed"`
+  - cap non-catalyst trades at `watchlist`
+  - require explicit deterministic event evidence to recommend anyway
+- Do not let `DataConfidence` stay 94 when news is unavailable and the LLM
+  claims news is a key concern.
+
+## Implementation Plan
+
+Follow this order. Do not start by changing the prompt. Prompt changes are not
+enough. The deterministic scoring and validation layer must fail closed before
+the LLM is allowed to approve a trade.
+
+### Phase 0: Add Regression Fixtures First
+
+Create a PM fixture from run `9b7d22b3-61be-4d63-b090-5c7a72737e9a`.
+
+Minimum fixture fields:
+
+- reference datetime: `2026-05-15T00:07:46Z`
+- expected NYSE trading date: `2026-05-14`
+- ticker: `PM`
+- spot: `191.86`
+- strategy source: `sector_relative_strength`
+- earnings date: `None`
+- event signal: XLP +4.4%, percentile 60%
+- option:
+  - 195C
+  - expiry 2026-05-22
+  - bid 1.73
+  - ask 1.98
+  - mid 1.855
+  - IV 0.2735
+  - delta 0.359
+  - gamma 0.0481
+  - theta -0.1881
+  - vega 0.1062
+  - volume 144
+  - spread 13.48%
+
+Tests to add before implementation:
+
+- `test_trading_reference_date_uses_nyse_date_not_utc`
+- `test_exit_target_never_returns_weekend_exit`
+- `test_pm_weekly_no_catalyst_contract_is_not_recommendable`
+- `test_expected_move_to_exit_is_used_for_target_feasibility`
+- `test_fallback_news_bundle_is_not_adequate`
+- `test_decision_payload_contains_exit_plan_and_reality_metrics`
+- `test_llm_cannot_claim_months_of_runway_for_7_dte_contract`
+
+### Phase 1: Market Calendar And Valuation Date
+
+Files:
+
+- `app/services/market_hours.py`
+- `app/pipeline/orchestrator.py`
+- `tests/test_market_hours.py`
+- `tests/test_pipeline_orchestrator.py`
+
+Steps:
+
+1. Extend `market_hours.py` with session-date helper functions.
+2. Replace UTC `.date()` valuation with NYSE-aware trading reference date.
+3. Ensure after-hours manual scans do not use tomorrow's UTC date for today's
+   market data.
+4. Store/log reference datetime ET and reference trading date.
+
+### Phase 2: Exit Date Correctness
+
+Files:
+
+- `app/services/exit_target.py`
+- `tests/test_exit_target_service.py`
+
+Steps:
+
+1. Replace `_planned_holding_days` calendar-only logic with session-aware logic.
+2. Return/store trading-session count.
+3. Reject contracts whose safe exit date is not actionable.
+4. Add Sunday/holiday/early-close tests.
+
+### Phase 3: Expected-Move And Probability Reality Checks
+
+Files:
+
+- `app/pipeline/orchestrator.py`
+- `app/scoring/probability.py` (new)
+- `app/scoring/types.py`
+- `app/scoring/contract.py`
+- `app/scoring/vetoes.py`
+- `tests/test_scoring_engine.py`
+
+Steps:
+
+1. Split expiry expected move from exit-horizon expected move.
+2. Add required-sigma and probability metrics.
+3. Add hard vetoes for low-probability no-catalyst contracts.
+4. Add soft penalties for borderline but not fatal setups.
+5. Make PM fixture fail closed.
+
+### Phase 4: Strategy-Specific Contract Policy
+
+Files:
+
+- `app/scoring/strategy_policy.py`
+- `app/scoring/expiry.py`
+- `app/scoring/strike.py`
+- `app/scoring/strategy_select.py`
+- `tests/test_scoring_fairness.py`
+- `tests/test_scoring_engine.py`
+
+Steps:
+
+1. Add `StrategyTradePolicy`.
+2. Apply min/max DTE and no-weekly rules per strategy.
+3. Make no-catalyst strategies prefer enough DTE for the thesis to work.
+4. Ensure cheap OTM weeklies cannot outrank better but unaffordable contracts.
+
+### Phase 5: Target/Stop Repricing
+
+Files:
+
+- `app/services/exit_target.py`
+- `app/scoring/probability.py`
+- `docs/gp-target-option.md`
+- `docs/final-traget-option.md`
+- `tests/test_exit_target_service.py`
+
+Steps:
+
+1. Add a conservative option repricer.
+2. Use repricing before local Greek projection when inputs exist.
+3. Charge theta over the full planned trading-session holding window.
+4. Add slippage/spread haircut to target.
+5. Reject targets that cannot pass the probability gate.
+
+### Phase 6: LLM Payload, Prompt, And Validator
+
+Files:
+
+- `app/llm/schemas.py`
+- `app/pipeline/steps/decide.py`
+- `app/llm/prompts/decide_recommendation.md`
+- `tests/test_decision_step.py`
+
+Steps:
+
+1. Add reference date/time and market calendar block to `DecisionInput`.
+2. Add proposed exit plan and reality metrics to each visible contract.
+3. Update the prompt to require:
+   - DTE calculation
+   - exit-date validation
+   - required-sigma citation
+   - probability citation
+   - catalyst-window check
+   - no recommendation if deterministic reality flags fail
+4. Update `validate_llm_decision` to force no-trade if the selected contract has
+   P0 reality flags.
+5. Add factual-consistency validation for DTE and horizon language.
+
+Prompt note:
+
+The prompt should not say "be smarter" in vague terms. It should force a small
+checklist:
+
+```text
+Before recommending, verify:
+1. Current/reference trading date.
+2. DTE and trading sessions to exit.
+3. Exit date is a U.S. trading session.
+4. Named catalyst exists before exit, or this is explicitly a non-catalyst setup.
+5. Required sigma to target and breakeven.
+6. Estimated probability of touching target before exit.
+7. News status and article count.
+8. Contract spread and liquidity.
+
+If any P0 reality flag is present, choose no_trade.
+If two or more P1 flags are present, choose watchlist or no_trade.
+Do not describe a contract as long-dated unless DTE >= 45.
+```
+
+### Phase 7: Telegram UX
+
+Files:
+
+- `app/telegram/templates/main_recommendation.py`
+- `app/services/logging_service.py`
+- `app/services/results_export_service.py`
+- tests for Telegram templates and logging
+
+Steps:
+
+1. Rename `Confidence` to `Setup score`.
+2. Add:
+   - DTE
+   - trading sessions to exit
+   - day of week for exit date
+   - estimated target touch chance
+   - strategy source
+   - catalyst status
+3. Strategy-specific card title.
+4. If exit date is not actionable, never render a buy action.
+
+### Phase 8: Backtest/Paper-Trade Calibration
+
+This system will not become profitable just because the LLM prompt is stronger.
+It needs feedback.
+
+Steps:
+
+1. Store every recommendation and rejected finalist with:
+   - scores
+   - strategy source
+   - DTE
+   - target probability
+   - spread
+   - IV
+   - target/stop/exit
+2. After expiry/exit window, compute:
+   - target hit
+   - stop hit
+   - max favorable excursion
+   - max adverse excursion
+   - mark-to-market P/L
+   - slippage-adjusted P/L
+3. Calibrate thresholds by strategy.
+4. Treat no-trade as a valid positive system outcome when the best setup is bad.
+
+## File-Level Notes For Future Codex
+
+Read these files first before coding:
+
+```text
+app/pipeline/orchestrator.py
+app/pipeline/steps/decide.py
+app/llm/schemas.py
+app/llm/prompts/decide_recommendation.md
+app/services/exit_target.py
+app/services/market_hours.py
+app/scoring/vetoes.py
+app/scoring/contract.py
+app/scoring/expiry.py
+app/scoring/strategy_policy.py
+app/scoring/strike.py
+app/scoring/final.py
+app/scoring/confidence.py
+app/telegram/templates/main_recommendation.py
+app/services/logging_service.py
+```
+
+Do not begin by only editing `decide_recommendation.md`. The PM failure was not
+mainly a wording problem. It was a data-contract and deterministic-validation
+problem.
+
+The safest implementation order is:
+
+1. Tests and PM fixture.
+2. NYSE trading-date and exit-date correctness.
+3. Expected-move-to-exit and probability gates.
+4. Strategy-specific DTE/no-weekly policies.
+5. LLM schema/prompt updates.
+6. Telegram wording and logging.
+
+## How The PM Fixture Should Behave After Fixes
+
+For the exact PM 195C fixture:
+
+Expected result:
+
+```text
+Action: no_trade or watchlist
+Reason:
+  - no named catalyst before exit
+  - 7-DTE OTM long call
+  - target requires too much move for available trading sessions
+  - original exit date was non-trading Sunday
+  - news status unavailable/contradictory
+  - target probability below threshold
+```
+
+It must not produce:
+
+```text
+Action: recommend
+Confidence: 83/100
+Exit by: 2026-05-17
+Reasoning: "6 months of runway"
+```
+
+## What To Keep From Claude's Report
+
+Keep these Claude findings:
+
+- PM was not a good live buy recommendation.
+- Sunday exit date is a real bug.
+- The LLM does not see the final exit plan.
+- The decision prompt is too permissive and action-biased.
+- "Confidence" is misleading.
+- The LLM can choose among the top four finalists and is not bound to rank #1.
+- Non-catalyst strategies are too permissive with weekly long calls.
+- Need probability-of-touch/profitability gates.
+
+Adjust these Claude findings:
+
+- The exact PM run used spot `191.86`, not about `190`.
+- The exact target move was about `2.79%`, not about `3.8%`.
+- The target method in the exact artifact was `full_greeks`, not pure delta
+  fallback.
+- The biggest additional root cause is UTC date drift changing valuation and
+  expected-move behavior.
+- Another major root cause is news fallback defaulting to `"adequate"`.
+- The LLM's "~6 months of runway" mistake is more severe than just missing a
+  Sunday exit.
+
+## Definition Of Done
+
+This issue is not fixed until all of these are true:
+
+- No recommendation can show a weekend or holiday exit date.
+- Valuation date uses NYSE/Eastern trading-session logic, not raw UTC date.
+- Expected move used for feasibility matches the proposed holding window.
+- Long OTM weekly options without a named catalyst fail closed.
+- Each strategy has its own DTE and contract policy.
+- PM 195C fixture is not recommendable.
+- News unavailable cannot appear as "coverage adequate".
+- LLM input includes reference date, DTE, target, stop, exit date, probability,
+  and reality flags.
+- LLM validation can reject obvious factual contradictions.
+- Telegram no longer labels structural score as win confidence.
+- Telegram title matches the strategy source instead of always saying earnings.
+
+If only the prompt changes, this file should still be considered unresolved.

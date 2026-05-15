@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 from collections.abc import Sequence
-from datetime import UTC, date, datetime, timezone
+from datetime import UTC, date, datetime
 from functools import lru_cache
 from typing import Any, Protocol
 from urllib.parse import urlsplit, urlunsplit
@@ -235,6 +235,12 @@ class NewsService:
             )
             used_llm_summary = True
 
+        news_coverage = _compute_news_coverage(articles)
+        stale_news = _compute_stale_news(articles, reference_dt=effective_reference_dt)
+        if brief.key_uncertainty.strip().lower() == "news service unavailable":
+            news_coverage = "none"
+            stale_news = True
+
         bundle = NewsBundle(
             ticker=normalized,
             company_name=company_name,
@@ -244,8 +250,8 @@ class NewsService:
             brief=brief,
             used_ir_fallback=bool(search_response.fallback_results),
             used_llm_summary=used_llm_summary,
-            news_coverage=_compute_news_coverage(articles),
-            stale_news=_compute_stale_news(articles, reference_dt=effective_reference_dt),
+            news_coverage=news_coverage,
+            stale_news=stale_news,
         )
         self.logger.info(
             "news_bundle_built",

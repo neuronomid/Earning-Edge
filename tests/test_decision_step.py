@@ -23,8 +23,10 @@ from app.scoring.types import (
     ContractScoreResult,
     DataConfidenceResult,
     DirectionResult,
+    ExitTarget,
     HardVeto,
     OptionContractInput,
+    OptionRealityCheck,
     StrategySelection,
     UserContext,
 )
@@ -328,6 +330,85 @@ async def test_build_decision_input_includes_strategy_source_and_event_signal_de
     assert bundle.event_signal_detail == signal.detail
 
 
+async def test_decision_payload_contains_exit_plan_and_reality_metrics() -> None:
+    candidate = _candidate_with_reality_metrics()
+
+    decision_input = build_decision_input([candidate], _user_context())
+    bundle = decision_input.candidates[0]
+    option = bundle.option_chain_candidates[0]
+
+    assert decision_input.reference_trading_date == date(2026, 5, 14)
+    assert option.dte_calendar == 8
+    assert option.proposed_exit_by == date(2026, 5, 15)
+    assert option.proposed_exit_is_trading_session is True
+    assert option.expected_holding_trading_days == 1
+    assert option.proposed_target_stock == Decimal("194.34")
+    assert option.required_sigma_to_target == Decimal("0.75")
+    assert option.approx_probability_touch_target == Decimal("0.4533")
+    assert option.reality_check_flags == []
+
+
+async def test_llm_cannot_claim_months_of_runway_for_7_dte_contract() -> None:
+    candidate = _candidate_with_reality_metrics(dte_calendar=7)
+    step = LLMDecisionStep(
+        router=StubRouter(
+            decision=StructuredDecision(
+                action="recommend",
+                chosen_ticker="PM",
+                chosen_contract=ChosenContract(
+                    ticker="PM",
+                    option_type="call",
+                    position_side="long",
+                    strike=Decimal("195"),
+                    expiry=date(2026, 5, 22),
+                    rationale="The May 2026 195 call gives about 6 months of runway.",
+                ),
+                confidence_band="standard",
+                reasoning="PM has momentum and this long-dated call has months of runway.",
+                key_evidence=["6 months of runway."],
+                key_concerns=[],
+            )
+        )
+    )
+
+    result = await step.execute([candidate], _user_context(), openrouter_api_key="sk-or-test")
+
+    assert result.trace.engine == "heuristic_fallback"
+    assert result.decision.action in {"recommend", "watchlist"}
+    assert "failed" in result.trace.notes[0].lower()
+
+
+async def test_llm_selected_contract_with_p0_reality_flag_forces_no_trade() -> None:
+    candidate = _candidate_with_reality_metrics(flags=("weekly_otm_no_catalyst",))
+    step = LLMDecisionStep(
+        router=StubRouter(
+            decision=StructuredDecision(
+                action="recommend",
+                chosen_ticker="PM",
+                chosen_contract=ChosenContract(
+                    ticker="PM",
+                    option_type="call",
+                    position_side="long",
+                    strike=Decimal("195"),
+                    expiry=date(2026, 5, 22),
+                    rationale="Momentum is strong.",
+                ),
+                confidence_band="standard",
+                reasoning="Momentum is strong.",
+                key_evidence=["Relative strength stayed positive."],
+                key_concerns=[],
+            )
+        )
+    )
+
+    result = await step.execute([candidate], _user_context(), openrouter_api_key="sk-or-test")
+
+    assert result.trace.engine == "llm"
+    assert result.decision.action == "no_trade"
+    assert result.decision.chosen_ticker is None
+    assert "weekly_otm_no_catalyst" in result.decision.reasoning
+
+
 def _candidate(
     ticker: str,
     *,
@@ -399,6 +480,169 @@ def _candidate(
             reasons=(f"{ticker} had the cleanest bearish setup.",),
         ),
         news_bundle=_news_bundle(ticker),
+        sizing=None,
+    )
+
+
+def _candidate_with_reality_metrics(
+    *,
+    dte_calendar: int = 8,
+    flags: tuple[str, ...] = (),
+) -> PipelineCandidate:
+    contract = OptionContractInput(
+        ticker="PM",
+        option_type="call",
+        position_side="long",
+        strike=Decimal("195"),
+        expiry=date(2026, 5, 22),
+        bid=Decimal("1.73"),
+        ask=Decimal("1.98"),
+        mid=Decimal("1.855"),
+        volume=144,
+        open_interest=300,
+        implied_volatility=Decimal("0.2735"),
+        delta=Decimal("0.359"),
+        source="fixture",
+    )
+    exit_target = ExitTarget(
+        target_stock_price=Decimal("194.34"),
+        target_option_price=Decimal("2.38"),
+        target_gain_percent=Decimal("20.20"),
+        stop_loss_option_price=Decimal("0.99"),
+        exit_by_date=date(2026, 5, 15),
+        expected_holding_days=1,
+        target_method="delta_fallback",
+        expected_holding_trading_days=1,
+        expected_holding_calendar_days=1,
+        exit_is_trading_session=True,
+        expected_move_to_exit_percent=Decimal("0.017229"),
+    )
+    reality = OptionRealityCheck(
+        dte_calendar=dte_calendar,
+        dte_trading_sessions=6,
+        trading_days_to_exit=1,
+        exit_is_trading_session=True,
+        expected_move_to_exit_percent=Decimal("0.017229"),
+        required_sigma_to_strike=Decimal("0.92"),
+        required_sigma_to_breakeven=Decimal("1.55"),
+        required_sigma_to_target=Decimal("0.75"),
+        approx_probability_touch_target=Decimal("0.4533"),
+        approx_probability_expire_itm=Decimal("0.3590"),
+        theta_cost_to_exit=Decimal("0.1881"),
+        has_named_catalyst_before_exit=False,
+        flags=flags,
+    )
+    result = ContractScoreResult(
+        strategy=contract.strategy,
+        contract=contract,
+        base_score=76,
+        score=76,
+        factors=(),
+        penalties=(),
+        vetoes=(),
+        breakeven=Decimal("196.98"),
+        breakeven_move_percent=Decimal("0.0267"),
+        liquidity_score=82,
+        expiry_days_after_earnings=None,
+        reasons=("Fixture PM contract.",),
+        exit_target=exit_target,
+        reality_check=reality,
+    )
+    signal = StrategyEventSignal(
+        score=75,
+        is_supportive=True,
+        detail="XLP sector +4.4% (4w), stock screen percentile 60%",
+    )
+    bundle = NewsBundle(
+        ticker="PM",
+        company_name="Philip Morris International",
+        generated_at=datetime(2026, 5, 15, 0, 7, 46, tzinfo=UTC),
+        search_results=(),
+        articles=(),
+        brief=NewsBrief(
+            neutral_contextual_evidence=[],
+            key_uncertainty="news service unavailable",
+        ),
+        news_coverage="none",
+        stale_news=True,
+    )
+    return PipelineCandidate(
+        record=CandidateRecord(
+            ticker="PM",
+            company_name="Philip Morris International",
+            market_cap=Decimal("299030000000"),
+            earnings_date=None,
+            current_price=Decimal("191.86"),
+            strategy_source="sector_relative_strength",
+            event_signal=signal,
+        ),
+        context=CandidateContext(
+            ticker="PM",
+            company_name="Philip Morris International",
+            earnings_date=None,
+            earnings_timing="unknown",
+            market_snapshot=MarketSnapshot(
+                ticker="PM",
+                as_of_date=date(2026, 5, 14),
+                company_name="Philip Morris International",
+                sector="Consumer Defensive",
+                sector_etf="XLP",
+                market_cap=Decimal("299030000000"),
+                current_price=Decimal("191.86"),
+                latest_volume=1000000,
+                average_volume_20d=Decimal("900000"),
+                volume_vs_average_20d=Decimal("1.11"),
+                stock_returns=ReturnMetrics(
+                    one_day=Decimal("0.021"),
+                    five_day=Decimal("0.044"),
+                    twenty_day=Decimal("0.080"),
+                    fifty_day=Decimal("0.120"),
+                ),
+                spy_returns=ReturnMetrics(None, None, None, None),
+                qqq_returns=ReturnMetrics(None, None, None, None),
+                sector_returns=None,
+                relative_strength_vs_spy=Decimal("0.034"),
+                relative_strength_vs_qqq=Decimal("0.040"),
+                relative_strength_vs_sector=Decimal("0.010"),
+                av_news_sentiment=None,
+                price_source="fixture",
+                overview_source="fixture",
+                sources=("fixture",),
+            ),
+            news_brief=bundle.brief,
+            valuation_date=date(2026, 5, 14),
+            option_chain=(contract,),
+            strategy_source="sector_relative_strength",
+            event_signal=signal,
+            expected_move_percent=Decimal("0.027889"),
+        ),
+        evaluation=CandidateEvaluation(
+            ticker="PM",
+            direction=DirectionResult(
+                classification="bullish",
+                bias=Decimal("0.65"),
+                score=75,
+                factors=(),
+                reasons=("PM relative strength stayed positive.",),
+            ),
+            confidence=DataConfidenceResult(
+                score=84,
+                label="good",
+                blockers=(),
+                notes=(),
+            ),
+            strategy_selection=StrategySelection(
+                allowed_strategies=("long_call",),
+                preferred_order=("long_call",),
+                reason="Fixture strategy order.",
+            ),
+            considered_contracts=(result,),
+            chosen_contract=result,
+            final_score=76,
+            action="recommend",
+            reasons=("Fixture PM candidate.",),
+        ),
+        news_bundle=bundle,
         sizing=None,
     )
 

@@ -7,9 +7,9 @@ Create Date: 2026-05-10 00:00:01
 
 from __future__ import annotations
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision = "0009_news_coverage"
 down_revision = "0008_position_mute"

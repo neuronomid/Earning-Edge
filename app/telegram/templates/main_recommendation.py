@@ -51,7 +51,7 @@ def render_main_recommendation(
     )
     lines.extend(
         [
-            "<b>Weekly Earnings Options Signal</b>",
+            f"<b>{_signal_title(recommendation)}</b>",
             "",
             setup_text,
             "",
@@ -81,7 +81,9 @@ def render_main_recommendation(
         lines.append(f"🎯 <b>Stock target:</b> ${_money(target_stock_price)}")
     exit_by_date = getattr(recommendation, "exit_by_date", None)
     if exit_by_date is not None:
-        lines.append(f"🗓️ <b>Exit by:</b> {exit_by_date.isoformat()}")
+        lines.append(
+            f"🗓️ <b>Exit by:</b> {exit_by_date.isoformat()} ({exit_by_date.strftime('%A')})"
+        )
     lines.extend(
         [
             "",
@@ -89,7 +91,7 @@ def render_main_recommendation(
             *_margin_lines(recommendation),
             f"<b>Account risk:</b> {_percent(recommendation.account_risk_percent)}",
             f"<b>Earnings date:</b> {_earnings_date_text(recommendation)}",
-            f"<b>Confidence:</b> {recommendation.confidence_score}/100",
+            f"<b>Setup score:</b> {recommendation.confidence_score}/100",
             f"<b>Risk level:</b> {recommendation.risk_level}",
         ]
     )
@@ -131,6 +133,17 @@ def _direction_label(recommendation: RecommendationLike) -> str:
     if recommendation.option_type == "call":
         return "Bullish"
     return "Bearish"
+
+
+def _signal_title(recommendation: RecommendationLike) -> str:
+    strategy_source = getattr(recommendation, "strategy_source", "catalyst_confluence")
+    return {
+        "catalyst_confluence": "Earnings Options Signal",
+        "pead_continuation": "Post-Earnings Drift Options Signal",
+        "coiled_setup": "Coiled Setup Options Signal",
+        "sector_relative_strength": "Sector Relative Strength Options Signal",
+        "activist_13d_followthrough": "Activist 13D Options Signal",
+    }.get(strategy_source, "Options Signal")
 
 
 def _direction_emoji(recommendation: RecommendationLike) -> str:

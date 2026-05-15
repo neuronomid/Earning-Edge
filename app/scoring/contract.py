@@ -5,6 +5,7 @@ from decimal import Decimal
 
 from app.scoring.expiry import days_after_earnings, score_expiry_fit
 from app.scoring.penalties import collect_soft_penalties
+from app.scoring.probability import assess_option_reality
 from app.scoring.types import (
     CandidateContext,
     ContractScoreResult,
@@ -92,8 +93,15 @@ def score_contract(
 
     base_score = sum(factor.score for factor in factors)
     exit_target = EXIT_TARGETS.build(candidate, contract, direction)
+    reality_check = assess_option_reality(candidate, contract, exit_target)
     penalties = collect_soft_penalties(candidate, user, contract, direction)
-    vetoes = evaluate_hard_vetoes(candidate, user, contract)
+    vetoes = evaluate_hard_vetoes(
+        candidate,
+        user,
+        contract,
+        exit_target=exit_target,
+        reality_check=reality_check,
+    )
     if exit_target is None:
         vetoes = (
             *vetoes,
@@ -122,6 +130,7 @@ def score_contract(
         expiry_days_after_earnings=days_after_earnings(contract.expiry, candidate.earnings_date),
         reasons=reasons,
         exit_target=exit_target,
+        reality_check=reality_check,
     )
 
 

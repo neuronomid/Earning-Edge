@@ -39,6 +39,7 @@ from app.scoring.types import (
     option_mid,
     spread_percent,
 )
+from app.services.market_hours import next_trading_session
 
 ZERO = Decimal("0")
 PROMPT_PATH = Path(__file__).resolve().parents[2] / "llm" / "prompts" / "decide_recommendation.md"
@@ -192,10 +193,24 @@ def build_decision_input(
     candidates: Sequence[PipelineCandidate],
     user: UserContext,
 ) -> DecisionInput:
+    reference_dates = [
+        item.context.valuation_date
+        for item in candidates
+        if item.context.valuation_date is not None
+    ]
+    reference_trading_date = min(reference_dates) if reference_dates else None
     return DecisionInput(
         user_strategy_permission=_strategy_permission(user.strategy_permission),
         risk_profile=user.risk_profile,
         account_size=user.account_size,
+        reference_trading_date=reference_trading_date,
+        next_market_session=None
+        if reference_trading_date is None
+        else next_trading_session(reference_trading_date),
+        market_calendar_notes=[
+            "All dates are NYSE/Eastern trading-session dates.",
+            "Never recommend a contract with P0 reality_check_flags.",
+        ],
         candidates=[_candidate_bundle(item) for item in candidates],
     )
 
@@ -262,6 +277,12 @@ def validate_llm_decision(
             raw_response=raw_response,
         )
 
+    if _claims_impossible_runway(decision, matched_contract):
+        raise LLMValidationError(
+            "Heavy model described a short-dated contract as long-dated or months of runway.",
+            raw_response=raw_response,
+        )
+
     structural_final_score = combine_scores(
         candidate.evaluation.direction.score,
         matched_contract.score,
@@ -286,6 +307,20 @@ def validate_llm_decision(
             "final_score": structural_final_score,
         }
     )
+
+    blocking_flags = _blocking_reality_flags(matched_contract)
+    if blocking_flags:
+        normalized = normalized.model_copy(
+            update={
+                "action": "no_trade",
+                "confidence_band": "no_trade",
+                "reasoning": (
+                    "Deterministic option reality checks blocked this contract: "
+                    + ", ".join(blocking_flags)
+                ),
+                "key_concerns": list(dict.fromkeys([*decision.key_concerns, *blocking_flags])),
+            }
+        )
 
     if normalized.action == "no_trade":
         watchlist_seed = list(normalized.watchlist_tickers)
@@ -457,6 +492,14 @@ def _candidate_bundle(candidate: PipelineCandidate) -> CandidateBundle:
         ),
         news_coverage=candidate.news_bundle.news_coverage,
         stale_news=candidate.news_bundle.stale_news,
+        news_article_count=len(candidate.news_bundle.articles),
+        news_source_count=len(
+            {
+                result.source or result.url
+                for result in candidate.news_bundle.search_results
+            }
+        ),
+        news_status=_news_status(candidate),
         option_chain_candidates=[
             _option_chain_candidate(contract) for contract in viable_contracts[:3]
         ],
@@ -469,6 +512,8 @@ def _candidate_bundle(candidate: PipelineCandidate) -> CandidateBundle:
 
 def _option_chain_candidate(contract: ContractScoreResult) -> OptionChainCandidate:
     spread = spread_percent(contract.contract)
+    target = contract.exit_target
+    reality = contract.reality_check
     return OptionChainCandidate(
         option_type=contract.contract.option_type,
         position_side=contract.contract.position_side,
@@ -484,7 +529,47 @@ def _option_chain_candidate(contract: ContractScoreResult) -> OptionChainCandida
         open_interest=contract.contract.open_interest,
         liquidity_score=contract.liquidity_score,
         breakeven=breakeven_price(contract.contract),
+        dte_calendar=None if reality is None else reality.dte_calendar,
+        dte_trading_sessions=None if reality is None else reality.dte_trading_sessions,
+        proposed_exit_by=None if target is None else target.exit_by_date,
+        proposed_exit_is_trading_session=None
+        if reality is None
+        else reality.exit_is_trading_session,
+        expected_holding_calendar_days=None
+        if target is None
+        else target.expected_holding_calendar_days,
+        expected_holding_trading_days=None
+        if target is None
+        else target.expected_holding_trading_days,
+        proposed_target_stock=None if target is None else target.target_stock_price,
+        proposed_target_option=None if target is None else target.target_option_price,
+        proposed_stop_option=None if target is None else target.stop_loss_option_price,
+        target_method=None if target is None else target.target_method,
+        required_sigma_to_target=None if reality is None else reality.required_sigma_to_target,
+        required_sigma_to_breakeven=None
+        if reality is None
+        else reality.required_sigma_to_breakeven,
+        approx_probability_touch_target=None
+        if reality is None
+        else reality.approx_probability_touch_target,
+        approx_probability_expire_itm=None
+        if reality is None
+        else reality.approx_probability_expire_itm,
+        theta_cost_to_exit=None if reality is None else reality.theta_cost_to_exit,
+        has_named_catalyst_before_exit=bool(
+            reality is not None and reality.has_named_catalyst_before_exit
+        ),
+        reality_check_flags=[] if reality is None else list(reality.flags),
     )
+
+
+def _news_status(candidate: PipelineCandidate) -> str:
+    uncertainty = candidate.news_bundle.brief.key_uncertainty.strip().lower()
+    if uncertainty == "news service unavailable" or candidate.news_bundle.news_coverage == "none":
+        return "unavailable"
+    if "deferred" in uncertainty:
+        return "deferred"
+    return "available"
 
 
 def _news_summary(candidate: PipelineCandidate) -> str:
@@ -689,6 +774,62 @@ def _contract_matches(contract: ContractScoreResult, chosen_contract: ChosenCont
         and contract.contract.position_side == chosen_contract.position_side
         and contract.contract.strike == chosen_contract.strike
         and contract.contract.expiry == chosen_contract.expiry
+    )
+
+
+def _blocking_reality_flags(contract: ContractScoreResult) -> tuple[str, ...]:
+    hard_codes = {veto.code for veto in contract.vetoes}
+    reality_flags = set(contract.reality_check.flags if contract.reality_check else ())
+    return tuple(
+        sorted(
+            hard_codes
+            | {
+                flag
+                for flag in reality_flags
+                if flag
+                in {
+                    "invalid_exit_session",
+                    "no_actionable_exit_window",
+                    "weekly_otm_no_catalyst",
+                    "too_few_exit_sessions_no_catalyst",
+                    "target_unreachable_by_exit",
+                    "low_pot_no_catalyst",
+                    "breakeven_outside_exit_move",
+                    "missing_exit_horizon_move",
+                }
+            }
+        )
+    )
+
+
+def _claims_impossible_runway(
+    decision: StructuredDecision,
+    contract: ContractScoreResult,
+) -> bool:
+    reality = contract.reality_check
+    dte = None if reality is None else reality.dte_calendar
+    if dte is None or dte >= 45:
+        return False
+    text = " ".join(
+        part
+        for part in (
+            decision.reasoning,
+            decision.rationale,
+            None if decision.chosen_contract is None else decision.chosen_contract.rationale,
+            " ".join(decision.key_evidence),
+        )
+        if part
+    ).lower()
+    return any(
+        phrase in text
+        for phrase in (
+            "months of runway",
+            "month of runway",
+            "long-dated",
+            "long dated",
+            "six months",
+            "6 months",
+        )
     )
 
 

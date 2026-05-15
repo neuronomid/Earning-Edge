@@ -28,6 +28,7 @@ StrategySource = Literal[
 ]
 ExtendedTargetMethod = Literal[
     "full_greeks",
+    "black_scholes",
     "delta_fallback",
     "intrinsic_fallback",
     "short_premium",
@@ -187,6 +188,27 @@ class ExitTarget:
     target_method: ExtendedTargetMethod
     expected_iv_change: Decimal | None = None
     underlying_stop_price: Decimal | None = None
+    expected_holding_trading_days: int | None = None
+    expected_holding_calendar_days: int | None = None
+    exit_is_trading_session: bool = True
+    expected_move_to_exit_percent: Decimal | None = None
+
+
+@dataclass(slots=True, frozen=True)
+class OptionRealityCheck:
+    dte_calendar: int
+    dte_trading_sessions: int
+    trading_days_to_exit: int
+    exit_is_trading_session: bool
+    expected_move_to_exit_percent: Decimal | None
+    required_sigma_to_strike: Decimal | None
+    required_sigma_to_breakeven: Decimal | None
+    required_sigma_to_target: Decimal | None
+    approx_probability_touch_target: Decimal | None
+    approx_probability_expire_itm: Decimal | None
+    theta_cost_to_exit: Decimal | None
+    has_named_catalyst_before_exit: bool
+    flags: tuple[str, ...] = ()
 
 
 @dataclass(slots=True, frozen=True)
@@ -204,6 +226,7 @@ class ContractScoreResult:
     expiry_days_after_earnings: int | None
     reasons: tuple[str, ...]
     exit_target: ExitTarget | None = None
+    reality_check: OptionRealityCheck | None = None
 
     @property
     def is_viable(self) -> bool:

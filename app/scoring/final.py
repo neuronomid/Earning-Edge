@@ -6,6 +6,7 @@ from decimal import Decimal
 from app.scoring.confidence import compute_data_confidence
 from app.scoring.contract import score_contract
 from app.scoring.direction import score_direction
+from app.scoring.strategy_policy import NO_EARNINGS_REQUIRED_STRATEGIES
 from app.scoring.strategy_select import select_allowed_strategies
 from app.scoring.strike import select_strike_candidates
 from app.scoring.types import (
@@ -85,6 +86,13 @@ def score_candidate(candidate: CandidateContext, user: UserContext) -> Candidate
         chosen,
         direction_score=direction.score,
     )
+    if (
+        action == "recommend"
+        and candidate.strategy_source in NO_EARNINGS_REQUIRED_STRATEGIES
+        and candidate.news_brief.key_uncertainty.strip().lower()
+        == "news service unavailable"
+    ):
+        action = "watchlist"
 
     reasons = list(direction.reasons)
     if chosen is not None:
@@ -94,6 +102,8 @@ def score_candidate(candidate: CandidateContext, user: UserContext) -> Candidate
         )
         reasons.extend(penalty.reason for penalty in chosen.penalties)
         reasons.extend(veto.reason for veto in chosen.vetoes)
+    if candidate.news_brief.key_uncertainty.strip().lower() == "news service unavailable":
+        reasons.append("News service unavailable; non-catalyst setups cannot be promoted blindly.")
     reasons.extend(final_confidence.blockers)
 
     return CandidateEvaluation(

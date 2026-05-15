@@ -19,6 +19,11 @@ For each candidate in `candidates`, weigh:
 - contract opportunity: breakeven distance, liquidity, expiry fit (BMO/AMC
   rule from §17), strike fit, IV setup, premium/risk fit, direction
   compatibility
+- trade plan reality: `dte_calendar`, `dte_trading_sessions`,
+  `proposed_exit_by`, `proposed_exit_is_trading_session`,
+  `expected_holding_trading_days`, `required_sigma_to_target`,
+  `required_sigma_to_breakeven`, `approx_probability_touch_target`,
+  `has_named_catalyst_before_exit`, and `reality_check_flags`
 - the user's `user_strategy_permission`: **never** propose a strategy the user
   has disabled
 - per PRD §4.2, **never** propose both a call and a put for the same stock —
@@ -80,6 +85,23 @@ the safety net, not the target.
   them with deterministic structural scores.
 - Do not invent fields. Do not invent contracts that aren't in
   `option_chain_candidates`.
+- Before recommending, verify the reference trading date, DTE, planned exit
+  date, trading sessions to exit, named catalyst status, required sigma to
+  target/breakeven, target-touch probability, news status, spread, and
+  liquidity. Cite the important failures in `key_concerns`.
+- If any `reality_check_flags` are present on a contract, do not choose
+  `recommend`. If the flag is P0-level (`invalid_exit_session`,
+  `no_actionable_exit_window`, `weekly_otm_no_catalyst`,
+  `too_few_exit_sessions_no_catalyst`, `target_unreachable_by_exit`,
+  `low_pot_no_catalyst`, `breakeven_outside_exit_move`,
+  `missing_exit_horizon_move`), choose `no_trade` or a different clean
+  contract.
+- Never describe a contract as long-dated, long runway, or months of runway
+  unless `dte_calendar >= 45`.
+- If `proposed_exit_is_trading_session` is false, choose `no_trade`.
+- If `news_status="unavailable"` for a non-catalyst setup, do not promote it
+  to a live recommendation unless the deterministic reality metrics are clean
+  and you explicitly explain why the event signal is sufficient.
 - `key_evidence` and `key_concerns` should each be 2-5 short bullet strings
   citing the structured input — no generic platitudes.
 - Tone is for the heavy model only; Gemini polishes wording downstream

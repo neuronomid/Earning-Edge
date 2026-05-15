@@ -76,7 +76,7 @@ class Recommendation(Base):
     telegram_message_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     news_coverage: Mapped[str] = mapped_column(
-        String(16), default="adequate", server_default="adequate"
+        String(16), default="none", server_default="none"
     )
     stale_news: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 

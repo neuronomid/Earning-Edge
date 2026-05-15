@@ -148,7 +148,7 @@ def test_logging_service_builds_complete_artifacts_and_archive(tmp_path) -> None
         user=user,
         outcome=outcome,
         recommendation=recommendation,
-        telegram_message="Weekly Earnings Options Signal",
+        telegram_message="Earnings Options Signal",
     )
 
     recommendation_keys = {
@@ -253,7 +253,7 @@ def test_logging_service_builds_complete_artifacts_and_archive(tmp_path) -> None
         == "AMD"
     )
     assert (archive_dir / "telegram_message.txt").read_text(encoding="utf-8") == (
-        "Weekly Earnings Options Signal"
+        "Earnings Options Signal"
     )
     results_dir = tmp_path / "results"
     username = getpass.getuser().strip().lower().replace(" ", "_")
@@ -392,7 +392,7 @@ def test_logging_service_records_actual_model_usage(tmp_path) -> None:
         user=user,
         outcome=outcome,
         recommendation=recommendation,
-        telegram_message="Weekly Earnings Options Signal",
+        telegram_message="Earnings Options Signal",
     )
 
     assert artifacts.recommendation_card["decision_engine"] == "llm"

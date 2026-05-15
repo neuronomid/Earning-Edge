@@ -53,6 +53,7 @@ from app.scoring.types import (
 from app.services.candidate_models import CandidateBatch, CandidateRecord
 from app.services.logging_service import LoggingService, get_logging_service
 from app.services.market_data.types import ConfidenceNote, MarketSnapshot, ReturnMetrics
+from app.services.market_hours import trading_reference_date
 from app.services.news.types import NewsBrief, NewsBundle
 from app.services.sizing import BROKER_MARGIN_DEPENDENT_TEXT, SizingError, SizingPermissionError
 from app.services.sizing_types import SizingResult
@@ -304,7 +305,7 @@ class PipelineOrchestrator:
             option_chain,
             market_snapshot.current_price,
         )
-        valuation_date = effective_reference_dt.date()
+        valuation_date = trading_reference_date(effective_reference_dt)
         expected_move_percent = _expected_move_percent(
             option_chain,
             market_snapshot.current_price,
@@ -790,6 +791,8 @@ def _deferred_news_bundle(record: CandidateRecord, *, generated_at: datetime) ->
         ),
         used_ir_fallback=False,
         used_llm_summary=False,
+        news_coverage="none",
+        stale_news=True,
     )
 
 
@@ -811,6 +814,8 @@ def _fallback_news_bundle(
         ),
         used_ir_fallback=False,
         used_llm_summary=False,
+        news_coverage="none",
+        stale_news=True,
     )
 
 
@@ -866,7 +871,25 @@ def _select_contract(
 def _risk_level(contract: ContractScoreResult, final_score: int) -> str:
     if contract.contract.position_side == "short":
         return "High"
-    if final_score >= 78:
+    reality = contract.reality_check
+    if reality is not None:
+        if (
+            reality.dte_calendar < 10
+            or reality.trading_days_to_exit < 3
+            or (
+                reality.approx_probability_touch_target is not None
+                and reality.approx_probability_touch_target < Decimal("0.35")
+            )
+            or (
+                contract.contract.delta is not None
+                and abs(contract.contract.delta) < Decimal("0.30")
+            )
+        ):
+            return "Speculative"
+    spread = spread_percent(contract.contract)
+    if spread is not None and spread > Decimal("0.25"):
+        return "High"
+    if final_score >= 78 or contract.contract.position_side == "long":
         return "High"
     return "Moderate"
 

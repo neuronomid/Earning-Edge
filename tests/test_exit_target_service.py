@@ -65,7 +65,7 @@ def _direction(score: int = 80) -> DirectionResult:
     )
 
 
-def test_exit_target_service_uses_full_greeks_when_available() -> None:
+def test_exit_target_service_caps_full_greeks_with_black_scholes_when_available() -> None:
     service = ExitTargetService()
     contract = OptionContractInput(
         ticker="AMD",
@@ -86,7 +86,7 @@ def test_exit_target_service_uses_full_greeks_when_available() -> None:
     target = service.build(_context(current_price="100"), contract, _direction())
 
     assert target is not None
-    assert target.target_method == "full_greeks"
+    assert target.target_method == "black_scholes"
     assert target.target_stock_price > Decimal("100")
     assert target.target_option_price > Decimal("1.20")
     assert target.stop_loss_option_price == Decimal("0.65")
@@ -215,3 +215,39 @@ def test_exit_target_service_adds_short_call_underlying_stop() -> None:
     assert target.underlying_stop_price == Decimal("107.10")
     assert target.stop_loss_option_price == Decimal("3.23")
     assert target.target_method == "short_call_underlying"
+
+
+def test_exit_target_never_returns_weekend_exit_for_pm_fixture() -> None:
+    service = ExitTargetService()
+    contract = OptionContractInput(
+        ticker="PM",
+        option_type="call",
+        position_side="long",
+        strike=Decimal("195"),
+        expiry=date(2026, 5, 22),
+        bid=Decimal("1.73"),
+        ask=Decimal("1.98"),
+        mid=Decimal("1.855"),
+        implied_volatility=Decimal("0.2735"),
+        delta=Decimal("0.359"),
+        gamma=Decimal("0.0481"),
+        theta=Decimal("-0.1881"),
+        vega=Decimal("0.1062"),
+        volume=144,
+    )
+
+    target = service.build(
+        _context(
+            current_price="191.86",
+            expected_move_percent="0.027889",
+            valuation_date=date(2026, 5, 14),
+        ),
+        contract,
+        _direction(score=75),
+    )
+
+    assert target is not None
+    assert target.exit_by_date == date(2026, 5, 15)
+    assert target.exit_by_date.weekday() < 5
+    assert target.expected_holding_trading_days == 1
+    assert target.expected_move_to_exit_percent == Decimal("0.017229")

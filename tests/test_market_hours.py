@@ -3,7 +3,13 @@ from __future__ import annotations
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from app.services.market_hours import current_market_session, is_market_open, next_market_open
+from app.services.market_hours import (
+    current_market_session,
+    is_market_open,
+    next_market_open,
+    trading_reference_date,
+    trading_sessions_after_until,
+)
 
 ET = ZoneInfo("America/New_York")
 
@@ -36,3 +42,16 @@ def test_market_helper_respects_early_close() -> None:
 
 def test_naive_input_is_accepted() -> None:
     assert is_market_open(datetime(2026, 5, 13, 14, 0)) is True
+
+
+def test_trading_reference_date_uses_nyse_session_not_utc_date() -> None:
+    reference = datetime(2026, 5, 15, 0, 7, 46, tzinfo=ZoneInfo("UTC"))
+
+    assert trading_reference_date(reference) == datetime(2026, 5, 14, tzinfo=ET).date()
+
+
+def test_trading_sessions_after_until_excludes_valuation_session() -> None:
+    assert trading_sessions_after_until(
+        datetime(2026, 5, 14, tzinfo=ET).date(),
+        datetime(2026, 5, 17, tzinfo=ET).date(),
+    ) == (datetime(2026, 5, 15, tzinfo=ET).date(),)

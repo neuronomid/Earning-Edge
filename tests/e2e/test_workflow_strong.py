@@ -111,7 +111,7 @@ async def test_manual_workflow_acceptance_persists_card_and_messages(
     assert notifier.calls[0].text == "🧠 Starting a fresh earnings-options scan now."
     assert notifier.calls[1].text == "✅ Scan complete. Here is the strongest setup I found."
     assert "<b>Strategy scan summary</b>" in notifier.calls[2].text
-    assert "<b>Weekly Earnings Options Signal</b>" in notifier.calls[3].text
+    assert "<b>Earnings Options Signal</b>" in notifier.calls[3].text
     assert notifier.calls[3].reply_markup is not None
     assert (tmp_path / "runs" / str(result.run_id) / "recommendation_card.json").exists()
 

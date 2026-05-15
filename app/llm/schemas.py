@@ -44,6 +44,23 @@ class OptionChainCandidate(_Frozen):
     open_interest: int | None = None
     liquidity_score: int | None = None
     breakeven: Decimal | None = None
+    dte_calendar: int | None = None
+    dte_trading_sessions: int | None = None
+    proposed_exit_by: date | None = None
+    proposed_exit_is_trading_session: bool | None = None
+    expected_holding_calendar_days: int | None = None
+    expected_holding_trading_days: int | None = None
+    proposed_target_stock: Decimal | None = None
+    proposed_target_option: Decimal | None = None
+    proposed_stop_option: Decimal | None = None
+    target_method: str | None = None
+    required_sigma_to_target: Decimal | None = None
+    required_sigma_to_breakeven: Decimal | None = None
+    approx_probability_touch_target: Decimal | None = None
+    approx_probability_expire_itm: Decimal | None = None
+    theta_cost_to_exit: Decimal | None = None
+    has_named_catalyst_before_exit: bool = False
+    reality_check_flags: list[str] = Field(default_factory=list)
 
 
 class CandidateBundle(_Frozen):
@@ -63,8 +80,11 @@ class CandidateBundle(_Frozen):
     structural_direction_tier: DirectionTier | None = None
     strategy_source: str = "catalyst_confluence"
     event_signal_detail: str | None = None
-    news_coverage: Literal["none", "sparse", "adequate", "rich"] = "adequate"
+    news_coverage: Literal["none", "sparse", "adequate", "rich"] = "none"
     stale_news: bool = False
+    news_article_count: int = 0
+    news_source_count: int = 0
+    news_status: Literal["available", "deferred", "unavailable"] = "unavailable"
     option_chain_candidates: list[OptionChainCandidate] = Field(default_factory=list)
     expected_move: Decimal | None = None
     previous_earnings_move: Decimal | None = None
@@ -78,6 +98,9 @@ class DecisionInput(_Frozen):
     user_strategy_permission: StrategyPermission
     risk_profile: RiskProfile
     account_size: Decimal
+    reference_trading_date: date | None = None
+    next_market_session: date | None = None
+    market_calendar_notes: list[str] = Field(default_factory=list)
     candidates: list[CandidateBundle] = Field(min_length=1)
 
 

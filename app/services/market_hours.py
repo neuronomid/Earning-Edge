@@ -46,6 +46,68 @@ def market_sessions_between(start: date, end: date) -> tuple[MarketSession, ...]
     return _sessions(start, end)
 
 
+def is_trading_session(day: date) -> bool:
+    return any(session.session_date == day for session in _sessions(day, day))
+
+
+def previous_trading_session(day: date) -> date:
+    cursor = day - timedelta(days=1)
+    for _ in range(370):
+        if is_trading_session(cursor):
+            return cursor
+        cursor -= timedelta(days=1)
+    raise RuntimeError(f"No NYSE trading session found before {day.isoformat()}.")
+
+
+def previous_or_same_trading_session(day: date) -> date:
+    if is_trading_session(day):
+        return day
+    return previous_trading_session(day)
+
+
+def next_trading_session(day: date) -> date:
+    cursor = day + timedelta(days=1)
+    for _ in range(370):
+        if is_trading_session(cursor):
+            return cursor
+        cursor += timedelta(days=1)
+    raise RuntimeError(f"No NYSE trading session found after {day.isoformat()}.")
+
+
+def next_or_same_trading_session(day: date) -> date:
+    if is_trading_session(day):
+        return day
+    return next_trading_session(day)
+
+
+def trading_session_dates_between(start: date, end: date) -> tuple[date, ...]:
+    return tuple(session.session_date for session in market_sessions_between(start, end))
+
+
+def trading_reference_date(reference_dt: datetime | None = None) -> date:
+    """Return the NYSE session date that the latest regular-session quote belongs to.
+
+    A scan that starts after the NYSE close but before UTC midnight should still
+    use that just-closed New York session, not tomorrow's UTC date. A pre-open or
+    non-session scan uses the most recent completed trading session.
+    """
+
+    now_et = _to_new_york(reference_dt)
+    sessions = _sessions(now_et.date(), now_et.date())
+    if sessions:
+        session = sessions[0]
+        if now_et >= session.open_at:
+            return session.session_date
+        return previous_trading_session(session.session_date)
+    return previous_or_same_trading_session(now_et.date())
+
+
+def trading_sessions_after_until(start: date, end: date) -> tuple[date, ...]:
+    if end <= start:
+        return ()
+    return tuple(day for day in trading_session_dates_between(start + timedelta(days=1), end))
+
+
 def _to_new_york(value: datetime | None) -> datetime:
     if value is None:
         return datetime.now(NEW_YORK_TZ)

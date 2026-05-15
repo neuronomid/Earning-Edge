@@ -61,5 +61,5 @@ class NewsBundle(_FrozenModel):
     brief: NewsBrief
     used_ir_fallback: bool = False
     used_llm_summary: bool = False
-    news_coverage: NewsCoverage = "adequate"
+    news_coverage: NewsCoverage = "none"
     stale_news: bool = False

@@ -498,7 +498,7 @@ async def test_pipeline_persists_recommendation_and_sends_card(
     assert notifier.calls[0].text == "🧠 Starting a fresh earnings-options scan now."
     assert notifier.calls[1].text == "✅ Scan complete. Here is the strongest setup I found."
     assert "<b>Strategy scan summary</b>" in notifier.calls[2].text
-    assert "<b>Weekly Earnings Options Signal</b>" in notifier.calls[3].text
+    assert "<b>Earnings Options Signal</b>" in notifier.calls[3].text
     assert notifier.calls[3].reply_markup is not None
 
 
@@ -974,7 +974,7 @@ def test_main_recommendation_template_matches_prd_structure() -> None:
 
     text = render_main_recommendation(recommendation)
     ordered_labels = [
-        "<b>Weekly Earnings Options Signal</b>",
+        "<b>Earnings Options Signal</b>",
         "<b>Best setup:</b> 🥇 AMD",
         "📈 <b>Direction:</b> Bullish",
         "<b>Contract:</b> AMD Buy Call",
@@ -985,11 +985,11 @@ def test_main_recommendation_template_matches_prd_structure() -> None:
         "🟢 <b>Target sell price:</b> $4.20",
         "🛑 <b>Stop loss:</b> $0.63",
         "🎯 <b>Stock target:</b> $108.00",
-        "🗓️ <b>Exit by:</b> 2026-05-08",
+        "🗓️ <b>Exit by:</b> 2026-05-08 (Friday)",
         "<b>Estimated max loss:</b> $125.00 per contract",
         "<b>Account risk:</b> 2.00%",
         "<b>Earnings date:</b> 2026-05-08",
-        "<b>Confidence:</b> 82/100",
+        "<b>Setup score:</b> 82/100",
         "<b>Risk level:</b> High",
         "<b>Stop note:</b> Mental alert only",
         "✅ <b>Action:</b>",

@@ -295,12 +295,12 @@ async def test_alternative_button_sends_next_full_recommendation(
         RecCB(action="alts", rec_id=str(seeded_recommendation.id)),
     )
 
-    assert "<b>Weekly Earnings Options Signal</b>" in send_recorder.calls[-1].text
+    assert "<b>Earnings Options Signal</b>" in send_recorder.calls[-1].text
     assert "<b>2nd best setup:</b> 🥈 AAPL" in send_recorder.calls[-1].text
     assert "<b>Target sell price:</b> $2.10" in send_recorder.calls[-1].text
     assert "<b>Stock target:</b> $198.00" in send_recorder.calls[-1].text
     assert "<b>Stop loss:</b> $0.59" in send_recorder.calls[-1].text
-    assert "<b>Exit by:</b> 2026-05-13" in send_recorder.calls[-1].text
+    assert "<b>Exit by:</b> 2026-05-13 (Wednesday)" in send_recorder.calls[-1].text
     assert send_recorder.calls[-1].kwargs["reply_markup"] is not None
     assert callback.answer.await_count == 1
 
