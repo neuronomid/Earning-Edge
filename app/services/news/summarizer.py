@@ -3,13 +3,29 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Sequence
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any, Protocol
 
 from pydantic import ValidationError
 
 from app.core.logging import get_logger
 from app.llm import LLMRouter
-from app.services.news.types import NewsArticle, NewsBrief
+from app.services.news.types import NewsArticle, NewsBrief, NewsBriefStatus
+
+
+@dataclass(frozen=True)
+class SummarizeOutcome:
+    """Result of a NewsSummarizer.summarize() call.
+
+    Carries the brief plus an independent status field. `status="ok"` means the
+    lightweight model returned a valid summary. `status="raw_extractive"` means
+    the model failed but we built a deterministic headline-only brief from the
+    raw articles so downstream still sees the real news context.
+    """
+
+    brief: NewsBrief
+    status: NewsBriefStatus
 
 
 class LightweightSummarizer(Protocol):
@@ -54,7 +70,7 @@ class NewsSummarizer:
         company_name: str | None = None,
         articles: Sequence[NewsArticle],
         api_key: str,
-    ) -> NewsBrief:
+    ) -> SummarizeOutcome:
         if not ticker.strip():
             raise ValueError("ticker is required")
         if not articles:
@@ -100,7 +116,7 @@ class NewsSummarizer:
             attempt="primary",
         )
         if brief is not None:
-            return brief
+            return SummarizeOutcome(brief=brief, status="ok")
 
         # Most failures are JSON truncated mid-string because the model bumped
         # into max_tokens. Retry once with a larger budget + brevity hint so the
@@ -119,9 +135,20 @@ class NewsSummarizer:
             attempt="retry",
         )
         if retry_brief is not None:
-            return retry_brief
+            return SummarizeOutcome(brief=retry_brief, status="ok")
 
-        return _failure_brief()
+        # Both attempts failed. Don't lie about news availability — build a
+        # deterministic raw-headline brief so downstream decisioning still sees
+        # the real article evidence. Only the *summary* failed, not the data.
+        self.logger.warning(
+            "gemini_brief_using_raw_fallback",
+            ticker=normalized_ticker,
+            article_count=len(articles),
+        )
+        return SummarizeOutcome(
+            brief=_raw_extractive_brief(articles),
+            status="raw_extractive",
+        )
 
     async def _attempt(
         self,
@@ -175,6 +202,50 @@ def _failure_brief() -> NewsBrief:
         neutral_contextual_evidence=[],
         key_uncertainty="news service unavailable",
     )
+
+
+_MAX_RAW_HEADLINES = 12
+
+
+def _raw_extractive_brief(articles: Sequence[NewsArticle]) -> NewsBrief:
+    """Deterministic fallback brief built from raw article metadata.
+
+    Used when the lightweight summary model cannot produce valid JSON. We keep
+    the most recent articles, list them as `key_facts` in `title — source (date)`
+    form, and surface the data gap honestly in `key_uncertainty` so the heavy
+    decision model knows the brief is mechanical, not interpreted.
+    """
+    ordered = sorted(
+        articles,
+        key=lambda a: a.published_at or _MIN_DATETIME,
+        reverse=True,
+    )[:_MAX_RAW_HEADLINES]
+    key_facts: list[str] = []
+    for article in ordered:
+        title = article.title.strip() or article.url
+        source = article.source.strip() if article.source else "unknown source"
+        date_part = (
+            article.published_at.date().isoformat() if article.published_at else "undated"
+        )
+        key_facts.append(f"{title} — {source} ({date_part})")
+    context = [
+        f"Raw extractive brief built from {len(articles)} fetched articles after the "
+        "lightweight summary model could not produce a valid JSON response.",
+        "Headlines preserved verbatim; no synthesis was attempted.",
+    ]
+    return NewsBrief(
+        summary="",
+        key_facts=key_facts,
+        quoted_statements=[],
+        named_actions=[],
+        neutral_contextual_evidence=context,
+        key_uncertainty=(
+            "Lightweight summary model unavailable; raw article headlines below."
+        ),
+    )
+
+
+_MIN_DATETIME = datetime.min.replace(tzinfo=UTC)
 
 
 def _system_prompt() -> str:

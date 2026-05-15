@@ -84,6 +84,9 @@ def render_main_recommendation(
         lines.append(
             f"🗓️ <b>Exit by:</b> {exit_by_date.isoformat()} ({exit_by_date.strftime('%A')})"
         )
+    dte_line = _dte_line(recommendation)
+    if dte_line is not None:
+        lines.append(dte_line)
     lines.extend(
         [
             "",
@@ -96,9 +99,9 @@ def render_main_recommendation(
         ]
     )
     lines.extend(_risk_disclosures(recommendation))
-    news_coverage = getattr(recommendation, "news_coverage", None)
-    if news_coverage in {"none", "sparse"}:
-        lines.append(f"📰 <b>News:</b> {news_coverage}")
+    news_line = _news_status_line(recommendation)
+    if news_line is not None:
+        lines.append(news_line)
     if getattr(recommendation, "stale_news", False):
         lines.append("⚠️ <b>Stale news</b> (most recent article > 14 days old)")
     lines.extend(
@@ -130,9 +133,13 @@ def _rank_medal(rank_position: int) -> str:
 
 
 def _direction_label(recommendation: RecommendationLike) -> str:
-    if recommendation.option_type == "call":
-        return "Bullish"
-    return "Bearish"
+    # Directional view is on the *underlying*, not the option itself.
+    # long call / short put → bullish; long put / short call → bearish.
+    is_bullish = (
+        (recommendation.option_type == "call" and recommendation.position_side == "long")
+        or (recommendation.option_type == "put" and recommendation.position_side == "short")
+    )
+    return "Bullish" if is_bullish else "Bearish"
 
 
 def _signal_title(recommendation: RecommendationLike) -> str:
@@ -147,7 +154,7 @@ def _signal_title(recommendation: RecommendationLike) -> str:
 
 
 def _direction_emoji(recommendation: RecommendationLike) -> str:
-    return "📈" if recommendation.option_type == "call" else "📉"
+    return "📈" if _direction_label(recommendation) == "Bullish" else "📉"
 
 
 def _entry_text(recommendation: RecommendationLike) -> str:
@@ -211,6 +218,42 @@ def _margin_lines(recommendation: RecommendationLike) -> list[str]:
     if margin_requirement is None:
         return []
     return [f"<b>Estimated broker buying power:</b> ${_money(margin_requirement)}"]
+
+
+def _dte_line(recommendation: RecommendationLike) -> str | None:
+    expiry = getattr(recommendation, "expiry", None)
+    exit_by_date = getattr(recommendation, "exit_by_date", None)
+    if expiry is None and exit_by_date is None:
+        return None
+    today = getattr(recommendation, "reference_trading_date", None) or date.today()
+    parts: list[str] = []
+    if expiry is not None:
+        dte = (expiry - today).days
+        if dte >= 0:
+            parts.append(f"{dte}d to expiry")
+    if exit_by_date is not None:
+        to_exit = (exit_by_date - today).days
+        if to_exit >= 0:
+            parts.append(f"{to_exit}d to planned exit")
+    if not parts:
+        return None
+    return f"⏳ <b>Time horizon:</b> {' • '.join(parts)}"
+
+
+def _news_status_line(recommendation: RecommendationLike) -> str | None:
+    news_coverage = getattr(recommendation, "news_coverage", None)
+    brief_status = getattr(recommendation, "news_brief_status", None)
+    article_count = getattr(recommendation, "news_article_count", None)
+    if brief_status == "raw_extractive":
+        suffix = (
+            f" ({article_count} articles, raw headlines only — AI summary unavailable)"
+            if article_count
+            else " (raw headlines only — AI summary unavailable)"
+        )
+        return f"📰 <b>News:</b> available{suffix}"
+    if news_coverage in {"none", "sparse"}:
+        return f"📰 <b>News:</b> {news_coverage}"
+    return None
 
 
 def _money(value: Decimal) -> str:

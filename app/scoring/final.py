@@ -89,7 +89,7 @@ def score_candidate(candidate: CandidateContext, user: UserContext) -> Candidate
     if (
         action == "recommend"
         and candidate.strategy_source in NO_EARNINGS_REQUIRED_STRATEGIES
-        and _news_is_unavailable(candidate.news_brief.key_uncertainty)
+        and _news_is_truly_unavailable(candidate)
     ):
         action = "watchlist"
 
@@ -101,7 +101,7 @@ def score_candidate(candidate: CandidateContext, user: UserContext) -> Candidate
         )
         reasons.extend(penalty.reason for penalty in chosen.penalties)
         reasons.extend(veto.reason for veto in chosen.vetoes)
-    if _news_is_unavailable(candidate.news_brief.key_uncertainty):
+    if _news_is_truly_unavailable(candidate):
         reasons.append("News service unavailable; non-catalyst setups cannot be promoted blindly.")
     reasons.extend(final_confidence.blockers)
 
@@ -126,6 +126,21 @@ def _news_is_unavailable(key_uncertainty: str) -> bool:
         or "coverage was unavailable" in normalized
         or "not enough recent" in normalized
     )
+
+
+def _news_is_truly_unavailable(candidate: CandidateContext) -> bool:
+    """True only when there is no article evidence at all.
+
+    A summarizer failure with articles still present is NOT a blackout — the
+    raw extractive brief carries real headlines that the heavy LLM can reason
+    over. We only downgrade non-catalyst recommends when the article count is
+    zero or coverage is "none". This keeps the post-PM guardrail in place for
+    real news outages without letting a flaky lightweight model veto every
+    sector-RS / coiled trade.
+    """
+    if candidate.news_article_count == 0 or candidate.news_coverage == "none":
+        return True
+    return False
 
 
 def final_action(

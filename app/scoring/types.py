@@ -130,6 +130,9 @@ class CandidateContext:
     previous_earnings_move_percent: Decimal | None = None
     source_conflicts: tuple[SourceConflict, ...] = ()
     calculation_errors: tuple[str, ...] = ()
+    news_article_count: int = 0
+    news_coverage: str = "none"
+    news_brief_status: str = "unavailable"
 
 
 @dataclass(slots=True, frozen=True)

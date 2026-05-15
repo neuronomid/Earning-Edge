@@ -8,7 +8,7 @@ adds wording in Phase 11.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
@@ -85,6 +85,7 @@ class CandidateBundle(_Frozen):
     news_article_count: int = 0
     news_source_count: int = 0
     news_status: Literal["available", "deferred", "unavailable"] = "unavailable"
+    news_brief_status: Literal["ok", "raw_extractive", "skipped", "unavailable"] = "unavailable"
     option_chain_candidates: list[OptionChainCandidate] = Field(default_factory=list)
     tradeable_contracts_available: bool = True
     catalyst_pending_no_tradeable_contract: bool = False
@@ -100,6 +101,7 @@ class DecisionInput(_Frozen):
     user_strategy_permission: StrategyPermission
     risk_profile: RiskProfile
     account_size: Decimal
+    reference_datetime_et: datetime | None = None
     reference_trading_date: date | None = None
     next_market_session: date | None = None
     market_calendar_notes: list[str] = Field(default_factory=list)

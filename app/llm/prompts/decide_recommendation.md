@@ -12,10 +12,22 @@ For each candidate in `candidates`, weigh:
   `structural_direction_tier` field carries the math-derived view
 - `strategy_source` identifies the candidate screen; `event_signal_detail`
   summarizes screen-specific evidence when available
-- news context (`news_summary`, `news_coverage`, `stale_news`): you are the
+- news context (`news_summary`, `news_coverage`, `stale_news`,
+  `news_status`, `news_brief_status`, `news_article_count`): you are the
   only step that interprets news. Use it to confirm or override the
-  structural tier when warranted, and explain in `rationale`. Treat
-  `key_uncertainty="news service unavailable"` as missing news, not silence
+  structural tier when warranted, and explain in `rationale`.
+  **`news_status` truth table:**
+  - `available` → article evidence exists. Use it. This includes the case
+    where `news_brief_status="raw_extractive"` — the lightweight summary
+    model failed but the raw article headlines are listed verbatim in
+    `news_summary`. Treat raw headlines as decision-grade evidence; do not
+    invent a blackout when you can read the article titles, sources, and
+    dates.
+  - `unavailable` → genuinely no articles fetched
+    (`news_article_count == 0`). This is the only news-side blackout that
+    matters for the downgrade rule below.
+  - `deferred` → news fetch was skipped for a non-finalist; rare in the
+    decide step.
 - contract opportunity: breakeven distance, liquidity, expiry fit (BMO/AMC
   rule from §17), strike fit, IV setup, premium/risk fit, direction
   compatibility
@@ -99,9 +111,13 @@ the safety net, not the target.
 - Never describe a contract as long-dated, long runway, or months of runway
   unless `dte_calendar >= 45`.
 - If `proposed_exit_is_trading_session` is false, choose `no_trade`.
-- If `news_status="unavailable"` for a non-catalyst setup, do not promote it
-  to a live recommendation unless the deterministic reality metrics are clean
-  and you explicitly explain why the event signal is sufficient.
+- If `news_status="unavailable"` (i.e. `news_article_count == 0`) for a
+  non-catalyst setup, do not promote it to a live recommendation unless the
+  deterministic reality metrics are clean and you explicitly explain why
+  the event signal is sufficient. Do **not** apply this downgrade rule when
+  `news_status="available"` but `news_brief_status="raw_extractive"` — that
+  combination means the headlines are present and you should reason over
+  them.
 - When you downgrade a setup from `recommend` to `watchlist` because
   `news_status="unavailable"`, you MUST include a `key_concerns` bullet that
   names the news blackout in plain terms (e.g., "news_status=unavailable —

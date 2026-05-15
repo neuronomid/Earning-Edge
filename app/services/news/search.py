@@ -4,7 +4,7 @@ import asyncio
 import os
 import warnings
 from collections.abc import Sequence
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Literal, Protocol
 from urllib.parse import urlsplit, urlunsplit
 
@@ -218,7 +218,7 @@ def _parse_published_at(row: dict[str, Any]) -> datetime | None:
     if isinstance(raw, datetime):
         if raw.tzinfo is not None:
             return raw
-        return raw.replace(tzinfo=timezone.utc)
+        return raw.replace(tzinfo=UTC)
 
     value = str(raw).strip()
     normalized = value.replace("Z", "+00:00")
@@ -228,7 +228,7 @@ def _parse_published_at(row: dict[str, Any]) -> datetime | None:
         return None
     if parsed.tzinfo is not None:
         return parsed
-    return parsed.replace(tzinfo=timezone.utc)
+    return parsed.replace(tzinfo=UTC)
 
 
 def _normalized_url(url: str) -> str:

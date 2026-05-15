@@ -70,7 +70,7 @@ class Settings(BaseSettings):
     activist_13d_filing_cache_ttl_seconds: int = 86400
     activist_13d_throttle_rps: int = 8
 
-    news_brief_schema_version: str = "v3"
+    news_brief_schema_version: str = "v4"
     news_prompt_version: str = "v3"
 
     @property

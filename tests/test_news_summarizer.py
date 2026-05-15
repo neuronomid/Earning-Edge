@@ -74,21 +74,25 @@ async def test_news_summarizer_parses_valid_openrouter_response() -> None:
                 },
             )
 
-            brief = await summarizer.summarize(
+            outcome = await summarizer.summarize(
                 ticker="AMD",
                 company_name="Advanced Micro Devices",
                 articles=(_sample_article(),),
                 api_key="test-openrouter-key",
             )
 
+    brief = outcome.brief
+    assert outcome.status == "ok"
     assert brief.summary == "Data center backlog improved; margins still need to prove out."
     assert brief.key_facts == ["Backlog up double digits quarter-over-quarter."]
     assert brief.key_uncertainty == "Guidance wording could still move the stock sharply."
 
 
-async def test_news_summarizer_returns_failure_brief_on_schema_invalid_response() -> None:
-    """When Gemini returns a payload missing required fields, return the explicit
-    failure brief instead of raising. Opus then sees the unavailable marker."""
+async def test_news_summarizer_returns_raw_extractive_brief_when_model_fails() -> None:
+    """When Gemini returns invalid JSON twice, fall back to a deterministic raw
+    extractive brief built from the article headlines. This prevents a
+    summarizer hiccup from masquerading as a news blackout — the downstream
+    LLM still sees real article evidence."""
     async with httpx.AsyncClient() as client:
         router = LLMRouter(client=client)
         summarizer = NewsSummarizer(router=router)
@@ -108,15 +112,19 @@ async def test_news_summarizer_returns_failure_brief_on_schema_invalid_response(
                 },
             )
 
-            brief = await summarizer.summarize(
+            outcome = await summarizer.summarize(
                 ticker="AMD",
                 company_name="Advanced Micro Devices",
                 articles=(_sample_article(),),
                 api_key="test-openrouter-key",
             )
 
-    assert brief.key_uncertainty == "news service unavailable"
+    assert outcome.status == "raw_extractive"
+    brief = outcome.brief
     assert brief.summary == ""
+    assert brief.key_facts, "raw extractive brief must surface at least one headline"
+    assert "AMD preview" in brief.key_facts[0]
+    assert "raw extractive" in " ".join(brief.neutral_contextual_evidence).lower()
 
 
 async def test_news_summarizer_uses_zero_temperature() -> None:
@@ -159,7 +167,7 @@ async def test_news_summarizer_retries_with_wider_budget_on_truncated_json() -> 
     router = RecordingRouter(response_text=valid, responses=[truncated, valid])
     summarizer = NewsSummarizer(router=router)
 
-    brief = await summarizer.summarize(
+    outcome = await summarizer.summarize(
         ticker="PRMB",
         company_name="Primo Brands Corp",
         articles=(_sample_article(),),
@@ -167,6 +175,8 @@ async def test_news_summarizer_retries_with_wider_budget_on_truncated_json() -> 
     )
 
     assert router.call_count == 2  # retried once
+    assert outcome.status == "ok"
+    brief = outcome.brief
     assert brief.summary == "Compact valid brief."
     assert brief.key_uncertainty == "None notable."
     assert router.captured_max_tokens is not None and router.captured_max_tokens >= 4096

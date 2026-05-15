@@ -32,7 +32,7 @@ from app.scoring.types import (
 )
 from app.services.candidate_models import CandidateRecord, StrategyEventSignal
 from app.services.market_data.types import MarketSnapshot, ReturnMetrics
-from app.services.news.types import NewsBrief, NewsBundle
+from app.services.news.types import NewsArticle, NewsBrief, NewsBundle
 
 pytestmark = pytest.mark.asyncio
 
@@ -413,6 +413,52 @@ async def test_watchlist_with_news_unavailable_gets_blackout_concern_injected() 
     concerns_lc = " ".join(result.decision.key_concerns).lower()
     assert "news" in concerns_lc and "unavailable" in concerns_lc, (
         f"news-blackout concern missing from {result.decision.key_concerns!r}"
+    )
+
+
+async def test_watchlist_with_raw_extractive_news_does_not_inject_blackout_concern() -> None:
+    """When the summarizer fell back to raw_extractive but real articles exist,
+    news_status must be 'available' and the validator must NOT inject a
+    blackout concern. This is the FLNC class of bug: a flaky summary model
+    should not masquerade as a news blackout when the article evidence is in
+    the bundle."""
+    candidate = _candidate_with_reality_metrics()
+    bundle = _news_bundle_with_articles(
+        "PM", article_count=6, brief_status="raw_extractive"
+    )
+    candidate = replace(candidate, news_bundle=bundle)
+    step = LLMDecisionStep(
+        router=StubRouter(
+            decision=StructuredDecision(
+                action="watchlist",
+                chosen_ticker="PM",
+                chosen_contract=ChosenContract(
+                    ticker="PM",
+                    option_type="call",
+                    position_side="long",
+                    strike=Decimal("195"),
+                    expiry=date(2026, 5, 22),
+                    rationale="Setup is clean; staying watchlist for liquidity.",
+                ),
+                confidence_band="watchlist",
+                reasoning="Wait for the spread to tighten before sizing.",
+                key_evidence=["Trend intact."],
+                key_concerns=["Spread is wide."],
+            )
+        )
+    )
+
+    result = await step.execute([candidate], _user_context(), openrouter_api_key="sk-or-test")
+
+    assert result.decision.action == "watchlist"
+    concerns_lc = " ".join(result.decision.key_concerns).lower()
+    assert "news_status=unavailable" not in concerns_lc, (
+        f"news-blackout concern was injected when articles are present: "
+        f"{result.decision.key_concerns!r}"
+    )
+    assert "news service unavailable" not in concerns_lc, (
+        f"news-blackout concern was injected when articles are present: "
+        f"{result.decision.key_concerns!r}"
     )
 
 
@@ -1006,6 +1052,60 @@ def _news_bundle(ticker: str) -> NewsBundle:
         ),
         used_ir_fallback=False,
         used_llm_summary=False,
+    )
+
+
+def _news_bundle_with_articles(
+    ticker: str, *, article_count: int, brief_status: str = "ok"
+) -> NewsBundle:
+    """Bundle that actually carries article evidence — used to assert the
+    raw_extractive fallback is treated as decision-grade news."""
+    articles = tuple(
+        NewsArticle(
+            title=f"{ticker} headline {i}",
+            url=f"https://example.com/{ticker.lower()}/{i}",
+            snippet="",
+            content="",
+            source="example.com",
+            published_at=datetime(2026, 5, 1, 12, 0, tzinfo=UTC),
+        )
+        for i in range(article_count)
+    )
+    coverage = "none" if article_count == 0 else (
+        "rich" if article_count >= 3 else "sparse"
+    )
+    raw_facts = [
+        f"{ticker} headline {i} — example.com (2026-05-01)"
+        for i in range(article_count)
+    ]
+    brief = (
+        NewsBrief(
+            key_facts=raw_facts,
+            neutral_contextual_evidence=[
+                "Raw extractive brief built from fetched articles."
+            ],
+            key_uncertainty=(
+                "Lightweight summary model unavailable; raw article headlines below."
+            ),
+        )
+        if brief_status == "raw_extractive"
+        else NewsBrief(
+            summary=f"{ticker} fundamentals look stable.",
+            key_facts=[],
+            key_uncertainty="None notable.",
+        )
+    )
+    return NewsBundle(
+        ticker=ticker,
+        company_name=f"{ticker} Corp.",
+        generated_at=datetime(2026, 5, 1, 15, 55, tzinfo=UTC),
+        search_results=(),
+        articles=articles,
+        brief=brief,
+        used_ir_fallback=False,
+        used_llm_summary=brief_status == "ok",
+        news_coverage=coverage,
+        brief_status=brief_status,  # type: ignore[arg-type]
     )
 
 

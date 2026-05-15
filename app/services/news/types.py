@@ -6,6 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 NewsCoverage = Literal["none", "sparse", "adequate", "rich"]
+NewsBriefStatus = Literal["ok", "raw_extractive", "skipped", "unavailable"]
 
 
 class _FrozenModel(BaseModel):
@@ -63,3 +64,4 @@ class NewsBundle(_FrozenModel):
     used_llm_summary: bool = False
     news_coverage: NewsCoverage = "none"
     stale_news: bool = False
+    brief_status: NewsBriefStatus = "unavailable"

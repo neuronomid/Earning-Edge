@@ -53,6 +53,7 @@ class FakeFetcher:
 class FakeSummarizer:
     brief: NewsBrief
     calls: int = 0
+    status: str = "ok"
 
     async def summarize(
         self,
@@ -61,10 +62,12 @@ class FakeSummarizer:
         company_name: str | None = None,
         articles: tuple[NewsArticle, ...] | list[NewsArticle],
         api_key: str,
-    ) -> NewsBrief:
+    ) -> Any:
         del ticker, company_name, articles, api_key
         self.calls += 1
-        return self.brief
+        from app.services.news.summarizer import SummarizeOutcome
+
+        return SummarizeOutcome(brief=self.brief, status=self.status)
 
 
 @dataclass

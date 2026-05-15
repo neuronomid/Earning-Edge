@@ -39,6 +39,7 @@ from app.scoring.types import (
     option_mid,
     spread_percent,
 )
+from app.services.market_hours import NEW_YORK_TZ as EASTERN_TZ
 from app.services.market_hours import next_trading_session
 
 ZERO = Decimal("0")
@@ -199,10 +200,19 @@ def build_decision_input(
         if item.context.valuation_date is not None
     ]
     reference_trading_date = min(reference_dates) if reference_dates else None
+    reference_datetimes = [
+        item.news_bundle.generated_at
+        for item in candidates
+        if item.news_bundle.generated_at is not None
+    ]
+    reference_datetime_et = (
+        min(reference_datetimes).astimezone(EASTERN_TZ) if reference_datetimes else None
+    )
     return DecisionInput(
         user_strategy_permission=_strategy_permission(user.strategy_permission),
         risk_profile=user.risk_profile,
         account_size=user.account_size,
+        reference_datetime_et=reference_datetime_et,
         reference_trading_date=reference_trading_date,
         next_market_session=None
         if reference_trading_date is None
@@ -210,6 +220,11 @@ def build_decision_input(
         market_calendar_notes=[
             "All dates are NYSE/Eastern trading-session dates.",
             "Never recommend a contract with P0 reality_check_flags.",
+            "news_status='available' includes briefs whose summary model failed "
+            "but whose raw article headlines are present in news_summary — treat "
+            "those as decision-grade evidence, not as a blackout.",
+            "Only downgrade to watchlist for news reasons when "
+            "news_status='unavailable' (article_count==0).",
         ],
         candidates=[_candidate_bundle(item) for item in candidates],
     )
@@ -520,6 +535,7 @@ def _candidate_bundle(candidate: PipelineCandidate) -> CandidateBundle:
             }
         ),
         news_status=_news_status(candidate),
+        news_brief_status=candidate.news_bundle.brief_status,
         option_chain_candidates=[
             _option_chain_candidate(contract) for contract in viable_contracts[:3]
         ],
@@ -588,17 +604,48 @@ def _option_chain_candidate(contract: ContractScoreResult) -> OptionChainCandida
 
 
 def _news_status(candidate: PipelineCandidate) -> str:
-    uncertainty = candidate.news_bundle.brief.key_uncertainty.strip().lower()
-    if uncertainty == "news service unavailable" or candidate.news_bundle.news_coverage == "none":
+    """Three-valued news availability signal for the LLM and Telegram.
+
+    "unavailable" means we genuinely could not gather article evidence —
+    article_count == 0 or coverage == "none". Summarizer failures with
+    articles still present are NOT a blackout because we synthesize a raw
+    extractive brief with real headlines that the heavy model can use.
+
+    "deferred" means we intentionally skipped news fetching for a non-finalist
+    candidate; the finalist refresh will fill it in if the candidate advances.
+
+    "available" means we have article evidence (either fully summarized or as
+    a raw extractive headlines list — both are decision-grade context).
+    """
+    bundle = candidate.news_bundle
+    brief_status = bundle.brief_status
+    if bundle.news_coverage == "none" or len(bundle.articles) == 0:
+        if brief_status == "skipped":
+            uncertainty = bundle.brief.key_uncertainty.strip().lower()
+            if "deferred" in uncertainty:
+                return "deferred"
         return "unavailable"
-    if "deferred" in uncertainty:
-        return "deferred"
     return "available"
 
 
 def _news_summary(candidate: PipelineCandidate) -> str:
-    brief = candidate.news_bundle.brief
+    bundle = candidate.news_bundle
+    brief = bundle.brief
     parts = []
+    if bundle.brief_status == "raw_extractive":
+        # Surface the headline list verbatim instead of pretending we have an
+        # AI summary. The heavy LLM should know this is raw extractive data so
+        # it weights it correctly when reasoning about catalysts.
+        parts.append(
+            f"Brief mode: raw_extractive (lightweight summary model unavailable; "
+            f"{len(bundle.articles)} articles fetched)."
+        )
+        if brief.key_facts:
+            parts.append(f"Headlines: {'; '.join(brief.key_facts[:10])}")
+        if brief.neutral_contextual_evidence:
+            parts.append(f"Context: {'; '.join(brief.neutral_contextual_evidence[:2])}")
+        parts.append(f"Uncertainty: {brief.key_uncertainty}")
+        return " ".join(parts)
     if brief.summary:
         parts.append(f"Summary: {brief.summary}")
     if brief.key_facts:

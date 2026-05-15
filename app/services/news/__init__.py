@@ -28,8 +28,8 @@ __all__ = [
     "NewsSummarizer",
     "NewsSummaryError",
     "NewsSummaryValidationError",
-    "SecEdgarNewsSource",
     "SearchResponse",
     "SearchResult",
+    "SecEdgarNewsSource",
     "get_news_service",
 ]

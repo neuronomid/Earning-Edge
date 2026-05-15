@@ -330,6 +330,9 @@ class PipelineOrchestrator:
             expected_move_percent=expected_move_percent,
             source_conflicts=(),
             calculation_errors=tuple(calculation_errors),
+            news_article_count=len(news_bundle.articles),
+            news_coverage=news_bundle.news_coverage,
+            news_brief_status=news_bundle.brief_status,
         )
         evaluation = await self.scoring_step.execute(context, effective_user_context)
         sizing = await self._size_candidate(effective_user_context, evaluation)
@@ -633,6 +636,16 @@ class PipelineOrchestrator:
             return final_message
 
         action = outcome.decision.action
+        # Attach in-memory presentation fields the DB row doesn't carry yet so
+        # the Telegram template can show DTE, brief status, and the trading-
+        # date anchor without a migration.
+        if outcome.selected is not None:
+            news_bundle = outcome.selected.news_bundle
+            recommendation.news_brief_status = news_bundle.brief_status  # type: ignore[attr-defined]
+            recommendation.news_article_count = len(news_bundle.articles)  # type: ignore[attr-defined]
+            recommendation.reference_trading_date = (  # type: ignore[attr-defined]
+                outcome.selected.context.valuation_date
+            )
         final_message = render_main_recommendation(
             recommendation,
             warning_text=outcome.batch.warning_text,
@@ -797,6 +810,7 @@ def _deferred_news_bundle(record: CandidateRecord, *, generated_at: datetime) ->
         used_llm_summary=False,
         news_coverage="none",
         stale_news=True,
+        brief_status="skipped",
     )
 
 
@@ -823,6 +837,7 @@ def _fallback_news_bundle(
         used_llm_summary=False,
         news_coverage="none",
         stale_news=True,
+        brief_status="unavailable",
     )
 
 

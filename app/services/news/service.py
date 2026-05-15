@@ -13,10 +13,11 @@ from app.core.logging import get_logger
 from app.services.news.fetcher import ArticleFetcher
 from app.services.news.search import NewsSearchService
 from app.services.news.sources import FinnhubNewsSource, SecEdgarNewsSource
-from app.services.news.summarizer import NewsSummarizer
+from app.services.news.summarizer import NewsSummarizer, SummarizeOutcome
 from app.services.news.types import (
     NewsArticle,
     NewsBrief,
+    NewsBriefStatus,
     NewsBundle,
     NewsCoverage,
     SearchResponse,
@@ -60,7 +61,7 @@ class BriefSummarizer(Protocol):
         company_name: str | None = None,
         articles: tuple[NewsArticle, ...] | list[NewsArticle],
         api_key: str,
-    ) -> NewsBrief: ...
+    ) -> "SummarizeOutcome": ...
 
 
 class BundleCache(Protocol):
@@ -221,25 +222,31 @@ class NewsService:
                 )
 
         used_llm_summary = False
+        brief_status: NewsBriefStatus = "skipped"
         if not articles:
             brief = _empty_brief(search_response)
+            brief_status = "unavailable"
         else:
             resolved_api_key = (api_key or self.default_api_key or "").strip()
             if not resolved_api_key:
                 raise ValueError("api_key is required when news articles are available")
-            brief = await self.summarizer.summarize(
+            outcome = await self.summarizer.summarize(
                 ticker=normalized,
                 company_name=company_name,
                 articles=articles,
                 api_key=resolved_api_key,
             )
-            used_llm_summary = True
+            brief = outcome.brief
+            brief_status = outcome.status
+            used_llm_summary = brief_status == "ok"
 
+        # news_coverage reflects article evidence we actually fetched. It is
+        # purely deterministic — do not coerce it to "none" just because the
+        # summary model failed. Article presence is the truth for downstream
+        # blackout gates; brief_status carries the summary-quality signal
+        # separately.
         news_coverage = _compute_news_coverage(articles)
         stale_news = _compute_stale_news(articles, reference_dt=effective_reference_dt)
-        if brief.key_uncertainty.strip().lower() == "news service unavailable":
-            news_coverage = "none"
-            stale_news = True
 
         bundle = NewsBundle(
             ticker=normalized,
@@ -252,6 +259,7 @@ class NewsService:
             used_llm_summary=used_llm_summary,
             news_coverage=news_coverage,
             stale_news=stale_news,
+            brief_status=brief_status,
         )
         self.logger.info(
             "news_bundle_built",

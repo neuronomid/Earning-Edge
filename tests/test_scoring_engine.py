@@ -583,6 +583,71 @@ def test_pm_weekly_no_catalyst_contract_is_not_recommendable() -> None:
     assert breakeven_factor.score == 4
 
 
+def test_non_catalyst_with_raw_extractive_news_is_not_downgraded() -> None:
+    """When the lightweight summarizer fails but real articles were fetched,
+    the deterministic raw-extractive brief carries the headlines forward. The
+    downgrade-to-watchlist rule was designed for genuine news blackouts
+    (article_count == 0). A flaky Gemini call must NOT veto a clean
+    non-catalyst setup that has independent news evidence available."""
+    contract = OptionContractInput(
+        ticker="XYZ",
+        option_type="call",
+        position_side="long",
+        strike=Decimal("102"),
+        expiry=date(2026, 5, 29),
+        bid=Decimal("2.20"),
+        ask=Decimal("2.35"),
+        volume=220,
+        open_interest=600,
+        implied_volatility=Decimal("0.32"),
+        delta=Decimal("0.56"),
+        gamma=Decimal("0.03"),
+        theta=Decimal("-0.04"),
+        vega=Decimal("0.10"),
+    )
+    candidate = replace(
+        _strong_bullish_candidate(),
+        ticker="XYZ",
+        company_name="XYZ Inc.",
+        earnings_date=None,
+        strategy_source="sector_relative_strength",
+        event_signal=StrategyEventSignal(
+            score=92,
+            is_supportive=True,
+            detail="Sector RS: top-decile sector and stock momentum.",
+        ),
+        verified_earnings_date=True,
+        news_brief=NewsBrief(
+            neutral_contextual_evidence=[
+                "Raw extractive brief built from 8 fetched articles after the "
+                "lightweight summary model could not produce a valid JSON response."
+            ],
+            key_facts=[
+                "Roth/MKM upgrades to Buy, PT $13 → $26 — example.com (2026-05-08)",
+                "Q1 results: EPS beat — example.com (2026-05-06)",
+            ],
+            key_uncertainty=(
+                "Lightweight summary model unavailable; raw article headlines below."
+            ),
+        ),
+        valuation_date=date(2026, 5, 1),
+        option_chain=(contract,),
+        expected_move_percent=Decimal("0.06"),
+        news_article_count=8,
+        news_coverage="rich",
+        news_brief_status="raw_extractive",
+    )
+    user = _user(account_size="20000", strategy_permission="long")
+
+    result = score_candidate(candidate, user)
+
+    assert result.chosen_contract is not None
+    assert result.final_score >= 68
+    # The setup is clean and articles exist — must not be downgraded for "news
+    # blackout" reasons. Action should be recommend, not watchlist.
+    assert result.action == "recommend"
+
+
 def test_non_catalyst_unavailable_news_caps_recommendation_to_watchlist() -> None:
     contract = OptionContractInput(
         ticker="XYZ",
@@ -622,6 +687,9 @@ def test_non_catalyst_unavailable_news_caps_recommendation_to_watchlist() -> Non
         valuation_date=date(2026, 5, 1),
         option_chain=(contract,),
         expected_move_percent=Decimal("0.06"),
+        news_article_count=0,
+        news_coverage="none",
+        news_brief_status="unavailable",
     )
     user = _user(account_size="20000", strategy_permission="long")
 
