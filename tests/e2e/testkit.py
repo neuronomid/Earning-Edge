@@ -114,8 +114,9 @@ class StaticOptionsStep:
         alpaca_api_key: str | None,
         alpaca_api_secret: str | None,
         strategy_permission: str,
+        today: date | None = None,
     ) -> tuple[OptionContractInput, ...]:
-        del alpaca_api_key, alpaca_api_secret, strategy_permission
+        del alpaca_api_key, alpaca_api_secret, strategy_permission, today
         payload = self.chains.get(record.ticker, ())
         if isinstance(payload, Exception):
             raise payload

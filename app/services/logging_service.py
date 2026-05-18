@@ -38,6 +38,7 @@ class LoggingService:
         *,
         archive_root: Path | str | None = None,
         results_root: Path | str | None = None,
+        append_run_id: bool = True,
         settings: Settings | None = None,
         logger: Any | None = None,
     ) -> None:
@@ -51,6 +52,7 @@ class LoggingService:
             and self.archive_root != Path("var/runs")
         ):
             results_root = self.archive_root.parent / "results"
+        self.append_run_id = append_run_id
         self.logger = logger or get_logger(__name__)
         self.results_exporter = ResultsExportService(
             results_root=results_root,
@@ -286,9 +288,9 @@ class LoggingService:
         )
 
     def _archive(self, run_id: UUID, artifacts: RunArtifacts) -> None:
-        if self.archive_root is None:
+        run_dir = self.run_dir(run_id)
+        if run_dir is None:
             return
-        run_dir = self.archive_root / str(run_id)
         try:
             run_dir.mkdir(parents=True, exist_ok=True)
             _write_json(run_dir / "run_summary.json", artifacts.run_summary)
@@ -309,9 +311,10 @@ class LoggingService:
         ticker: str,
         brief: dict[str, Any],
     ) -> None:
-        if self.archive_root is None:
+        run_dir = self.run_dir(run_id)
+        if run_dir is None:
             return
-        run_dir = self.archive_root / str(run_id) / "news_briefs"
+        run_dir = run_dir / "news_briefs"
         try:
             run_dir.mkdir(parents=True, exist_ok=True)
             _write_json(run_dir / f"{ticker.upper()}.json", brief)
@@ -327,9 +330,10 @@ class LoggingService:
         ticker: str,
         snapshot: dict[str, Any],
     ) -> None:
-        if self.archive_root is None:
+        run_dir = self.run_dir(run_id)
+        if run_dir is None:
             return
-        run_dir = self.archive_root / str(run_id) / "scoring_snapshots"
+        run_dir = run_dir / "scoring_snapshots"
         try:
             run_dir.mkdir(parents=True, exist_ok=True)
             _write_json(run_dir / f"{ticker.upper()}.json", snapshot)
@@ -351,9 +355,9 @@ class LoggingService:
         key_facts: list[str],
         rationale: str,
     ) -> None:
-        if self.archive_root is None:
+        run_dir = self.run_dir(run_id)
+        if run_dir is None:
             return
-        run_dir = self.archive_root / str(run_id)
         line = {
             "run_id": str(run_id),
             "ticker": ticker.upper(),
@@ -370,6 +374,13 @@ class LoggingService:
             self.logger.warning(
                 "divergence_log_failed", run_id=str(run_id), ticker=ticker, error=str(exc)
             )
+
+    def run_dir(self, run_id: UUID) -> Path | None:
+        if self.archive_root is None:
+            return None
+        if self.append_run_id:
+            return self.archive_root / str(run_id)
+        return self.archive_root
 
     def _log_tier_divergence(self, *, run_id: UUID, outcome: PipelineOutcome) -> None:
         selected = outcome.selected

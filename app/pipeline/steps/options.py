@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Protocol
 
 from app.scoring.types import OptionContractInput
@@ -15,6 +16,7 @@ class OptionsStep(Protocol):
         alpaca_api_key: str | None,
         alpaca_api_secret: str | None,
         strategy_permission: str,
+        today: date | None = None,
     ) -> tuple[OptionContractInput, ...]: ...
 
 
@@ -29,6 +31,7 @@ class OptionsFetchStep:
         alpaca_api_key: str | None,
         alpaca_api_secret: str | None,
         strategy_permission: str,
+        today: date | None = None,
     ) -> tuple[OptionContractInput, ...]:
         return await self.service.get_chain(
             record.ticker,
@@ -36,6 +39,7 @@ class OptionsFetchStep:
             alpaca_api_secret=alpaca_api_secret,
             strategy_permission=strategy_permission,  # type: ignore[arg-type]
             earnings_date=record.earnings_date,
+            today=today,
         )
 
 
@@ -49,6 +53,7 @@ class NullOptionsStep:
         alpaca_api_key: str | None,
         alpaca_api_secret: str | None,
         strategy_permission: str,
+        today: date | None = None,
     ) -> tuple[OptionContractInput, ...]:
-        del record, alpaca_api_key, alpaca_api_secret, strategy_permission
+        del record, alpaca_api_key, alpaca_api_secret, strategy_permission, today
         return ()

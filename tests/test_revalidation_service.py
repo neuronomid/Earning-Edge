@@ -24,6 +24,7 @@ from app.services.positions.revalidation_service import (
     RevalidationService,
     _normalize_validation,
     _thesis_json,
+    _valid_evidence_codes,
 )
 from app.services.positions.snapshots import PositionQuoteSnapshot
 from app.services.positions.validation_schemas import (
@@ -176,11 +177,124 @@ async def test_manual_revalidation_persists_history(db_session: AsyncSession) ->
     result = await service.validate_position_manual(user_id=user.id, position_id=position.id)
 
     assert result.status == "completed"
-    assert "Action: HOLD" in result.message
+    assert "Decision: Hold" in result.message
     rows = await PositionRevalidationRepository(db_session).list_for_position(position.id)
     assert len(rows) == 1
     assert rows[0].llm_action_final == "hold"
     assert rows[0].trigger == "manual"
+
+
+def test_hold_with_no_breach_evidence_stays_hold() -> None:
+    context = SimpleNamespace(
+        recommendation=SimpleNamespace(position_side="long"),
+        plan=ActivePositionPlan(
+            target_option_price=Decimal("2.00"),
+            stop_loss_option_price=Decimal("0.50"),
+            underlying_stop_price=None,
+        ),
+    )
+    raw = StructuredPositionValidation(
+        action="hold",
+        confidence_band="standard",
+        evidence=[
+            ValidationEvidence(
+                code="drift_signal:no_breach",
+                observation="No kill or degrade criteria fired; premium remains close to plan.",
+                significance="marginal",
+            )
+        ],
+        summary="The thesis remains intact.",
+    )
+    drift = DriftEvaluation(
+        fired=(),
+        snapshot={"premium_vs_expected_ratio": "0.9600"},
+        data_quality=(),
+    )
+
+    normalized = _normalize_validation(
+        raw=raw,
+        drift=drift,
+        current=_snapshot(),
+        context=context,
+        headlines=(),
+        inherited_notes=[],
+    )
+
+    assert normalized.action_final == "hold"
+    assert normalized.evidence[0]["code"] == "drift_signal:no_breach"
+
+
+def test_unsupported_evidence_still_normalizes_to_insufficient_data() -> None:
+    context = SimpleNamespace(
+        recommendation=SimpleNamespace(position_side="long"),
+        plan=ActivePositionPlan(
+            target_option_price=Decimal("2.00"),
+            stop_loss_option_price=Decimal("0.50"),
+            underlying_stop_price=None,
+        ),
+    )
+    raw = StructuredPositionValidation(
+        action="hold",
+        confidence_band="standard",
+        evidence=[
+            ValidationEvidence(
+                code="model_only_claim",
+                observation="The model made a claim that is not mapped to supplied data.",
+                significance="marginal",
+            )
+        ],
+        summary="Hold it.",
+    )
+    drift = DriftEvaluation(
+        fired=(),
+        snapshot={"premium_vs_expected_ratio": "0.9600"},
+        data_quality=(),
+    )
+
+    normalized = _normalize_validation(
+        raw=raw,
+        drift=drift,
+        current=_snapshot(),
+        context=context,
+        headlines=(),
+        inherited_notes=[],
+    )
+
+    assert normalized.action_final == "insufficient_data"
+    assert normalized.evidence[0]["code"] == "data_quality:insufficient_supported_evidence"
+    assert "discarded unsupported evidence" in normalized.notes[0]
+
+
+def test_no_breach_evidence_code_only_allowed_for_clean_drift() -> None:
+    clean = DriftEvaluation(
+        fired=(),
+        snapshot={"premium_vs_expected_ratio": "0.9600"},
+        data_quality=(),
+    )
+    degraded = DriftEvaluation(
+        fired=(
+            FiredCriterion(
+                code="premium_trajectory_lag",
+                severity="degrade",
+                observation="Option premium is behind plan.",
+            ),
+        ),
+        snapshot={"premium_vs_expected_ratio": "0.7000"},
+        data_quality=(),
+    )
+    fully_missing = _snapshot(liquidation_premium=None, underlying_price=None)
+
+    assert "drift_signal:no_breach" in _valid_evidence_codes(clean, (), current=_snapshot())
+    assert "drift_signal:no_breach" not in _valid_evidence_codes(
+        degraded,
+        (),
+        current=_snapshot(),
+    )
+    assert "drift_signal:no_breach" not in _valid_evidence_codes(
+        clean,
+        (),
+        current=fully_missing,
+    )
 
 
 def test_close_without_kill_is_normalized_to_insufficient_data() -> None:

@@ -460,9 +460,17 @@ def _validation_input(
     trigger: str,
     trigger_codes: Sequence[str],
 ) -> PositionValidationInput:
+    allowed_evidence_codes = sorted(
+        _valid_evidence_codes(
+            drift,
+            (),
+            current=current,
+        )
+    )
     return PositionValidationInput(
         trigger="auto" if trigger == "auto" else "manual",
         trigger_codes=[str(code) for code in trigger_codes],
+        allowed_evidence_codes=allowed_evidence_codes,
         position={
             "id": str(context.position.id),
             "ticker": context.recommendation.ticker,
@@ -511,7 +519,11 @@ def _normalize_validation(
     proposed = _proposed_json(raw.proposed_adjustment)
     fired_kill = {item.code for item in drift.fired if item.severity == "kill"}
     fired_codes = {item.code for item in drift.fired}
-    valid_codes = _valid_evidence_codes(drift, headlines)
+    valid_codes = _valid_evidence_codes(
+        drift,
+        headlines,
+        current=current,
+    )
     invalid_evidence = [item["code"] for item in evidence if item["code"] not in valid_codes]
     if invalid_evidence:
         notes.append("discarded unsupported evidence: " + ", ".join(invalid_evidence))
@@ -591,6 +603,8 @@ def _normalize_validation(
 def _valid_evidence_codes(
     drift: DriftEvaluation,
     headlines: Sequence[NewsHeadline],
+    *,
+    current: PositionQuoteSnapshot | None = None,
 ) -> set[str]:
     codes = {item.code for item in drift.fired}
     codes.update(str(key) for key in drift.snapshot)
@@ -598,7 +612,21 @@ def _valid_evidence_codes(
     codes.update(f"data_quality:{item}" for item in drift.data_quality)
     codes.update(headline.id for headline in headlines)
     codes.update({"data_quality:llm_unavailable", "data_quality:insufficient_supported_evidence"})
+    if _can_use_no_breach_evidence(drift, current):
+        codes.update({"drift_signal:no_breach", "drift_signal:within_plan"})
     return codes
+
+
+def _can_use_no_breach_evidence(
+    drift: DriftEvaluation,
+    current: PositionQuoteSnapshot | None,
+) -> bool:
+    actionable = {item.code for item in drift.fired if item.severity in {"kill", "degrade"}}
+    if actionable:
+        return False
+    if current is None:
+        return True
+    return not (current.liquidation_premium is None and current.underlying_price is None)
 
 
 def _valid_stop_adjustment(

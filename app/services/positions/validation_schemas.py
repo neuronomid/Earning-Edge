@@ -43,6 +43,7 @@ class StructuredPositionValidation(_Frozen):
 class PositionValidationInput(_Frozen):
     trigger: Literal["manual", "auto"]
     trigger_codes: list[str] = Field(default_factory=list)
+    allowed_evidence_codes: list[str] = Field(default_factory=list)
     position: dict[str, Any]
     thesis: dict[str, Any]
     active_plan: dict[str, Any]

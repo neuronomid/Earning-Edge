@@ -73,6 +73,20 @@ class Settings(BaseSettings):
     news_brief_schema_version: str = "v4"
     news_prompt_version: str = "v3"
 
+    qa_root_dir: str = "var/qa"
+    qa_user_chat_id: str = "qa_intraday"
+    qa_account_size: Decimal = Decimal("10000")
+    qa_risk_profile: Literal["Conservative", "Balanced", "Aggressive"] = "Balanced"
+    qa_timezone_label: str = "ET"
+    qa_timezone_iana: str = "America/Toronto"
+    qa_broker: str = "Wealthsimple"
+    qa_strategy_permission: Literal["long", "short", "long_and_short"] = "long_and_short"
+    qa_max_contracts: int = 3
+    qa_openrouter_api_key: str = Field(default="")
+    qa_alpaca_api_key: str = Field(default="")
+    qa_alpaca_api_secret: str = Field(default="")
+    qa_alpha_vantage_api_key: str = Field(default="")
+
     @property
     def database_url(self) -> str:
         return (

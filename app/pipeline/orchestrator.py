@@ -80,7 +80,7 @@ class TelegramNotifier(Protocol):
 
 
 @dataclass(slots=True, frozen=True)
-class _UserSecrets:
+class UserSecrets:
     openrouter_api_key: str
     alpha_vantage_api_key: str | None
     alpaca_api_key: str | None
@@ -111,6 +111,9 @@ class AiogramNotifier:
             await bot.session.close()
 
 
+UserSecretsResolver = Callable[[User], UserSecrets]
+
+
 class PipelineOrchestrator:
     def __init__(
         self,
@@ -124,6 +127,7 @@ class PipelineOrchestrator:
         decision_step: DecisionStep | None = None,
         notifier: TelegramNotifier | None = None,
         logging_service: LoggingService | None = None,
+        user_secrets_resolver: UserSecretsResolver | None = None,
         logger: Any | None = None,
     ) -> None:
         settings = get_settings()
@@ -137,8 +141,15 @@ class PipelineOrchestrator:
         self.notifier = notifier or AiogramNotifier()
         self.logger = logger or get_logger(__name__)
         self.logging_service = logging_service or get_logging_service()
+        self.user_secrets_resolver = user_secrets_resolver or decrypt_user_secrets
 
-    async def run(self, session: AsyncSession, run: WorkflowRun) -> PipelineOutcome:
+    async def run(
+        self,
+        session: AsyncSession,
+        run: WorkflowRun,
+        *,
+        reference_dt: datetime | None = None,
+    ) -> PipelineOutcome:
         user = await UserRepository(session).get(run.user_id)
         if user is None:
             raise LookupError(f"Workflow user {run.user_id} was not found")
@@ -146,12 +157,12 @@ class PipelineOrchestrator:
         if run.trigger_type == "manual":
             await self.notifier.send_text(user.telegram_chat_id, render_scan_started())
 
-        reference_dt = datetime.now(UTC)
+        effective_reference_dt = reference_dt or datetime.now(UTC)
 
         batch = await self.candidate_step.execute(user_id=run.user_id)
         run.screener_status = batch.screener_status
         run.selected_candidate_count = len(batch.candidates)
-        outcome = await self.evaluate_batch(batch, user, reference_dt=reference_dt)
+        outcome = await self.evaluate_batch(batch, user, reference_dt=effective_reference_dt)
         recommendation = await self._persist(session, run, user, outcome)
         telegram_message = await self._notify_user(user, run.trigger_type, outcome, recommendation)
         self.logging_service.capture_run(
@@ -171,8 +182,8 @@ class PipelineOrchestrator:
         reference_dt: datetime | None = None,
     ) -> PipelineOutcome:
         effective_reference_dt = reference_dt or datetime.now(UTC)
-        secrets = _decrypt_user_secrets(user)
-        user_context = _build_user_context(
+        secrets = self.user_secrets_resolver(user)
+        user_context = build_user_context(
             user,
             has_valid_openrouter_api_key=bool(secrets.openrouter_api_key),
         )
@@ -241,7 +252,7 @@ class PipelineOrchestrator:
         record: CandidateRecord,
         user: User,
         user_context: UserContext,
-        secrets: _UserSecrets,
+        secrets: UserSecrets,
         *,
         live_news: bool,
         reference_dt: datetime | None = None,
@@ -249,6 +260,7 @@ class PipelineOrchestrator:
         calculation_errors: list[str] = []
         effective_user_context = user_context
         effective_reference_dt = reference_dt or datetime.now(UTC)
+        valuation_date = trading_reference_date(effective_reference_dt)
 
         try:
             market_snapshot = await self.market_data_step.execute(
@@ -296,6 +308,7 @@ class PipelineOrchestrator:
                 alpaca_api_key=secrets.alpaca_api_key,
                 alpaca_api_secret=secrets.alpaca_api_secret,
                 strategy_permission=user.strategy_permission,
+                today=valuation_date,
             )
         except Exception as exc:
             calculation_errors.append(f"Option chain unavailable: {exc}")
@@ -305,7 +318,6 @@ class PipelineOrchestrator:
             option_chain,
             market_snapshot.current_price,
         )
-        valuation_date = trading_reference_date(effective_reference_dt)
         expected_move_percent = _expected_move_percent(
             option_chain,
             market_snapshot.current_price,
@@ -520,9 +532,10 @@ class PipelineOrchestrator:
                 run.final_recommendation_id = None
             return None
 
-        user_context = _build_user_context(
+        secrets = self.user_secrets_resolver(user)
+        user_context = build_user_context(
             user,
-            has_valid_openrouter_api_key=bool(_decrypt_user_secrets(user).openrouter_api_key),
+            has_valid_openrouter_api_key=bool(secrets.openrouter_api_key),
         )
         sizing = outcome.selected.sizing
         if sizing is None or outcome.selected.evaluation.chosen_contract != chosen_contract:
@@ -670,8 +683,8 @@ def get_pipeline_orchestrator() -> PipelineOrchestrator:
     return PipelineOrchestrator()
 
 
-def _decrypt_user_secrets(user: User) -> _UserSecrets:
-    return _UserSecrets(
+def decrypt_user_secrets(user: User) -> UserSecrets:
+    return UserSecrets(
         openrouter_api_key=decrypt_or_none(user.openrouter_api_key_encrypted) or "",
         alpha_vantage_api_key=decrypt_or_none(user.alpha_vantage_api_key_encrypted),
         alpaca_api_key=decrypt_or_none(user.alpaca_api_key_encrypted),
@@ -679,7 +692,7 @@ def _decrypt_user_secrets(user: User) -> _UserSecrets:
     )
 
 
-def _build_user_context(user: User, *, has_valid_openrouter_api_key: bool) -> UserContext:
+def build_user_context(user: User, *, has_valid_openrouter_api_key: bool) -> UserContext:
     return UserContext(
         account_size=Decimal(str(user.account_size)),
         risk_profile=user.risk_profile,  # type: ignore[arg-type]
@@ -879,6 +892,14 @@ def _select_decision_finalists(
         ),
         reverse=True,
     )[:limit]
+
+
+def select_decision_finalists(
+    candidates: list[PipelineCandidate],
+    *,
+    limit: int = DECISION_FINALIST_LIMIT,
+) -> list[PipelineCandidate]:
+    return _select_decision_finalists(candidates, limit=limit)
 
 
 def _select_contract(
