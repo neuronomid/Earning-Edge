@@ -1,0 +1,19 @@
+# Install to /etc/systemd/system/qa-intraday.timer, then:
+#   systemctl daemon-reload
+#   systemctl enable --now qa-intraday.timer
+#
+# OnCalendar is in America/New_York so DST is automatic.
+# Mon–Fri, every 20 minutes from 09:30 through 15:50 ET.
+
+[Unit]
+Description=Trigger QA intraday drift harness every 20m during NYSE hours
+
+[Timer]
+Unit=qa-intraday.service
+OnCalendar=Mon..Fri 09:30,50 America/New_York
+OnCalendar=Mon..Fri 10..15:10,30,50 America/New_York
+Persistent=false
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

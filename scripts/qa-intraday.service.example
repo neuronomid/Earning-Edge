@@ -1,0 +1,17 @@
+# Install to /etc/systemd/system/qa-intraday.service
+# Adjust User, WorkingDirectory, and EnvironmentFile to match the VPS layout.
+
+[Unit]
+Description=Earning Edge QA intraday drift harness (one-shot)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=earning-edge
+WorkingDirectory=/srv/earning-edge
+EnvironmentFile=/srv/earning-edge/.env
+ExecStart=/srv/earning-edge/scripts/run_qa_intraday.sh
+# QA runner's market-hours guard handles off-hours launches; keep success exit.
+SuccessExitStatus=0
+Nice=5

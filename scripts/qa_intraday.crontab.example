@@ -1,0 +1,15 @@
+# QA intraday drift harness — cron example.
+# Install with: crontab -e  (as the user that owns the repo and the .env file)
+#
+# The Python entry point already gates on NYSE market hours, so the cron
+# expression is intentionally a superset (09:30 .. 15:50 ET, Mon–Fri).
+# DST is handled by setting CRON_TZ to America/New_York.
+#
+# Adjust REPO_ROOT to match the VPS checkout.
+
+CRON_TZ=America/New_York
+REPO_ROOT=/srv/earning-edge
+
+# Every 20 minutes from 09:30 through 15:50 ET, weekdays only.
+30,50 9   * * 1-5  $REPO_ROOT/scripts/run_qa_intraday.sh
+10,30,50 10-15 * * 1-5  $REPO_ROOT/scripts/run_qa_intraday.sh
